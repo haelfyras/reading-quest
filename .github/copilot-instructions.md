@@ -1,0 +1,6 @@
+- Project: Reading Quest
+- Build a Next.js quiz platform for kids to generate AI-driven book quizzes.
+- Use `OPENAI_API_KEY` from environment variables.
+- Generate quiz questions in the backend with a POST route at `/api/quiz`.
+- Keep frontend simple and child-friendly.
+- Ensure README contains install and run instructions.
