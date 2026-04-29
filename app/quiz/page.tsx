@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   addQuizResult,
@@ -43,8 +43,7 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
 
   return 10;
 };
-
-export default function QuizPage() {
+ function QuizPageContent() {
   const [user, setUser] = useState<Profile | null>(null);
   const [bookTitle, setBookTitle] = useState("");
   const [difficulty, setDifficulty] = useState("easy");
@@ -557,4 +556,10 @@ export default function QuizPage() {
     </main>
   );
 }
-
+export default function QuizPage() {
+  return (
+    <Suspense fallback={<div>Loading quiz...</div>}>
+      <QuizPageContent />
+    </Suspense>
+  );
+}
