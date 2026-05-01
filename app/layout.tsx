@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
+import { COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION } from "../lib/product";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Reading Quest",
-  description: "AI-generated book quizzes for kids with points by difficulty.",
+  title: `${PRODUCT_NAME} ${PRODUCT_VERSION}`,
+  description: `${PRODUCT_NAME} by ${COMPANY_NAME}: AI-generated book quizzes with points, prizes, and leaderboards.`,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -25,7 +26,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <footer className="product-footer" aria-label="Product information">
+          <span>{PRODUCT_NAME} {PRODUCT_VERSION}</span>
+          <span>Built by {COMPANY_NAME}</span>
+        </footer>
+      </body>
     </html>
   );
 }

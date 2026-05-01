@@ -2,18 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-
-const difficultyPoints = {
-  easy: 10,
-  medium: 20,
-  hard: 30,
-};
-
-const levelBonus = {
-  beginner: 0,
-  intermediate: 5,
-  advanced: 10,
-};
+import type { BookLookupResult, BookMatch } from "../../lib/books";
+import {
+  getAllowedDifficulties,
+  getMaxScore,
+  isDifficultyAllowedForBookLevel,
+  type BookLevel,
+} from "../../lib/scoring";
 
 const learningGoals = [
   { value: "habit_formation", label: "Habit Formation" },
@@ -36,21 +31,136 @@ export default function Home() {
   const router = useRouter();
   const [mode, setMode] = useState<"child" | "parent">("child");
   const [bookTitle, setBookTitle] = useState("");
-  const [difficulty, setDifficulty] = useState<keyof typeof difficultyPoints>("easy");
-  const [bookLevel, setBookLevel] = useState<keyof typeof levelBonus>("beginner");
+  const [confirmedBook, setConfirmedBook] = useState<BookMatch | null>(null);
+  const [bookOptions, setBookOptions] = useState<BookMatch[]>([]);
+  const [isbn, setIsbn] = useState("");
+  const [isCheckingBook, setIsCheckingBook] = useState(false);
+  const [bookLookupMessage, setBookLookupMessage] = useState("");
+  const [showIsbnFallback, setShowIsbnFallback] = useState(false);
+  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">("easy");
+  const [bookLevel, setBookLevel] = useState<BookLevel>("beginner");
   const [learningGoal, setLearningGoal] = useState("basic_comprehension");
   const [rewardPlan, setRewardPlan] = useState("");
   const [quiz, setQuiz] = useState<QuizData | string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isDetectingLevel, setIsDetectingLevel] = useState(false);
   const [error, setError] = useState("");
   const [reviewMode, setReviewMode] = useState(false);
   const [editableQuiz, setEditableQuiz] = useState<QuizData | null>(null);
 
-  const pointEstimate = difficultyPoints[difficulty] + levelBonus[bookLevel];
+  const pointEstimate = getMaxScore(difficulty);
+  const allowedDifficulties = getAllowedDifficulties(bookLevel);
+
+  const detectReadingLevel = async (book: BookMatch) => {
+    setError("");
+    setIsDetectingLevel(true);
+
+    try {
+      const response = await fetch("/api/book-level", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookTitle: book.title }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to determine book level.");
+      }
+
+      const data = await response.json();
+      const level = ["beginner", "intermediate", "advanced"].includes(data.level)
+        ? data.level
+        : "intermediate";
+      setBookLevel(level as BookLevel);
+      if (!isDifficultyAllowedForBookLevel(difficulty, level)) {
+        setDifficulty(getAllowedDifficulties(level)[0]);
+      }
+      return level as BookLevel;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to detect book level.");
+      return null;
+    } finally {
+      setIsDetectingLevel(false);
+    }
+  };
+
+  const applyConfirmedBook = (book: BookMatch) => {
+    setConfirmedBook(book);
+    setBookTitle(book.title);
+    setBookOptions([]);
+    setBookLookupMessage("");
+    setShowIsbnFallback(false);
+    setIsbn("");
+    void detectReadingLevel(book);
+  };
+
+  const lookupBook = async (payload: { bookTitle?: string; isbn?: string }) => {
+    setIsCheckingBook(true);
+    setError("");
+    setBookLookupMessage("");
+
+    try {
+      const response = await fetch("/api/book-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      const data = (await response.json()) as BookLookupResult;
+      if (data.status === "exact" && data.books[0]) {
+        applyConfirmedBook(data.books[0]);
+        return data.books[0];
+      }
+
+      if (data.status === "options") {
+        setConfirmedBook(null);
+        setBookOptions(data.books);
+        setShowIsbnFallback(false);
+        setBookLookupMessage("We found a few possible matches. Which book did you mean?");
+        return null;
+      }
+
+      setConfirmedBook(null);
+      setBookOptions([]);
+      setShowIsbnFallback(!payload.isbn);
+      setBookLookupMessage(
+        payload.isbn
+          ? "Sorry, we still could not find that book. Please try another book title."
+          : "We could not find that book by title. Try the ISBN, or enter a different book.",
+      );
+      return null;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to look up book.");
+      return null;
+    } finally {
+      setIsCheckingBook(false);
+    }
+  };
+
+  const ensureBookConfirmed = async () => {
+    if (confirmedBook && confirmedBook.title === bookTitle.trim()) {
+      return confirmedBook;
+    }
+    return lookupBook({ bookTitle });
+  };
 
   const handleGenerate = async () => {
     if (!bookTitle.trim()) {
       setError("Please enter a book title.");
+      return;
+    }
+
+    const book = await ensureBookConfirmed();
+    if (!book) {
+      return;
+    }
+
+    const needsLevelDetection = isDetectingLevel || !confirmedBook || confirmedBook.title !== book.title;
+    const resolvedBookLevel = needsLevelDetection ? await detectReadingLevel(book) : bookLevel;
+    if (!resolvedBookLevel) {
       return;
     }
 
@@ -64,7 +174,7 @@ export default function Home() {
       const response = await fetch("/api/quiz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookTitle, difficulty, bookLevel, learningGoal }),
+        body: JSON.stringify({ bookTitle: book.title, difficulty, bookLevel: resolvedBookLevel, learningGoal }),
       });
 
       if (!response.ok) {
@@ -99,7 +209,7 @@ export default function Home() {
     // Store the approved quiz in localStorage for the child to access
     localStorage.setItem("approvedQuiz", JSON.stringify({
       ...editableQuiz,
-      bookTitle,
+      bookTitle: confirmedBook?.title || bookTitle,
       difficulty,
       bookLevel,
       learningGoal,
@@ -127,10 +237,15 @@ export default function Home() {
 
   return (
     <main>
-      <h1>Reading Quest</h1>
-      <p>
-        Create AI-generated book quizzes for kids and manage learning goals, difficulty, and reward plans.
-      </p>
+      <div className="hero-panel">
+        <div>
+          <div className="kicker">Quiz Workshop</div>
+          <h1>Reading Quest</h1>
+          <p>
+            Create AI-generated book quizzes for kids and manage learning goals, difficulty, and reward plans.
+          </p>
+        </div>
+      </div>
 
       <div className="field">
         <label>Mode</label>
@@ -177,7 +292,13 @@ export default function Home() {
             <select
               id="bookLevel"
               value={bookLevel}
-              onChange={(event) => setBookLevel(event.target.value as keyof typeof levelBonus)}
+              onChange={(event) => {
+                const nextLevel = event.target.value as BookLevel;
+                setBookLevel(nextLevel);
+                if (!isDifficultyAllowedForBookLevel(difficulty, nextLevel)) {
+                  setDifficulty(getAllowedDifficulties(nextLevel)[0]);
+                }
+              }}
             >
               <option value="beginner">Beginner</option>
               <option value="intermediate">Intermediate</option>
@@ -241,27 +362,134 @@ export default function Home() {
           id="bookTitle"
           type="text"
           value={bookTitle}
-          onChange={(event) => setBookTitle(event.target.value)}
+          onChange={(event) => {
+            setBookTitle(event.target.value);
+            setConfirmedBook(null);
+            setBookOptions([]);
+            setBookLookupMessage("");
+            setShowIsbnFallback(false);
+          }}
           placeholder="e.g. Charlotte's Web"
         />
       </div>
 
+      <div className="book-check-panel">
+        <div className="button-row">
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => lookupBook({ bookTitle })}
+            disabled={isCheckingBook || !bookTitle.trim()}
+          >
+            {isCheckingBook ? "Checking book..." : "Check book"}
+          </button>
+        </div>
+
+        {confirmedBook ? (
+          <div className="confirmed-book">
+            <strong>Using: {confirmedBook.title}</strong>
+            <span>
+              {confirmedBook.author}
+              {confirmedBook.year ? ` - ${confirmedBook.year}` : ""}
+            </span>
+          </div>
+        ) : null}
+
+        {bookLookupMessage ? <div className={showIsbnFallback ? "warning-box" : "notice"}>{bookLookupMessage}</div> : null}
+
+        {bookOptions.length > 0 ? (
+          <div className="book-option-grid">
+            {bookOptions.map((book) => (
+              <button key={book.id} type="button" className="book-option" onClick={() => applyConfirmedBook(book)}>
+                {book.coverUrl ? (
+                  <img className="book-cover" src={book.coverUrl} alt="" />
+                ) : (
+                  <span className="book-cover-placeholder">No cover</span>
+                )}
+                <span>
+                  <strong>{book.title}</strong>
+                  <span>
+                    {book.author}
+                    {book.year ? ` - ${book.year}` : ""}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {showIsbnFallback ? (
+          <div className="field">
+            <label htmlFor="isbn">ISBN</label>
+            <input
+              id="isbn"
+              value={isbn}
+              onChange={(event) => setIsbn(event.target.value)}
+              placeholder="e.g. 9780064404990"
+            />
+            <p className="setting-description">
+              Tip: Look near the barcode on the back cover or inside the copyright page for a 10- or 13-digit ISBN.
+            </p>
+            <div className="button-row">
+              <button type="button" onClick={() => lookupBook({ isbn })} disabled={isCheckingBook || !isbn.trim()}>
+                Check ISBN
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setBookLookupMessage("Sorry, we still could not find that book. Please try another book title.");
+                  setShowIsbnFallback(false);
+                  setIsbn("");
+                }}
+              >
+                Try another book
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
       <div className="field">
         <label htmlFor="difficulty">Difficulty</label>
-        <select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as keyof typeof difficultyPoints)}>
-          <option value="easy">Easy — {difficultyPoints.easy} points</option>
-          <option value="medium">Medium — {difficultyPoints.medium} points</option>
-          <option value="hard">Hard — {difficultyPoints.hard} points</option>
+        <select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as "easy" | "medium" | "hard")}>
+          {allowedDifficulties.map((level) => (
+            <option key={level} value={level}>
+              {level === "easy" ? "Easy - 5 questions, 10 points" : level === "medium" ? "Medium - 10 questions, 50 points" : "Hard - 25 questions, 150 points"}
+            </option>
+          ))}
         </select>
+        <p className="setting-description">
+          {bookLevel === "beginner"
+            ? "Beginner books can only be tested on Easy."
+            : bookLevel === "intermediate"
+              ? "Intermediate books can be tested on Easy or Medium."
+              : "Advanced books can be tested on Easy, Medium, or Hard."}
+        </p>
       </div>
 
       <div className="field">
         <label htmlFor="bookLevel">Book reading level</label>
-        <select id="bookLevel" value={bookLevel} onChange={(event) => setBookLevel(event.target.value as keyof typeof levelBonus)}>
+        <select
+          id="bookLevel"
+          value={bookLevel}
+          onChange={(event) => {
+            const nextLevel = event.target.value as BookLevel;
+            setBookLevel(nextLevel);
+            if (!isDifficultyAllowedForBookLevel(difficulty, nextLevel)) {
+              setDifficulty(getAllowedDifficulties(nextLevel)[0]);
+            }
+          }}
+        >
           <option value="beginner">Beginner</option>
           <option value="intermediate">Intermediate</option>
           <option value="advanced">Advanced</option>
         </select>
+        {isDetectingLevel ? (
+          <p className="notice">Detecting reading level...</p>
+        ) : confirmedBook ? (
+          <p className="success-box">Reading level detected: {bookLevel}</p>
+        ) : null}
       </div>
 
       <div className="field">
@@ -276,11 +504,11 @@ export default function Home() {
       </div>
 
       <button onClick={handleGenerate} disabled={isLoading}>
-        {isLoading ? "Generating quiz…" : "Generate quiz"}
+        {isLoading ? "Generating quiz..." : "Generate quiz"}
       </button>
 
       {error ? (
-        <div className="output" style={{ background: "#fee2e2", color: "#991b1b" }}>
+        <div className="error-box">
           <strong>Error:</strong> {error}
         </div>
       ) : null}

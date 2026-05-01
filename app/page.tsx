@@ -86,8 +86,13 @@ export default function Page() {
   if (showVerification) {
     return (
       <main>
-        <h1>Verify Your Email</h1>
-        <p>Enter the verification code sent to {name}.</p>
+        <div className="hero-panel">
+          <div>
+            <div className="kicker">Parent Verification</div>
+            <h1>Verify Your Email</h1>
+            <p>Enter the verification code sent to {name}.</p>
+          </div>
+        </div>
 
         <div className="field">
           <label htmlFor="code">Verification Code</label>
@@ -101,7 +106,7 @@ export default function Page() {
         </div>
 
         {error ? (
-          <div className="output" style={{ background: "#fee2e2", color: "#991b1b" }}>
+          <div className="error-box">
             <strong>Error:</strong> {error}
           </div>
         ) : null}
@@ -118,23 +123,28 @@ export default function Page() {
 
   return (
     <main>
-      <h1>Reading Quest</h1>
-      <p>Sign in to your account or create a new one.</p>
+      <div className="hero-panel">
+        <div>
+          <div className="kicker">Family Reading Adventure</div>
+          <h1>Reading Quest</h1>
+          <p>Sign in to your account or create a new one.</p>
+        </div>
+      </div>
 
       <div className="field">
         <label>Account type</label>
-        <div style={{ display: "flex", gap: "10px" }}>
+        <div className="button-row">
           <button
             type="button"
+            className={userType === "child" ? "" : "secondary"}
             onClick={() => setUserType("child")}
-            style={{ background: userType === "child" ? "#2563eb" : "#d1d5db" }}
           >
             Child
           </button>
           <button
             type="button"
+            className={userType === "parent" ? "" : "secondary"}
             onClick={() => setUserType("parent")}
-            style={{ background: userType === "parent" ? "#2563eb" : "#d1d5db" }}
           >
             Parent
           </button>
@@ -164,7 +174,7 @@ export default function Page() {
       </div>
 
       {error ? (
-        <div className="output" style={{ background: "#fee2e2", color: "#991b1b" }}>
+        <div className="error-box">
           <strong>Error:</strong> {error}
         </div>
       ) : null}

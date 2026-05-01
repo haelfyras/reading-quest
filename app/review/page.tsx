@@ -34,8 +34,9 @@ export default function ReviewPage() {
 
   return (
     <main>
-      <div className="topbar">
+      <div className="hero-panel">
         <div>
+          <div className="kicker">Reading Notes</div>
           <h1>Book Reviews</h1>
           <p>
             {profile?.isParent
@@ -46,7 +47,7 @@ export default function ReviewPage() {
         </div>
         <Link href={profile?.isParent ? "/parent" : "/home"}>
           <button type="button" className="secondary">
-            ← Back
+            Back
           </button>
         </Link>
       </div>
@@ -68,10 +69,10 @@ export default function ReviewPage() {
                 <div>
                   <h3>{review.bookTitle}</h3>
                   <p className="review-meta">
-                    {review.profileName} • {new Date(review.date).toLocaleDateString()}
+                    {review.profileName} - {new Date(review.date).toLocaleDateString()}
                   </p>
                 </div>
-                <div className="review-rating">{'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}</div>
+                <div className="review-rating">{review.rating} / 5</div>
               </div>
               {review.reviewText ? <p>{review.reviewText}</p> : <p className="review-note">No text review provided.</p>}
             </div>

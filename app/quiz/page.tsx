@@ -5,17 +5,30 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   addQuizResult,
+  addQuizIssueReport,
   addReview,
-  canRetakeBook,
   getCurrentProfile,
+  getPotentialEarnedPoints,
+  getQuizAvailability,
+  getSpendablePoints,
   difficultyLevels,
   Profile,
 } from "../../lib/user";
+import type { BookLookupResult, BookMatch } from "../../lib/books";
+import {
+  getAllowedDifficulties,
+  getMaxScore,
+  getNextAllowedDifficulty,
+  getQuestionValue,
+  isDifficultyAllowedForBookLevel,
+} from "../../lib/scoring";
 
 type QuizQuestion = {
   question: string;
   choices: string[];
   answerIndex: number;
+  answerText?: string;
+  explanation?: string;
 };
 
 type QuizData = {
@@ -24,51 +37,48 @@ type QuizData = {
   questions: QuizQuestion[];
 };
 
-const getQuestionValue = (difficulty: string, bookLevel: string) => {
-  if (difficulty === "easy") {
-    return 10;
-  }
-
-  if (difficulty === "medium") {
-    if (bookLevel === "beginner") return 20;
-    if (bookLevel === "intermediate") return 35;
-    return 50;
-  }
-
-  if (difficulty === "hard") {
-    if (bookLevel === "beginner") return 60;
-    if (bookLevel === "intermediate") return 70;
-    return 80;
-  }
-
-  return 10;
+type ParentApprovedQuiz = QuizData & {
+  bookTitle?: string;
+  difficulty?: string;
+  bookLevel?: string;
+  learningGoal?: string;
+  pointEstimate?: number;
 };
- function QuizPageContent() {
+
+function QuizPageContent() {
   const [user, setUser] = useState<Profile | null>(null);
   const [bookTitle, setBookTitle] = useState("");
+  const [confirmedBook, setConfirmedBook] = useState<BookMatch | null>(null);
+  const [bookOptions, setBookOptions] = useState<BookMatch[]>([]);
+  const [isbn, setIsbn] = useState("");
+  const [isCheckingBook, setIsCheckingBook] = useState(false);
+  const [bookLookupMessage, setBookLookupMessage] = useState("");
+  const [showIsbnFallback, setShowIsbnFallback] = useState(false);
   const [difficulty, setDifficulty] = useState("easy");
   const [bookLevel, setBookLevel] = useState<string | null>(null);
   const [quizData, setQuizData] = useState<QuizData | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedChoice, setSelectedChoice] = useState<number | null>(null);
+  const [selectedAnswers, setSelectedAnswers] = useState<number[]>([]);
   const [score, setScore] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isDetectingLevel, setIsDetectingLevel] = useState(false);
   const [error, setError] = useState("");
   const [completed, setCompleted] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [showReviewPrompt, setShowReviewPrompt] = useState(false);
+  const [earnedPoints, setEarnedPoints] = useState(0);
   const [reviewStarted, setReviewStarted] = useState(false);
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewText, setReviewText] = useState("");
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
-  const reviewWordCount = reviewText.trim().split(/\s+/).filter(Boolean).length;
-  const [parentApprovedQuiz, setParentApprovedQuiz] = useState<any>(null);
-  const [timeLeft, setTimeLeft] = useState(30); // 30 seconds per question
+  const [parentApprovedQuiz, setParentApprovedQuiz] = useState<ParentApprovedQuiz | null>(null);
+  const [timeLeft, setTimeLeft] = useState(30);
   const [timerActive, setTimerActive] = useState(false);
   const [focusLost, setFocusLost] = useState(false);
+  const [reportedQuestions, setReportedQuestions] = useState<Record<string, string>>({});
   const router = useRouter();
   const searchParams = useSearchParams();
+  const reviewWordCount = reviewText.trim().split(/\s+/).filter(Boolean).length;
 
   useEffect(() => {
     setUser(getCurrentProfile());
@@ -78,17 +88,26 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
       const approvedQuizStr = localStorage.getItem("approvedQuiz");
       if (approvedQuizStr) {
         try {
-          const approvedQuiz = JSON.parse(approvedQuizStr);
-          setBookTitle(approvedQuiz.bookTitle || "");
+          const approvedQuiz = JSON.parse(approvedQuizStr) as ParentApprovedQuiz;
+          const approvedTitle = approvedQuiz.bookTitle || "";
+          setBookTitle(approvedTitle);
+          if (approvedTitle) {
+            setConfirmedBook({
+              id: approvedTitle,
+              title: approvedTitle,
+              author: "Parent approved",
+            });
+          }
           setDifficulty(approvedQuiz.difficulty || "easy");
           setBookLevel(approvedQuiz.bookLevel || "intermediate");
           setQuizData(approvedQuiz);
+          setSelectedAnswers([]);
           setParentApprovedQuiz(approvedQuiz);
           setTimeLeft(30);
           setTimerActive(true);
-          localStorage.removeItem("approvedQuiz"); // Clean up
+          localStorage.removeItem("approvedQuiz");
           return;
-        } catch (err) {
+        } catch {
           setError("Failed to load approved quiz.");
         }
       }
@@ -101,19 +120,21 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
 
       if (bookTitleParam.trim()) {
         setBookTitle(bookTitleParam);
+        setConfirmedBook({
+          id: bookTitleParam,
+          title: bookTitleParam,
+          author: "Saved quiz history",
+        });
       }
-
       if (difficultyLevels.includes(difficultyParam as typeof difficultyLevels[number])) {
         setDifficulty(difficultyParam);
       }
-
       if (bookLevelParam.trim()) {
         setBookLevel(bookLevelParam);
       }
     }
   }, [searchParams]);
 
-  // Timer effect
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (timerActive && timeLeft > 0 && !completed) {
@@ -121,43 +142,32 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
         setTimeLeft((prev) => prev - 1);
       }, 1000);
     } else if (timeLeft === 0 && timerActive) {
-      // Time's up, auto-submit current question as wrong
-      handleChoice(-1); // -1 indicates timeout
+      handleChoice(-1);
     }
     return () => clearInterval(interval);
   }, [timerActive, timeLeft, completed]);
 
-  // Focus detection
   useEffect(() => {
     const handleFocus = () => setFocusLost(false);
     const handleBlur = () => setFocusLost(true);
 
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('blur', handleBlur);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("blur", handleBlur);
 
     return () => {
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("blur", handleBlur);
     };
   }, []);
 
-  const questionValue = bookLevel ? getQuestionValue(difficulty, bookLevel) : 0;
+  const allowedDifficulties = getAllowedDifficulties(bookLevel);
+  const nextAllowedDifficulty = bookLevel ? getNextAllowedDifficulty(difficulty, bookLevel) : null;
+  const questionValue = getQuestionValue(difficulty);
+  const maxScore = quizData ? getMaxScore(difficulty) : 0;
+  const timerClass = timeLeft > 10 ? "good" : timeLeft > 5 ? "warn" : "danger";
+  const homeHref = user?.isParent ? "/parent" : "/home";
 
-  const maxScore = parentApprovedQuiz
-    ? parentApprovedQuiz.pointEstimate * parentApprovedQuiz.questions.length
-    : quizData && bookLevel ? questionValue * quizData.questions.length : 0;
-
-  const handleDetectLevel = async () => {
-    if (!bookTitle.trim()) {
-      setError("Please enter a book title.");
-      return;
-    }
-
-    if (user && !canRetakeBook(user, bookTitle)) {
-      setError("You can only retake a quiz on the same book after 24 hours.");
-      return;
-    }
-
+  const detectReadingLevel = async (book: BookMatch) => {
     setError("");
     setIsDetectingLevel(true);
 
@@ -165,7 +175,7 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
       const response = await fetch("/api/book-level", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookTitle }),
+        body: JSON.stringify({ bookTitle: book.title }),
       });
 
       if (!response.ok) {
@@ -174,17 +184,126 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
 
       const data = await response.json();
       setBookLevel(data.level);
+      if (!isDifficultyAllowedForBookLevel(difficulty, data.level)) {
+        setDifficulty(getAllowedDifficulties(data.level)[0]);
+      }
+      return data.level as string;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to detect book level.");
+      return null;
     } finally {
       setIsDetectingLevel(false);
     }
   };
 
-  const handleGenerate = async () => {
-    if (!bookTitle.trim() || !bookLevel) {
-      setError("Please enter a book title and detect the level.");
+  const applyConfirmedBook = (book: BookMatch) => {
+    setConfirmedBook(book);
+    setBookTitle(book.title);
+    setBookLevel(null);
+    setBookOptions([]);
+    setBookLookupMessage("");
+    setShowIsbnFallback(false);
+    setIsbn("");
+    void detectReadingLevel(book);
+  };
+
+  const lookupBook = async (payload: { bookTitle?: string; isbn?: string }) => {
+    setIsCheckingBook(true);
+    setError("");
+    setBookLookupMessage("");
+
+    try {
+      const response = await fetch("/api/book-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      const data = (await response.json()) as BookLookupResult;
+      if (data.status === "exact" && data.books[0]) {
+        applyConfirmedBook(data.books[0]);
+        return data.books[0];
+      }
+
+      if (data.status === "options") {
+        setConfirmedBook(null);
+        setBookOptions(data.books);
+        setShowIsbnFallback(false);
+        setBookLookupMessage("We found a few possible matches. Which book did you mean?");
+        return null;
+      }
+
+      setConfirmedBook(null);
+      setBookOptions([]);
+      setShowIsbnFallback(!payload.isbn);
+      setBookLookupMessage(
+        payload.isbn
+          ? "Sorry, we still could not find that book. Please try another book title."
+          : "We could not find that book by title. Try the ISBN, or enter a different book.",
+      );
+      return null;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to look up book.");
+      return null;
+    } finally {
+      setIsCheckingBook(false);
+    }
+  };
+
+  const handleCheckBookTitle = () => {
+    if (!bookTitle.trim()) {
+      setError("Please enter a book title.");
       return;
+    }
+    lookupBook({ bookTitle });
+  };
+
+  const handleCheckIsbn = () => {
+    if (!isbn.trim()) {
+      setError("Please enter an ISBN.");
+      return;
+    }
+    lookupBook({ isbn });
+  };
+
+  const ensureBookConfirmed = async () => {
+    if (confirmedBook && confirmedBook.title === bookTitle.trim()) {
+      return confirmedBook;
+    }
+    return lookupBook({ bookTitle });
+  };
+
+  const handleGenerate = async () => {
+    if (!bookTitle.trim()) {
+      setError("Please enter a book title.");
+      return;
+    }
+
+    const book = await ensureBookConfirmed();
+    if (!book) {
+      return;
+    }
+
+    const resolvedBookLevel = bookLevel ?? await detectReadingLevel(book);
+    if (!resolvedBookLevel) {
+      return;
+    }
+
+    if (!isDifficultyAllowedForBookLevel(difficulty, resolvedBookLevel)) {
+      setError("That difficulty is not available for this book's reading level.");
+      return;
+    }
+
+    if (user) {
+      const availability = getQuizAvailability(user, book.title, difficulty);
+      if (!availability.available) {
+        setError(availability.message);
+        return;
+      }
     }
 
     setError("");
@@ -192,9 +311,12 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
     setQuizData(null);
     setCurrentQuestion(0);
     setSelectedChoice(null);
+    setSelectedAnswers([]);
     setScore(0);
     setCompleted(false);
     setSaved(false);
+    setEarnedPoints(0);
+    setReportedQuestions({});
 
     const learningGoal = user?.learningGoal || "basic_comprehension";
 
@@ -203,9 +325,9 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          bookTitle,
+          bookTitle: book.title,
           difficulty,
-          bookLevel,
+          bookLevel: resolvedBookLevel,
           learningGoal,
         }),
       });
@@ -241,6 +363,7 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
       }
 
       setQuizData(payload);
+      setSelectedAnswers(Array(payload.questions.length).fill(-1));
       setTimeLeft(30);
       setTimerActive(true);
     } catch (err) {
@@ -253,7 +376,11 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
   const saveResult = () => {
     if (!quizData || saved || !user || !bookLevel) return;
 
-    const learningGoal = parentApprovedQuiz?.learningGoal || user?.learningGoal || "basic_comprehension";
+    const learningGoal = parentApprovedQuiz?.learningGoal || user.learningGoal || "basic_comprehension";
+    const pointsEarned = getPotentialEarnedPoints(user, score, maxScore, {
+      bookTitle,
+      difficulty,
+    });
     const updated = addQuizResult(score, maxScore, {
       bookTitle,
       difficulty,
@@ -263,6 +390,7 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
 
     if (updated) {
       setUser(updated);
+      setEarnedPoints(pointsEarned);
       setSaved(true);
     }
   };
@@ -278,7 +406,12 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
       setScore((prev) => prev + questionValue);
     }
     setSelectedChoice(choiceIndex);
-    setTimerActive(false); // Stop timer
+    setSelectedAnswers((current) => {
+      const next = quizData.questions.map((_, index) => current[index] ?? -1);
+      next[currentQuestion] = choiceIndex;
+      return next;
+    });
+    setTimerActive(false);
   };
 
   const handleNext = () => {
@@ -287,14 +420,35 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
     if (currentQuestion + 1 >= quizData.questions.length) {
       setCompleted(true);
       saveResult();
-      setShowReviewPrompt(true);
       return;
     }
 
     setCurrentQuestion((prev) => prev + 1);
     setSelectedChoice(null);
-    setTimeLeft(30); // Reset timer
-    setTimerActive(true); // Start timer for next question
+    setTimeLeft(30);
+    setTimerActive(true);
+  };
+
+  const reportQuestionIssue = (questionIndex: number, reason: "impossible" | "wrong_answer") => {
+    if (!quizData || !user) return;
+
+    const question = quizData.questions[questionIndex];
+    addQuizIssueReport({
+      profileId: user.id,
+      profileName: user.name,
+      bookTitle,
+      difficulty,
+      question: question.question,
+      choices: question.choices,
+      answerIndex: question.answerIndex,
+      selectedChoice: selectedAnswers[questionIndex] ?? -1,
+      reason,
+    });
+
+    setReportedQuestions((current) => ({
+      ...current,
+      [`${questionIndex}-${reason}`]: reason === "impossible" ? "Marked impossible to answer." : "Marked wrong answer.",
+    }));
   };
 
   if (!user) {
@@ -311,17 +465,16 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
 
   return (
     <main>
-      <div className="topbar">
+      <div className="hero-panel">
         <div>
+          <div className="kicker">Quiz Challenge</div>
           <h1>Reading Quest</h1>
-          <p>
-            Logged in as {user.name} — {user.points} points
-          </p>
+          <p>Logged in as {user.name} - {getSpendablePoints(user)} points available</p>
         </div>
         <div className="topbar-buttons">
-          <Link href="/home">
+          <Link href={homeHref}>
             <button type="button" className="secondary">
-              🏠 Home
+              Home
             </button>
           </Link>
           <Link href="/">
@@ -333,10 +486,10 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
       </div>
 
       {!quizData ? (
-        <>
+        <div className="quest-panel output">
+          <h2>Build Your Quiz</h2>
           <p>
-            Enter a book title (we'll detect the reading level automatically), choose a difficulty,
-            and generate a quiz.
+            Enter a book title, choose the matching book, pick a difficulty, and start the challenge.
           </p>
 
           <div className="field">
@@ -345,74 +498,152 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
               id="bookTitle"
               type="text"
               value={bookTitle}
-              onChange={(event) => setBookTitle(event.target.value)}
+              onChange={(event) => {
+                setBookTitle(event.target.value);
+                setConfirmedBook(null);
+                setBookLevel(null);
+                setBookOptions([]);
+                setBookLookupMessage("");
+                setShowIsbnFallback(false);
+              }}
               placeholder="e.g. The Lion, the Witch and the Wardrobe"
             />
           </div>
 
-          <div className="field">
-            <button
-              onClick={handleDetectLevel}
-              disabled={isDetectingLevel || !bookTitle.trim()}
-              type="button"
-            >
-              {isDetectingLevel ? "Detecting level…" : "Detect reading level"}
-            </button>
-            {bookLevel ? (
-              <p style={{ color: "#22c55e", fontWeight: 600 }}>
-                ✓ Reading level detected: {bookLevel}
-              </p>
+          <div className="book-check-panel">
+            <div className="button-row">
+              <button
+                type="button"
+                className="secondary"
+                onClick={handleCheckBookTitle}
+                disabled={isCheckingBook || !bookTitle.trim()}
+              >
+                {isCheckingBook ? "Checking book..." : "Check book"}
+              </button>
+            </div>
+
+            {confirmedBook ? (
+              <div className="confirmed-book">
+                <strong>Using: {confirmedBook.title}</strong>
+                <span>
+                  {confirmedBook.author}
+                  {confirmedBook.year ? ` - ${confirmedBook.year}` : ""}
+                </span>
+              </div>
+            ) : null}
+
+            {bookLookupMessage ? <div className={showIsbnFallback ? "warning-box" : "notice"}>{bookLookupMessage}</div> : null}
+
+            {bookOptions.length > 0 ? (
+              <div className="book-option-grid">
+                {bookOptions.map((book) => (
+                  <button key={book.id} type="button" className="book-option" onClick={() => applyConfirmedBook(book)}>
+                    {book.coverUrl ? (
+                      <img className="book-cover" src={book.coverUrl} alt="" />
+                    ) : (
+                      <span className="book-cover-placeholder">No cover</span>
+                    )}
+                    <span>
+                      <strong>{book.title}</strong>
+                      <span>
+                        {book.author}
+                        {book.year ? ` - ${book.year}` : ""}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {showIsbnFallback ? (
+              <div className="field">
+                <label htmlFor="isbn">ISBN</label>
+                <input
+                  id="isbn"
+                  value={isbn}
+                  onChange={(event) => setIsbn(event.target.value)}
+                  placeholder="e.g. 9780064404990"
+                />
+                <p className="setting-description">
+                  Tip: Look near the barcode on the back cover or inside the copyright page for a 10- or 13-digit ISBN.
+                </p>
+                <div className="button-row">
+                  <button type="button" onClick={handleCheckIsbn} disabled={isCheckingBook || !isbn.trim()}>
+                    Check ISBN
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setBookLookupMessage("Sorry, we still could not find that book. Please try another book title.");
+                      setShowIsbnFallback(false);
+                      setIsbn("");
+                    }}
+                  >
+                    Try another book
+                  </button>
+                </div>
+              </div>
             ) : null}
           </div>
+
+          {isDetectingLevel ? (
+            <p className="notice">Detecting reading level...</p>
+          ) : bookLevel ? (
+            <p className="success-box">Reading level detected: {bookLevel}</p>
+          ) : null}
 
           <div className="field">
             <label htmlFor="difficulty">Difficulty</label>
             <select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value)}>
-              <option value="easy">Easy (5 questions)</option>
-              <option value="medium">Medium (12 questions)</option>
-              <option value="hard">Hard (30 questions)</option>
+              {allowedDifficulties.map((level) => (
+                <option key={level} value={level}>
+                  {level === "easy" ? "Easy (5 questions, 10 points)" : level === "medium" ? "Medium (10 questions, 50 points)" : "Hard (25 questions, 150 points)"}
+                </option>
+              ))}
             </select>
+            {bookLevel ? (
+              <p className="setting-description">
+                {bookLevel === "beginner"
+                  ? "Beginner books can only be tested on Easy."
+                  : bookLevel === "intermediate"
+                    ? "Intermediate books can be tested on Easy or Medium."
+                    : "Advanced books can be tested on Easy, Medium, or Hard."}
+              </p>
+            ) : null}
           </div>
 
-          <button onClick={handleGenerate} disabled={isLoading || !bookLevel}>
-            {isLoading ? "Generating quiz…" : "Generate quiz"}
+          <button onClick={handleGenerate} disabled={isLoading || isDetectingLevel || isCheckingBook}>
+            {isLoading ? "Generating quiz..." : "Generate quiz"}
           </button>
 
           {error ? (
-            <div className="output" style={{ background: "#fee2e2", color: "#991b1b" }}>
+            <div className="error-box">
               <strong>Error:</strong> {error}
             </div>
           ) : null}
-        </>
-      ) : (
+        </div>
+      ) : !completed ? (
         <div className="output">
           <h2>{quizData.quizTitle}</h2>
           <p>{quizData.quizDescription}</p>
           <div className="quiz-status">
-            <span>
-              Question {currentQuestion + 1} of {quizData.questions.length}
-            </span>
-            <span>
-              Current score: {score} / {maxScore}
-            </span>
+            <span>Question {currentQuestion + 1} of {quizData.questions.length}</span>
+            <span>Current score: {score} / {maxScore}</span>
           </div>
 
           <div className="question-card">
             {focusLost && (
-              <div style={{ background: "#fef3c7", color: "#92400e", padding: "10px", marginBottom: "10px", borderRadius: "4px" }}>
-                ⚠️ Warning: App focus was lost. Please stay focused on the quiz.
+              <div className="warning-box">
+                Warning: App focus was lost. Please stay focused on the quiz.
               </div>
             )}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+            <div className="question-meta">
               <span>Time left: {timeLeft}s</span>
-              <div style={{ width: "100px", height: "10px", background: "#e5e7eb", borderRadius: "5px", overflow: "hidden" }}>
+              <div className="timer-track">
                 <div
-                  style={{
-                    width: `${(timeLeft / 30) * 100}%`,
-                    height: "100%",
-                    background: timeLeft > 10 ? "#22c55e" : timeLeft > 5 ? "#eab308" : "#ef4444",
-                    transition: "width 1s linear"
-                  }}
+                  className={`timer-fill ${timerClass}`}
+                  style={{ width: `${(timeLeft / 30) * 100}%` }}
                 />
               </div>
             </div>
@@ -444,33 +675,95 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
                   <p>Great job! That answer is correct.</p>
                 ) : (
                   <p>
-                    Not quite. The correct answer was "
-                    {quizData.questions[currentQuestion].choices[
+                    Not quite. The correct answer was "{quizData.questions[currentQuestion].choices[
                       quizData.questions[currentQuestion].answerIndex
-                    ]}
-                    ".
+                    ]}".
                   </p>
                 )}
                 <button type="button" onClick={handleNext}>
-                  {currentQuestion + 1 === quizData.questions.length
-                    ? "Finish quiz"
-                    : "Next question"}
+                  {currentQuestion + 1 === quizData.questions.length ? "Finish quiz" : "Next question"}
                 </button>
               </div>
             ) : null}
           </div>
         </div>
-      )}
+      ) : null}
 
       {completed ? (
         <div className="output">
           <h2>Quiz complete!</h2>
           <p>
-            You earned <strong>{score}</strong> points for this quiz.
+            You scored <strong>{score}</strong> / {maxScore}.
           </p>
           <p>
-            Your new total is <strong>{user.points}</strong> points.
+            You earned <strong>{earnedPoints}</strong> new points. You now have <strong>{getSpendablePoints(user)}</strong> points available.
           </p>
+          {score === maxScore && nextAllowedDifficulty ? (
+            <div className="success-box">
+              Perfect score! This book can be tested at {nextAllowedDifficulty} difficulty next.
+            </div>
+          ) : earnedPoints === 0 ? (
+            <div className="notice">
+              This retake was for fun, so no new points were added.
+            </div>
+          ) : null}
+
+          <div className="quiz-review-summary">
+            <h3>Quiz Review</h3>
+            <p>Review each question, the answer choices, what you chose, and the answer the quiz expected.</p>
+            {quizData?.questions.map((question, index) => {
+              const chosenIndex = selectedAnswers[index] ?? -1;
+              const chosenText = chosenIndex >= 0 ? question.choices[chosenIndex] : "No answer selected";
+              const correctText = question.choices[question.answerIndex] ?? question.answerText ?? "Unknown";
+              const wasCorrect = chosenIndex === question.answerIndex;
+
+              return (
+                <div key={`${question.question}-${index}`} className="quiz-review-item">
+                  <div>
+                    <h4>Question {index + 1}</h4>
+                    <p>{question.question}</p>
+                  </div>
+                  <div className="quiz-review-answers">
+                    <p><strong>Your answer:</strong> {chosenText}</p>
+                    <p><strong>Expected answer:</strong> {correctText}</p>
+                    <p><strong>Result:</strong> {wasCorrect ? "Correct" : "Incorrect"}</p>
+                    {question.explanation ? <p><strong>Quiz explanation:</strong> {question.explanation}</p> : null}
+                    <ul>
+                      {question.choices.map((choice, choiceIndex) => (
+                        <li key={`${choice}-${choiceIndex}`}>
+                          {choiceIndex + 1}. {choice}
+                          {choiceIndex === chosenIndex ? " - your choice" : ""}
+                          {choiceIndex === question.answerIndex ? " - expected answer" : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="button-row">
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => reportQuestionIssue(index, "impossible")}
+                    >
+                      Impossible to answer
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => reportQuestionIssue(index, "wrong_answer")}
+                    >
+                      Answer was wrong
+                    </button>
+                  </div>
+                  {reportedQuestions[`${index}-impossible`] ? (
+                    <div className="notice">{reportedQuestions[`${index}-impossible`]}</div>
+                  ) : null}
+                  {reportedQuestions[`${index}-wrong_answer`] ? (
+                    <div className="notice">{reportedQuestions[`${index}-wrong_answer`]}</div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
 
           {!reviewStarted && !reviewSubmitted ? (
             <div className="review-prompt">
@@ -479,13 +772,15 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
                 <button type="button" onClick={() => setReviewStarted(true)}>
                   Yes
                 </button>
-                <button type="button" onClick={() => router.push("/home")}>No</button>
+                <button type="button" className="secondary" onClick={() => router.push(homeHref)}>
+                  No
+                </button>
               </div>
             </div>
           ) : null}
 
           {reviewStarted && !reviewSubmitted ? (
-            <div className="output review-form">
+            <div className="review-form">
               <h3>Write a review for {bookTitle}</h3>
               <p>Choose a star rating and write up to 250 words.</p>
               <div className="star-row">
@@ -496,7 +791,7 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
                     className={`star-button ${reviewRating >= star ? "selected" : ""}`}
                     onClick={() => setReviewRating(star)}
                   >
-                    ★
+                    Star
                   </button>
                 ))}
               </div>
@@ -538,17 +833,19 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
                 >
                   Submit review
                 </button>
-                <button type="button" onClick={() => router.push("/home")}>Skip</button>
+                <button type="button" className="secondary" onClick={() => router.push(homeHref)}>
+                  Skip
+                </button>
               </div>
-              {error ? <p className="error-text">{error}</p> : null}
+              {error ? <p className="error-box">{error}</p> : null}
             </div>
           ) : null}
 
           {reviewSubmitted ? (
-            <div className="output">
+            <div className="success-box">
               <h3>Thanks for your review!</h3>
               <p>Your review helps other readers and parents.</p>
-              <button type="button" onClick={() => router.push("/home")}>Back to Home</button>
+              <button type="button" onClick={() => router.push(homeHref)}>Back to Home</button>
             </div>
           ) : null}
         </div>
@@ -556,6 +853,7 @@ const getQuestionValue = (difficulty: string, bookLevel: string) => {
     </main>
   );
 }
+
 export default function QuizPage() {
   return (
     <Suspense fallback={<div>Loading quiz...</div>}>

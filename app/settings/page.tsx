@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getCurrentProfile, Profile, setCurrentUserId, updateProfile } from "../../lib/user";
+import {
+  getCurrentProfile,
+  getLifetimePoints,
+  getSpendablePoints,
+  getSpentPoints,
+  Profile,
+  setCurrentUserId,
+} from "../../lib/user";
 
 export default function SettingsPage() {
   const [user, setUser] = useState<Profile | null>(null);
@@ -15,7 +22,6 @@ export default function SettingsPage() {
   useEffect(() => {
     setUser(getCurrentProfile());
 
-    // Load settings from localStorage
     const savedDarkMode = localStorage.getItem("readingQuestDarkMode") === "true";
     const savedFontSize = parseInt(localStorage.getItem("readingQuestFontSize") || "16");
     const savedTheme = localStorage.getItem("readingQuestTheme") || "fantasy";
@@ -24,7 +30,6 @@ export default function SettingsPage() {
     setFontSize(savedFontSize);
     setTheme(savedTheme);
 
-    // Apply settings
     applyDarkMode(savedDarkMode);
     applyFontSize(savedFontSize);
     applyTheme(savedTheme);
@@ -69,12 +74,10 @@ export default function SettingsPage() {
       return;
     }
 
-    // Remove user from profiles
     const profiles = JSON.parse(localStorage.getItem("readingQuestProfiles") || "[]");
     const updatedProfiles = profiles.filter((p: Profile) => p.id !== user.id);
     localStorage.setItem("readingQuestProfiles", JSON.stringify(updatedProfiles));
 
-    // Clear current user
     setCurrentUserId(null);
     localStorage.removeItem("readingQuestCurrentUserId");
 
@@ -96,14 +99,15 @@ export default function SettingsPage() {
 
   return (
     <main>
-      <div className="topbar">
+      <div className="hero-panel">
         <div>
+          <div className="kicker">Player Settings</div>
           <h1>Settings</h1>
-          <p>Customize your Reading Quest experience</p>
+          <p>Customize your Reading Quest experience.</p>
         </div>
-        <Link href="/home">
+        <Link href={user.isParent ? "/parent" : "/home"}>
           <button type="button" className="secondary">
-            ← Home
+            Home
           </button>
         </Link>
       </div>
@@ -121,18 +125,18 @@ export default function SettingsPage() {
               />
               <span>Dark Mode</span>
             </label>
-            <p className="setting-description">Switch between light and dark themes</p>
+            <p className="setting-description">Switch between light and dark presentation.</p>
           </div>
 
           <div className="setting-item">
             <label htmlFor="theme" className="setting-label">Theme</label>
             <select id="theme" value={theme} onChange={handleThemeChange}>
-              <option value="fantasy">Fantasy (Dragons & Castles)</option>
-              <option value="sci-fi">Sci-Fi (Space & Aliens)</option>
-              <option value="horror">Horror (Spooky)</option>
-              <option value="library">Library (Books & Shelves)</option>
+              <option value="fantasy">Fantasy (quests and castles)</option>
+              <option value="sci-fi">Sci-Fi (missions and space)</option>
+              <option value="horror">Horror (spooky library)</option>
+              <option value="library">Library (books and shelves)</option>
             </select>
-            <p className="setting-description">Choose your adventure theme</p>
+            <p className="setting-description">Choose the visual skin for the whole app.</p>
           </div>
 
           <div className="setting-item">
@@ -147,7 +151,7 @@ export default function SettingsPage() {
               onChange={handleFontSizeChange}
               className="font-size-slider"
             />
-            <p className="setting-description">Adjust text size for better readability</p>
+            <p className="setting-description">Adjust text size for better readability.</p>
           </div>
         </div>
 
@@ -157,7 +161,9 @@ export default function SettingsPage() {
           <div className="setting-item">
             <h3>Profile Information</h3>
             <p><strong>Name:</strong> {user.name}</p>
-            <p><strong>Points:</strong> {user.points}</p>
+            <p><strong>Available Points:</strong> {getSpendablePoints(user)}</p>
+            <p><strong>Lifetime Points Earned:</strong> {getLifetimePoints(user)}</p>
+            <p><strong>Points Spent on Prizes:</strong> {getSpentPoints(user)}</p>
             <p><strong>Quizzes Completed:</strong> {user.quizzes.length}</p>
           </div>
 
@@ -170,11 +176,11 @@ export default function SettingsPage() {
               >
                 Delete Account
               </button>
-              <p className="setting-description">Permanently delete your account and all data</p>
+              <p className="setting-description">Permanently delete your account and all data.</p>
             </div>
           ) : (
             <div className="setting-item delete-confirm">
-              <h3>⚠️ Confirm Account Deletion</h3>
+              <h3>Confirm Account Deletion</h3>
               <p>This action cannot be undone. All your progress will be lost.</p>
               <div className="field">
                 <label htmlFor="deletePassword">Enter your password to confirm:</label>
@@ -197,6 +203,7 @@ export default function SettingsPage() {
                 </button>
                 <button
                   type="button"
+                  className="secondary"
                   onClick={() => {
                     setShowDeleteConfirm(false);
                     setDeletePassword("");

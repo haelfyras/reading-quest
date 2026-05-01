@@ -1,0 +1,277 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  addFriendContact,
+  childConfirmParentRequest,
+  createParentVerificationRequest,
+  enterParentVerificationCode,
+  getCurrentProfile,
+  getParentVerificationRequests,
+  getProfiles,
+  ParentVerificationRequest,
+  Profile,
+  rejectParentVerificationRequest,
+  updateProfile,
+} from "../../lib/user";
+
+export default function ProfilePage() {
+  const router = useRouter();
+  const [user, setUser] = useState<Profile | null>(null);
+  const [realName, setRealName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [profileMessage, setProfileMessage] = useState("");
+  const [friendName, setFriendName] = useState("");
+  const [friendEmail, setFriendEmail] = useState("");
+  const [friendPhone, setFriendPhone] = useState("");
+  const [friendMessage, setFriendMessage] = useState("");
+  const [childName, setChildName] = useState("");
+  const [childFirstName, setChildFirstName] = useState("");
+  const [requestMessage, setRequestMessage] = useState("");
+  const [requests, setRequests] = useState<ParentVerificationRequest[]>([]);
+  const [codes, setCodes] = useState<Record<string, string>>({});
+  const [confirmingRequestId, setConfirmingRequestId] = useState("");
+  const [linkedChildren, setLinkedChildren] = useState<Profile[]>([]);
+
+  const refresh = () => {
+    const profile = getCurrentProfile();
+    if (!profile) return;
+    setUser(profile);
+    setRealName(profile.realName || "");
+    setPhone(profile.phone || "");
+    setRequests(getParentVerificationRequests().filter((request) => (
+      profile.isParent ? request.parentId === profile.id : request.childId === profile.id
+    )));
+    setLinkedChildren(getProfiles().filter((child) => profile.linkedChildren?.includes(child.id)));
+  };
+
+  useEffect(() => {
+    const profile = getCurrentProfile();
+    if (!profile) {
+      router.push("/");
+      return;
+    }
+    setUser(profile);
+    setRealName(profile.realName || "");
+    setPhone(profile.phone || "");
+    setRequests(getParentVerificationRequests().filter((request) => (
+      profile.isParent ? request.parentId === profile.id : request.childId === profile.id
+    )));
+    setLinkedChildren(getProfiles().filter((child) => profile.linkedChildren?.includes(child.id)));
+  }, [router]);
+
+  const saveProfile = () => {
+    if (!user) return;
+    const updated = updateProfile({ ...user, realName: realName.trim(), phone: phone.trim() });
+    setUser(updated);
+    setProfileMessage("Profile saved.");
+  };
+
+  const addFriend = () => {
+    if (!user) return;
+    try {
+      const updated = addFriendContact(user, { name: friendName, email: friendEmail, phone: friendPhone });
+      setUser(updated);
+      setFriendName("");
+      setFriendEmail("");
+      setFriendPhone("");
+      setFriendMessage("Friend added.");
+    } catch (err) {
+      setFriendMessage(err instanceof Error ? err.message : "Unable to add friend.");
+    }
+  };
+
+  const requestChildVerification = () => {
+    if (!user) return;
+    try {
+      createParentVerificationRequest(user, { childScreenName: childName, childFirstName });
+      setChildName("");
+      setChildFirstName("");
+      setRequestMessage("Verification request sent to your child.");
+      refresh();
+    } catch (err) {
+      setRequestMessage(err instanceof Error ? err.message : "Unable to send request.");
+    }
+  };
+
+  const submitCode = (requestId: string) => {
+    if (!user) return;
+    try {
+      enterParentVerificationCode(requestId, user.isParent ? "parent" : "child", codes[requestId] || "");
+      setCodes((current) => ({ ...current, [requestId]: "" }));
+      setRequestMessage("Code accepted.");
+      refresh();
+    } catch (err) {
+      setRequestMessage(err instanceof Error ? err.message : "Unable to verify code.");
+    }
+  };
+
+  const confirmParent = (request: ParentVerificationRequest) => {
+    try {
+      childConfirmParentRequest(request.id);
+      setConfirmingRequestId("");
+      setRequestMessage("Parent confirmed. Enter the code within 5 minutes.");
+      refresh();
+    } catch (err) {
+      setRequestMessage(err instanceof Error ? err.message : "Unable to confirm request.");
+    }
+  };
+
+  const rejectParent = (requestId: string) => {
+    rejectParentVerificationRequest(requestId);
+    setRequestMessage("Request declined.");
+    refresh();
+  };
+
+  const toggleChildFriends = (child: Profile) => {
+    const updated = updateProfile({ ...child, canAddFriends: !child.canAddFriends });
+    setLinkedChildren((current) => current.map((item) => item.id === updated.id ? updated : item));
+  };
+
+  if (!user) {
+    return <main><p>Loading...</p></main>;
+  }
+
+  const homeHref = user.isParent ? "/parent" : "/home";
+  const canManageFriends = user.isParent || user.canAddFriends;
+
+  return (
+    <main className="app-screen">
+      <div className="hero-panel app-hero">
+        <div>
+          <div className="kicker">Account</div>
+          <h1>Profile</h1>
+          <p>Manage your account, friends, and family connections.</p>
+        </div>
+        <Link href={homeHref}>
+          <button type="button" className="secondary">Home</button>
+        </Link>
+      </div>
+
+      <section className="home-section" aria-labelledby="account-heading">
+        <h2 id="account-heading">Account</h2>
+        <p><strong>Screen name:</strong> {user.name}</p>
+        {user.email ? <p><strong>Email:</strong> {user.email}</p> : null}
+        <div className="field">
+          <label htmlFor="realName">Real name</label>
+          <input id="realName" value={realName} onChange={(event) => setRealName(event.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="phone">Phone number</label>
+          <input id="phone" value={phone} onChange={(event) => setPhone(event.target.value)} />
+        </div>
+        <button type="button" onClick={saveProfile}>Save Profile</button>
+        {profileMessage ? <div className="success-box">{profileMessage}</div> : null}
+      </section>
+
+      <section className="home-section" aria-labelledby="friends-heading">
+        <h2 id="friends-heading">Friends</h2>
+        {canManageFriends ? (
+          <>
+            <div className="field">
+              <label htmlFor="friendName">Friend name</label>
+              <input id="friendName" value={friendName} onChange={(event) => setFriendName(event.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="friendEmail">Friend email</label>
+              <input id="friendEmail" value={friendEmail} onChange={(event) => setFriendEmail(event.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="friendPhone">Friend phone</label>
+              <input id="friendPhone" value={friendPhone} onChange={(event) => setFriendPhone(event.target.value)} />
+            </div>
+            <button type="button" onClick={addFriend}>Add Friend</button>
+          </>
+        ) : (
+          <p>A verified parent needs to allow friend adding first.</p>
+        )}
+        {friendMessage ? <div className={friendMessage.includes("Unable") || friendMessage.includes("required") ? "error-box" : "success-box"}>{friendMessage}</div> : null}
+        {(user.friends ?? []).length > 0 ? (
+          <ul className="small-list">
+            {user.friends?.map((friend) => (
+              <li key={friend.id}>{friend.name}{friend.email ? ` - ${friend.email}` : ""}{friend.phone ? ` - ${friend.phone}` : ""}</li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
+
+      {user.isParent ? (
+        <section className="home-section" aria-labelledby="family-heading">
+          <h2 id="family-heading">Family Verification</h2>
+          <div className="field">
+            <label htmlFor="childName">Child screen name</label>
+            <input id="childName" value={childName} onChange={(event) => setChildName(event.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="childFirstName">Child real first name</label>
+            <input id="childFirstName" value={childFirstName} onChange={(event) => setChildFirstName(event.target.value)} />
+          </div>
+          <button type="button" onClick={requestChildVerification}>Request Verification</button>
+
+          {linkedChildren.length > 0 ? (
+            <div className="nested-section">
+              <h3>Verified Children</h3>
+              <ul className="small-list">
+                {linkedChildren.map((child) => (
+                  <li key={child.id}>
+                    {child.name}
+                    <div className="button-row">
+                      <button type="button" className="secondary" onClick={() => toggleChildFriends(child)}>
+                        {child.canAddFriends ? "Disable child friends" : "Allow child friends"}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      <section className="home-section" aria-labelledby="requests-heading">
+        <h2 id="requests-heading">Verification Requests</h2>
+        {requests.length > 0 ? requests.map((request) => (
+          <div key={request.id} className="nested-section">
+            <h3>{user.isParent ? request.childScreenName : request.parentName}</h3>
+            <p>Status: {request.status}</p>
+            {!user.isParent && request.status === "child_pending" ? (
+              <>
+                <p>{request.parentName} has requested to add you as their parent. Is this your parent?</p>
+                {confirmingRequestId === request.id ? (
+                  <>
+                    <p>Is your name {request.childFirstName}?</p>
+                    <div className="button-row">
+                      <button type="button" onClick={() => confirmParent(request)}>Yes</button>
+                      <button type="button" className="secondary" onClick={() => rejectParent(request.id)}>No</button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="button-row">
+                    <button type="button" onClick={() => setConfirmingRequestId(request.id)}>Yes</button>
+                    <button type="button" className="secondary" onClick={() => rejectParent(request.id)}>No</button>
+                  </div>
+                )}
+              </>
+            ) : null}
+
+            {request.status === "code_pending" ? (
+              <>
+                {user.isParent ? (
+                  <div className="notice">Demo email code sent to {request.parentEmail || user.email || "your email"}: <strong>{request.code}</strong></div>
+                ) : null}
+                <div className="field">
+                  <label htmlFor={`code-${request.id}`}>Verification code</label>
+                  <input id={`code-${request.id}`} value={codes[request.id] || ""} onChange={(event) => setCodes((current) => ({ ...current, [request.id]: event.target.value }))} />
+                </div>
+                <button type="button" onClick={() => submitCode(request.id)}>Submit Code</button>
+              </>
+            ) : null}
+          </div>
+        )) : <p>No active requests.</p>}
+        {requestMessage ? <div className={requestMessage.includes("Unable") || requestMessage.includes("expired") ? "error-box" : "success-box"}>{requestMessage}</div> : null}
+      </section>
+    </main>
+  );
+}
