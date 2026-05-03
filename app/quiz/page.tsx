@@ -7,9 +7,15 @@ import {
   addQuizResult,
   addQuizIssueReport,
   addReview,
+  completeReadingChallenge,
+  createReadingChallenge,
+  defaultParentControls,
   getCurrentProfile,
+  getLastQuizEntry,
   getPotentialEarnedPoints,
   getQuizAvailability,
+  getReadingChallenges,
+  ReadingChallenge,
   getSpendablePoints,
   difficultyLevels,
   Profile,
@@ -45,6 +51,22 @@ type ParentApprovedQuiz = QuizData & {
   pointEstimate?: number;
 };
 
+function getProfileTestingGoal(profile: Profile | null, approvedQuiz?: ParentApprovedQuiz | null) {
+  if (approvedQuiz?.learningGoal) {
+    return approvedQuiz.learningGoal;
+  }
+
+  if (!profile) {
+    return "basic_recollection";
+  }
+
+  if (!profile.isParent) {
+    return { ...defaultParentControls, ...(profile.parentControls ?? {}) }.testingLevel;
+  }
+
+  return profile.learningGoal || "basic_recollection";
+}
+
 function QuizPageContent() {
   const [user, setUser] = useState<Profile | null>(null);
   const [bookTitle, setBookTitle] = useState("");
@@ -76,12 +98,58 @@ function QuizPageContent() {
   const [timerActive, setTimerActive] = useState(false);
   const [focusLost, setFocusLost] = useState(false);
   const [reportedQuestions, setReportedQuestions] = useState<Record<string, string>>({});
+  const [activeChallenge, setActiveChallenge] = useState<ReadingChallenge | null>(null);
+  const [challengeSavedMessage, setChallengeSavedMessage] = useState("");
   const router = useRouter();
   const searchParams = useSearchParams();
   const reviewWordCount = reviewText.trim().split(/\s+/).filter(Boolean).length;
+  const isFriendlyChallenge = searchParams?.get("challenge") === "true";
+  const challengeId = searchParams?.get("challengeId") || "";
+  const challengeFriendId = searchParams?.get("friendId") || "";
+  const challengeFriendName = searchParams?.get("friendName") || "a friend";
 
   useEffect(() => {
-    setUser(getCurrentProfile());
+    const currentProfile = getCurrentProfile();
+    setUser(currentProfile);
+
+    const challengeIdParam = searchParams?.get("challengeId") || "";
+    if (challengeIdParam) {
+      const challenge = getReadingChallenges().find((item) => item.id === challengeIdParam);
+      if (!challenge) {
+        setError("That challenge could not be found.");
+        return;
+      }
+      if (currentProfile && challenge.toProfileId !== currentProfile.id) {
+        setError("This challenge was sent to another reader.");
+        return;
+      }
+
+      setActiveChallenge(challenge);
+      setBookTitle(challenge.bookTitle);
+      setConfirmedBook({
+        id: challenge.bookTitle,
+        title: challenge.bookTitle,
+        author: "Friend challenge",
+      });
+      setDifficulty(challenge.difficulty);
+      setBookLevel(challenge.bookLevel);
+      setQuizData({
+        quizTitle: challenge.quizTitle,
+        quizDescription: challenge.quizDescription,
+        questions: challenge.questions,
+      });
+      setSelectedAnswers(Array(challenge.questions.length).fill(-1));
+      setCurrentQuestion(0);
+      setSelectedChoice(null);
+      setScore(0);
+      setCompleted(false);
+      setSaved(false);
+      setEarnedPoints(0);
+      setChallengeSavedMessage("");
+      setTimeLeft(30);
+      setTimerActive(true);
+      return;
+    }
 
     const fromParent = searchParams?.get("fromParent") === "true";
     if (fromParent) {
@@ -299,10 +367,26 @@ function QuizPageContent() {
     }
 
     if (user) {
-      const availability = getQuizAvailability(user, book.title, difficulty);
-      if (!availability.available) {
-        setError(availability.message);
+      const controls = { ...defaultParentControls, ...(user.parentControls ?? {}) };
+      const order = ["easy", "medium", "hard"];
+      if (order.indexOf(difficulty) > order.indexOf(controls.maxGoalDifficulty)) {
+        setError(`Your current goal setting allows quizzes up to ${controls.maxGoalDifficulty}.`);
         return;
+      }
+      if (!controls.allowQuizRetakes && getLastQuizEntry(user, book.title)) {
+        setError("A parent has turned off quiz retakes for this profile.");
+        return;
+      }
+      if (!user.isParent && controls.requireAiQuizReview) {
+        setError("A parent has asked to review AI-generated quizzes before they are taken.");
+        return;
+      }
+      if (!isFriendlyChallenge) {
+        const availability = getQuizAvailability(user, book.title, difficulty);
+        if (!availability.available) {
+          setError(availability.message);
+          return;
+        }
       }
     }
 
@@ -318,7 +402,7 @@ function QuizPageContent() {
     setEarnedPoints(0);
     setReportedQuestions({});
 
-    const learningGoal = user?.learningGoal || "basic_comprehension";
+    const learningGoal = getProfileTestingGoal(user);
 
     try {
       const response = await fetch("/api/quiz", {
@@ -376,7 +460,41 @@ function QuizPageContent() {
   const saveResult = () => {
     if (!quizData || saved || !user || !bookLevel) return;
 
-    const learningGoal = parentApprovedQuiz?.learningGoal || user.learningGoal || "basic_comprehension";
+    if (isFriendlyChallenge) {
+      if (activeChallenge) {
+        completeReadingChallenge(activeChallenge.id, {
+          responderScore: score,
+          responderMaxScore: maxScore,
+          responderAnswers: selectedAnswers,
+        });
+        setChallengeSavedMessage(`Challenge complete. ${activeChallenge.fromName} scored ${activeChallenge.initiatorScore} / ${activeChallenge.initiatorMaxScore}.`);
+      } else if (challengeFriendId) {
+        try {
+          const challenge = createReadingChallenge({
+            bookTitle,
+            difficulty,
+            bookLevel,
+            quizTitle: quizData.quizTitle,
+            quizDescription: quizData.quizDescription,
+            questions: quizData.questions,
+            fromProfile: user,
+            toProfileId: challengeFriendId,
+            initiatorScore: score,
+            initiatorMaxScore: maxScore,
+            initiatorAnswers: selectedAnswers,
+          });
+          setActiveChallenge(challenge);
+          setChallengeSavedMessage(`Challenge sent to ${challenge.toName}. They can accept it from Friends anytime.`);
+        } catch (err) {
+          setChallengeSavedMessage(err instanceof Error ? err.message : "Unable to save the challenge.");
+        }
+      }
+      setEarnedPoints(0);
+      setSaved(true);
+      return;
+    }
+
+    const learningGoal = getProfileTestingGoal(user, parentApprovedQuiz);
     const pointsEarned = getPotentialEarnedPoints(user, score, maxScore, {
       bookTitle,
       difficulty,
@@ -429,7 +547,10 @@ function QuizPageContent() {
     setTimerActive(true);
   };
 
-  const reportQuestionIssue = (questionIndex: number, reason: "impossible" | "wrong_answer") => {
+  const reportQuestionIssue = (
+    questionIndex: number,
+    reason: "impossible" | "wrong_answer" | "too_hard" | "spoiler" | "not_from_book",
+  ) => {
     if (!quizData || !user) return;
 
     const question = quizData.questions[questionIndex];
@@ -447,7 +568,7 @@ function QuizPageContent() {
 
     setReportedQuestions((current) => ({
       ...current,
-      [`${questionIndex}-${reason}`]: reason === "impossible" ? "Marked impossible to answer." : "Marked wrong answer.",
+      [`${questionIndex}-${reason}`]: "Sent to the parent review queue.",
     }));
   };
 
@@ -470,6 +591,13 @@ function QuizPageContent() {
           <div className="kicker">Quiz Challenge</div>
           <h1>Reading Quest</h1>
           <p>Logged in as {user.name} - {getSpendablePoints(user)} points available</p>
+          {isFriendlyChallenge ? (
+            <p className="setting-description">
+              {activeChallenge
+                ? `Accepted challenge from ${activeChallenge.fromName}. Same quiz, no points.`
+                : `Friendly challenge against ${challengeFriendName}. You take the quiz first, then the same quiz is sent to them. No points will be awarded.`}
+            </p>
+          ) : null}
         </div>
         <div className="topbar-buttons">
           <Link href={homeHref}>
@@ -675,9 +803,9 @@ function QuizPageContent() {
                   <p>Great job! That answer is correct.</p>
                 ) : (
                   <p>
-                    Not quite. The correct answer was "{quizData.questions[currentQuestion].choices[
+                    Good try. The story says the expected answer was "{quizData.questions[currentQuestion].choices[
                       quizData.questions[currentQuestion].answerIndex
-                    ]}".
+                    ]}". You can look back at the book and try again later.
                   </p>
                 )}
                 <button type="button" onClick={handleNext}>
@@ -696,9 +824,17 @@ function QuizPageContent() {
             You scored <strong>{score}</strong> / {maxScore}.
           </p>
           <p>
-            You earned <strong>{earnedPoints}</strong> new points. You now have <strong>{getSpendablePoints(user)}</strong> points available.
+            {isFriendlyChallenge ? (
+              <>Friendly challenge complete. No points were awarded to your account.</>
+            ) : (
+              <>You earned <strong>{earnedPoints}</strong> new points. You now have <strong>{getSpendablePoints(user)}</strong> points available.</>
+            )}
           </p>
-          {score === maxScore && nextAllowedDifficulty ? (
+          {isFriendlyChallenge ? (
+            <div className="notice">
+              {challengeSavedMessage || `Compare your score with ${challengeFriendName} in Friends.`}
+            </div>
+          ) : score === maxScore && nextAllowedDifficulty ? (
             <div className="success-box">
               Perfect score! This book can be tested at {nextAllowedDifficulty} difficulty next.
             </div>
@@ -753,13 +889,33 @@ function QuizPageContent() {
                     >
                       Answer was wrong
                     </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => reportQuestionIssue(index, "too_hard")}
+                    >
+                      Too hard
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => reportQuestionIssue(index, "spoiler")}
+                    >
+                      Spoiler
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => reportQuestionIssue(index, "not_from_book")}
+                    >
+                      Not from this book
+                    </button>
                   </div>
-                  {reportedQuestions[`${index}-impossible`] ? (
-                    <div className="notice">{reportedQuestions[`${index}-impossible`]}</div>
-                  ) : null}
-                  {reportedQuestions[`${index}-wrong_answer`] ? (
-                    <div className="notice">{reportedQuestions[`${index}-wrong_answer`]}</div>
-                  ) : null}
+                  {["impossible", "wrong_answer", "too_hard", "spoiler", "not_from_book"].map((reason) =>
+                    reportedQuestions[`${index}-${reason}`] ? (
+                      <div key={reason} className="notice">{reportedQuestions[`${index}-${reason}`]}</div>
+                    ) : null,
+                  )}
                 </div>
               );
             })}

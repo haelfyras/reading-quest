@@ -14,6 +14,9 @@ import {
 } from "recharts";
 import {
   getCurrentProfile,
+  getBadges,
+  getEffortPoints,
+  getForgivingStreak,
   getLifetimePoints,
   getPointTimeline,
   getProfiles,
@@ -21,6 +24,12 @@ import {
   Profile,
   setCurrentUserId,
 } from "../../lib/user";
+import { getBookRecommendations as buildRecommendations } from "../../lib/recommendations";
+
+function recentTitle(profile: Profile | null) {
+  if (!profile || profile.quizzes.length === 0) return "";
+  return profile.quizzes.slice().sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].bookTitle;
+}
 
 type PrizeGoal = {
   id: string;
@@ -76,8 +85,20 @@ export default function HomePage() {
 
   const currentPoints = currentUser ? getSpendablePoints(currentUser) : 0;
   const lifetimePoints = currentUser ? getLifetimePoints(currentUser) : 0;
-  const nextPrizeGoal = prizeGoals.find((goal) => goal.pointsRequired > currentPoints);
+  const effortPoints = currentUser ? getEffortPoints(currentUser) : 0;
+  const streak = currentUser ? getForgivingStreak(currentUser) : { activeDaysThisWeek: 0, goalDays: 4, metThisWeek: false };
+  const badges = currentUser ? getBadges(currentUser) : [];
+  const sortedPrizeGoals = useMemo(
+    () => prizeGoals.slice().sort((a, b) => a.pointsRequired - b.pointsRequired),
+    [prizeGoals],
+  );
+  const nextPrizeGoal = sortedPrizeGoals.find((goal) => goal.pointsRequired > currentPoints);
   const pointsToNextPrize = nextPrizeGoal ? nextPrizeGoal.pointsRequired - currentPoints : 0;
+  const progressMax = Math.max(currentPoints, ...sortedPrizeGoals.map((goal) => goal.pointsRequired), 1);
+  const prizeProgressPercent = Math.min(100, (currentPoints / progressMax) * 100);
+  const reachedPrizeCount = sortedPrizeGoals.filter((goal) => currentPoints >= goal.pointsRequired).length;
+  const recommendationData = useMemo(() => buildRecommendations({ profile: currentUser, limit: 1 }), [currentUser]);
+  const currentlyReading = currentUser?.readingNow?.[0] ?? recentTitle(currentUser);
 
   const childLeaderboard = useMemo(() => {
     return getProfiles()
@@ -140,10 +161,96 @@ export default function HomePage() {
             <span>Child rank</span>
             <strong>{currentRank ? `#${currentRank}` : "--"}</strong>
           </div>
+          <div className="stat-tile">
+            <span>Effort points</span>
+            <strong>{effortPoints}</strong>
+          </div>
+          <div className="stat-tile">
+            <span>Reading days</span>
+            <strong>{streak.activeDaysThisWeek} / {streak.goalDays}</strong>
+            <span>this week</span>
+          </div>
         </div>
         <Link href="/quiz">
           <button type="button" className="primary-action">Take a Quiz</button>
         </Link>
+      </section>
+
+      <section className="home-section points-panel home-prize-journey" aria-labelledby="prize-journey-heading">
+        <div className="points-panel-header">
+          <div>
+            <h2 id="prize-journey-heading">Prize Journey</h2>
+            <p>
+              {currentPoints} points available
+              {nextPrizeGoal ? ` - ${pointsToNextPrize} points to ${nextPrizeGoal.name}` : " - all prize goals reached"}
+            </p>
+          </div>
+          <Link href="/prizes">
+            <button type="button" className="secondary">Prizes</button>
+          </Link>
+        </div>
+        <div
+          className="progress-track compact-progress"
+          role="progressbar"
+          aria-label="Prize progress"
+          aria-valuemin={0}
+          aria-valuemax={progressMax}
+          aria-valuenow={Math.min(currentPoints, progressMax)}
+        >
+          <div className="progress-fill" style={{ width: `${prizeProgressPercent}%` }} />
+        </div>
+        <div className="prize-milestone-list">
+          {sortedPrizeGoals.map((goal) => (
+            <span key={goal.id} className={currentPoints >= goal.pointsRequired ? "milestone-reached" : ""}>
+              {goal.name}: {goal.pointsRequired}
+            </span>
+          ))}
+        </div>
+        <p className="setting-description">
+          {reachedPrizeCount} of {sortedPrizeGoals.length} prize goals reached.
+        </p>
+      </section>
+
+      <section className="home-section reading-path" aria-labelledby="path-heading">
+        <div className="section-header-row">
+          <div>
+            <h2 id="path-heading">Reading Path</h2>
+            <p>{currentUser.avatarStyle || "Explorer"} mode is active.</p>
+          </div>
+          <Link href="/my-books">
+            <button type="button" className="secondary">My Books</button>
+          </Link>
+        </div>
+        <div className="path-steps">
+          <div className={`path-step ${currentlyReading ? "done" : ""}`}>
+            <strong>Read</strong>
+            <span>{currentlyReading ? currentlyReading : "Pick a book to read first"}</span>
+          </div>
+          <div className={`path-step ${currentUser.quizzes.length ? "done" : ""}`}>
+            <strong>Quiz</strong>
+            <span>{currentUser.quizzes.length ? `${currentUser.quizzes.length} completed` : "Take your first quiz"}</span>
+          </div>
+          <div className={`path-step ${currentPoints > 0 ? "done" : ""}`}>
+            <strong>Earn</strong>
+            <span>{currentPoints} points ready</span>
+          </div>
+          <div className={`path-step ${nextPrizeGoal ? "" : "done"}`}>
+            <strong>Goal</strong>
+            <span>{nextPrizeGoal ? `${pointsToNextPrize} to ${nextPrizeGoal.name}` : "All prize goals reached"}</span>
+          </div>
+        </div>
+        <div className="suggestion-card">
+          <strong>Suggested next read</strong>
+          <span>{recommendationData.suggestions[0] ?? "Add favorite books to unlock better picks."}</span>
+          {recommendationData.suggestions[0] ? <small>{recommendationData.reasons[recommendationData.suggestions[0]]}</small> : null}
+        </div>
+        {badges.length > 0 ? (
+          <div className="badge-row">
+            {badges.slice(0, 6).map((badge) => <span key={badge} className="badge-pill">{badge}</span>)}
+          </div>
+        ) : (
+          <p>Badges will appear as you read, quiz, improve, and recommend books.</p>
+        )}
       </section>
 
       <section className="home-section" aria-labelledby="progress-heading">
@@ -194,6 +301,7 @@ export default function HomePage() {
           <Link href="/my-books"><button type="button" className="menu-button primary">My Books</button></Link>
           <Link href="/leaderboards"><button type="button" className="menu-button secondary">Leaderboards</button></Link>
           <Link href="/prizes"><button type="button" className="menu-button accent">Prizes</button></Link>
+          <Link href="/friends"><button type="button" className="menu-button neutral">Friends</button></Link>
           <Link href="/settings"><button type="button" className="menu-button neutral">Settings</button></Link>
           <Link href="/profile"><button type="button" className="menu-button neutral">Profile</button></Link>
         </div>

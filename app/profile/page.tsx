@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   addFriendContact,
+  avatarStyles,
   childConfirmParentRequest,
   createParentVerificationRequest,
   enterParentVerificationCode,
@@ -22,6 +23,7 @@ export default function ProfilePage() {
   const [user, setUser] = useState<Profile | null>(null);
   const [realName, setRealName] = useState("");
   const [phone, setPhone] = useState("");
+  const [avatarStyle, setAvatarStyle] = useState("Explorer");
   const [profileMessage, setProfileMessage] = useState("");
   const [friendName, setFriendName] = useState("");
   const [friendEmail, setFriendEmail] = useState("");
@@ -41,6 +43,7 @@ export default function ProfilePage() {
     setUser(profile);
     setRealName(profile.realName || "");
     setPhone(profile.phone || "");
+    setAvatarStyle(profile.avatarStyle || "Explorer");
     setRequests(getParentVerificationRequests().filter((request) => (
       profile.isParent ? request.parentId === profile.id : request.childId === profile.id
     )));
@@ -56,6 +59,7 @@ export default function ProfilePage() {
     setUser(profile);
     setRealName(profile.realName || "");
     setPhone(profile.phone || "");
+    setAvatarStyle(profile.avatarStyle || "Explorer");
     setRequests(getParentVerificationRequests().filter((request) => (
       profile.isParent ? request.parentId === profile.id : request.childId === profile.id
     )));
@@ -64,7 +68,7 @@ export default function ProfilePage() {
 
   const saveProfile = () => {
     if (!user) return;
-    const updated = updateProfile({ ...user, realName: realName.trim(), phone: phone.trim() });
+    const updated = updateProfile({ ...user, realName: realName.trim(), phone: phone.trim(), avatarStyle });
     setUser(updated);
     setProfileMessage("Profile saved.");
   };
@@ -162,8 +166,20 @@ export default function ProfilePage() {
           <label htmlFor="phone">Phone number</label>
           <input id="phone" value={phone} onChange={(event) => setPhone(event.target.value)} />
         </div>
+        <div className="field">
+          <label htmlFor="avatarStyle">Reader identity</label>
+          <select id="avatarStyle" value={avatarStyle} onChange={(event) => setAvatarStyle(event.target.value)}>
+            {avatarStyles.map((style) => <option key={style} value={style}>{style}</option>)}
+          </select>
+        </div>
         <button type="button" onClick={saveProfile}>Save Profile</button>
         {profileMessage ? <div className="success-box">{profileMessage}</div> : null}
+      </section>
+
+      <section className="home-section" aria-labelledby="privacy-heading">
+        <h2 id="privacy-heading">Privacy</h2>
+        <p>Reading Quest uses your screen name for app progress and leaderboards. Your real name, phone number, email, friends, and family links are only for account and safety features.</p>
+        <p>Verified parents can see linked child quiz history, reading logs, prize requests, and reported quiz questions. Friend adding for child accounts stays locked until a verified parent allows it.</p>
       </section>
 
       <section className="home-section" aria-labelledby="friends-heading">

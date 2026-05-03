@@ -64,6 +64,78 @@ const defaultPrizes: Prize[] = [
   },
 ];
 
+const prizeSuggestionSets = [
+  [
+    {
+      name: "Screen Time",
+      description: "Extra 20 minutes of screen time",
+      pointsRequired: 10,
+      icon: "Time",
+      tier: "Cheap or free",
+    },
+    {
+      name: "New Book",
+      description: "Choose a new or used book",
+      pointsRequired: 10,
+      icon: "Book",
+      tier: "Tangible",
+    },
+    {
+      name: "Zoo Trip",
+      description: "Family trip to the zoo",
+      pointsRequired: 750,
+      icon: "Trip",
+      tier: "Larger reward",
+    },
+  ],
+  [
+    {
+      name: "Playground Time",
+      description: "Special trip to a favorite playground",
+      pointsRequired: 25,
+      icon: "Play",
+      tier: "Cheap or free",
+    },
+    {
+      name: "Small Toy",
+      description: "Pick a small toy within the family budget",
+      pointsRequired: 100,
+      icon: "Toy",
+      tier: "Tangible",
+    },
+    {
+      name: "Aquarium Trip",
+      description: "Family trip to an aquarium",
+      pointsRequired: 900,
+      icon: "Trip",
+      tier: "Larger reward",
+    },
+  ],
+  [
+    {
+      name: "Movie Night",
+      description: "Family movie night at home",
+      pointsRequired: 50,
+      icon: "Movie",
+      tier: "Cheap or free",
+    },
+    {
+      name: "New Game",
+      description: "Choose a board game, card game, or used video game",
+      pointsRequired: 250,
+      icon: "Game",
+      tier: "Tangible",
+    },
+    {
+      name: "Theme Park Day",
+      description: "A larger family outing or special day trip",
+      pointsRequired: 1500,
+      icon: "Trip",
+      tier: "Larger reward",
+    },
+  ],
+];
+
 export default function PrizesPage() {
   const router = useRouter();
   const [user, setUser] = useState<Profile | null>(null);
@@ -72,6 +144,7 @@ export default function PrizesPage() {
   const [selectedChildId, setSelectedChildId] = useState("");
   const [hasParentSetup, setHasParentSetup] = useState(false);
   const [claimMessage, setClaimMessage] = useState("");
+  const [suggestionSetIndex, setSuggestionSetIndex] = useState(0);
 
   useEffect(() => {
     const currentUser = getCurrentProfile();
@@ -128,6 +201,22 @@ export default function PrizesPage() {
         claimCount: 0,
       },
     ]);
+  };
+
+  const addSuggestedPrize = (suggestion: typeof prizeSuggestionSets[number][number]) => {
+    setPrizes((current) => [
+      ...current,
+      {
+        id: `suggestion-${Date.now()}-${current.length}`,
+        name: suggestion.name,
+        description: suggestion.description,
+        pointsRequired: Math.max(10, suggestion.pointsRequired),
+        icon: suggestion.icon,
+        claimed: false,
+        claimCount: 0,
+      },
+    ]);
+    setClaimMessage(`${suggestion.name} added. Save prizes when you are ready.`);
   };
 
   const saveParentPrizes = () => {
@@ -242,6 +331,34 @@ export default function PrizesPage() {
                     <option key={child.id} value={child.id}>{child.name}</option>
                   ))}
                 </select>
+              </div>
+              <div className="nested-section prize-suggestions" aria-labelledby="prize-suggestions-heading">
+                <div className="section-header-row">
+                  <div>
+                    <h3 id="prize-suggestions-heading">Prize Suggestions</h3>
+                    <p>Balanced reward ideas: one low-cost, one modest tangible reward, and one larger goal.</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => setSuggestionSetIndex((current) => (current + 1) % prizeSuggestionSets.length)}
+                  >
+                    New suggestions
+                  </button>
+                </div>
+                <div className="prize-suggestion-grid">
+                  {prizeSuggestionSets[suggestionSetIndex].map((suggestion) => (
+                    <div key={`${suggestion.tier}-${suggestion.name}`} className="prize-suggestion-card">
+                      <span className="badge-pill">{suggestion.tier}</span>
+                      <strong>{suggestion.name}</strong>
+                      <p>{suggestion.description}</p>
+                      <div className="prize-points">{suggestion.pointsRequired} points</div>
+                      <button type="button" className="secondary" onClick={() => addSuggestedPrize(suggestion)}>
+                        Add to prizes
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
               {prizes.map((prize, index) => (
                 <div key={prize.id} className="nested-section">

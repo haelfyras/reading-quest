@@ -9,6 +9,9 @@ import {
   getSpentPoints,
   Profile,
   setCurrentUserId,
+  subscriptionPlans,
+  SubscriptionTier,
+  updateProfile,
 } from "../../lib/user";
 
 export default function SettingsPage() {
@@ -16,11 +19,19 @@ export default function SettingsPage() {
   const [darkMode, setDarkMode] = useState(false);
   const [fontSize, setFontSize] = useState(16);
   const [theme, setTheme] = useState("fantasy");
+  const [leaderboardPrivate, setLeaderboardPrivate] = useState(false);
+  const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>("free");
+  const [settingsMessage, setSettingsMessage] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
 
   useEffect(() => {
     setUser(getCurrentProfile());
+    const profile = getCurrentProfile();
+    if (profile) {
+      setLeaderboardPrivate(Boolean(profile.leaderboardPrivate));
+      setSubscriptionTier(profile.subscriptionTier ?? "free");
+    }
 
     const savedDarkMode = localStorage.getItem("readingQuestDarkMode") === "true";
     const savedFontSize = parseInt(localStorage.getItem("readingQuestFontSize") || "16");
@@ -66,6 +77,17 @@ export default function SettingsPage() {
     const newTheme = event.target.value;
     setTheme(newTheme);
     applyTheme(newTheme);
+  };
+
+  const savePrivacyAndPlan = () => {
+    if (!user) return;
+    const updated = updateProfile({
+      ...user,
+      leaderboardPrivate,
+      subscriptionTier,
+    });
+    setUser(updated);
+    setSettingsMessage("Privacy and plan settings saved.");
   };
 
   const handleDeleteAccount = () => {
@@ -214,6 +236,45 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </div>
+
+        <div className="settings-section">
+          <h2>Privacy and Safety</h2>
+          <p className="setting-description">
+            Reading Quest stores profile progress, quiz history, reading logs, prize claims, friends, and family verification status on this device for this demo.
+            Friends can see the name you add for them. Verified parents can see linked child quiz history, reading logs, prize requests, and quiz reports.
+          </p>
+          <label className="setting-label">
+            <input
+              type="checkbox"
+              checked={leaderboardPrivate}
+              onChange={(event) => setLeaderboardPrivate(event.target.checked)}
+            />
+            <span>Keep me off public leaderboards</span>
+          </label>
+          <p className="setting-description">Private readers still keep points, badges, prizes, and personal progress.</p>
+        </div>
+
+        <div className="settings-section">
+          <h2>Plan</h2>
+          <p className="setting-description">The child experience stays ad-free. Paid plans are for parents, schools, libraries, and community reading programs.</p>
+          <div className="field">
+            <label htmlFor="subscriptionTier">Current plan</label>
+            <select id="subscriptionTier" value={subscriptionTier} onChange={(event) => setSubscriptionTier(event.target.value as SubscriptionTier)}>
+              {Object.entries(subscriptionPlans).map(([key, plan]) => (
+                <option key={key} value={key}>{plan.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="plan-card">
+            <strong>{subscriptionPlans[subscriptionTier].name}</strong>
+            <p>{subscriptionPlans[subscriptionTier].description}</p>
+            <ul className="small-list">
+              {subscriptionPlans[subscriptionTier].limits.map((limit) => <li key={limit}>{limit}</li>)}
+            </ul>
+          </div>
+          <button type="button" onClick={savePrivacyAndPlan}>Save privacy and plan</button>
+          {settingsMessage ? <div className="success-box">{settingsMessage}</div> : null}
         </div>
       </div>
     </main>

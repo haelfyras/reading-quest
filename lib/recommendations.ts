@@ -10,6 +10,7 @@ type RecommendationInput = {
 type RecommendationResult = {
   summary: string;
   suggestions: string[];
+  reasons: Record<string, string>;
   categories: string[];
   updatedLabel: string;
 };
@@ -98,17 +99,28 @@ const suggestionPools: Record<string, string[]> = {
     "The 13-Story Treehouse",
     "Diary of a Wimpy Kid",
   ],
+  "sports and games": [
+    "The Crossover",
+    "Roller Girl",
+    "The Million Dollar Shot",
+    "Ghost",
+    "STAT: Standing Tall and Talented",
+    "Game Changer",
+    "The Wild Soccer Bunch",
+    "Jake Maddox: Soccer Shootout",
+  ],
   "great stories": fallbackTitles,
 };
 
 const categoryPatterns: Array<[RegExp, string]> = [
-  [/\b(fantasy|dragon|wizard|magic|kingdom|princess|castle|spell|narnia|hobbit)\b/, "fantasy"],
-  [/\b(children|child|kids|picture book|beginner|early reader|little|mouse)\b/, "children's books"],
-  [/\b(mystery|detective|secret|clue|spy|investigation|case|escape)\b/, "mystery"],
+  [/\b(fantasy|dragon|wizard|magic|kingdom|princess(?:es)?|castle(?:s)?|spell|narnia|hobbit)\b/, "fantasy"],
+  [/\b(children|child|kids|kid|picture book|beginner|early reader|little|mouse|friendship|family|cozy|school)\b/, "children's books"],
+  [/\b(mystery|detective|secret|clue|spy|investigation|case|escape|spooky)\b/, "mystery"],
   [/\b(science fiction|sci[- ]?fi|space|robot|alien|future|planet|city of ember)\b/, "science fiction"],
-  [/\b(adventure|quest|journey|explorer|treasure|pirate|island|mountain)\b/, "adventure"],
+  [/\b(adventure|quest|journey|explorer|treasure|pirate(?:s)?|island|mountain|ocean)\b/, "adventure"],
   [/\b(animal|dog|cat|horse|mouse|cricket|swan|wolf|ivan|winn-dixie)\b/, "animals"],
   [/\b(funny|humor|silly|diary|wimpy|wayside|terrible|milk)\b/, "humor"],
+  [/\b(sports?|soccer|basketball|baseball|football|games?|gaming)\b/, "sports and games"],
 ];
 
 function normalizeTitle(title: string) {
@@ -145,7 +157,16 @@ export function getBookRecommendations({
 }: RecommendationInput): RecommendationResult {
   const favorites = favoriteBooks.length ? favoriteBooks : profile?.favoriteBooks ?? [];
   const quizTitles = profile?.quizzes.map((quiz) => quiz.bookTitle) ?? [];
-  const combinedText = [...favorites, ...quizTitles].join(" ").toLowerCase();
+  const preferenceAnswers = profile?.readingPreferences
+    ? [
+        profile.readingPreferences.storyKinds,
+        profile.readingPreferences.characters,
+        profile.readingPreferences.places,
+        profile.readingPreferences.feelings,
+        profile.readingPreferences.topics,
+      ].filter(Boolean)
+    : [];
+  const combinedText = [...favorites, ...quizTitles, ...preferenceAnswers].join(" ").toLowerCase();
   const excludedTitles = new Set([...favorites, ...quizTitles].map(normalizeTitle));
 
   const categories = new Set<string>();
@@ -175,11 +196,20 @@ export function getBookRecommendations({
     ? "your favorite books and quiz history"
     : favorites.length
       ? "your favorite books"
-      : "popular books for young readers";
+      : preferenceAnswers.length
+        ? "your reading taste quiz"
+        : "popular books for young readers";
+  const reasons = Object.fromEntries(
+    suggestions.map((title, index) => [
+      title,
+      `Suggested because ${sourceText} point toward ${categoryList[index % categoryList.length] ?? "great stories"}.`,
+    ]),
+  );
 
   return {
     summary: `Fresh picks based on ${sourceText}. Today's list leans toward ${interestText}.`,
     suggestions,
+    reasons,
     categories: categoryList,
     updatedLabel: "Refreshes daily",
   };

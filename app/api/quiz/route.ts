@@ -9,10 +9,13 @@ const difficultyMap = {
 };
 
 const goalMap: Record<string, string> = {
-  habit_formation: "encourage consistent reading behavior",
-  basic_comprehension: "focus on understanding plot and characters",
-  deeper_understanding: "explore motivations, meaning, and inference",
-  literary_analysis: "examine themes, symbolism, and author intent",
+  habit_formation: "Habit Forming: prioritize confidence, completion, and encouraging the child to read more. Ask approachable questions about obvious story moments, main characters, and broad events. Avoid trick questions.",
+  basic_recollection: "Basic Recollection: focus on names, places, objects, characters, settings, and clear events from the story.",
+  basic_comprehension: "Basic Recollection: focus on names, places, objects, characters, settings, and clear events from the story.",
+  further_understanding: "Further Understanding: focus on why characters did something, why they went somewhere, cause and effect, motivations, and how actions connect to story outcomes.",
+  deeper_understanding: "Further Understanding: focus on why characters did something, why they went somewhere, cause and effect, motivations, and how actions connect to story outcomes.",
+  full_understanding: "Full Understanding: focus on the bigger picture of the work, including themes, lessons, symbolism, character growth, social context, and how events or choices support the meaning of the book.",
+  literary_analysis: "Full Understanding: focus on the bigger picture of the work, including themes, lessons, symbolism, character growth, social context, and how events or choices support the meaning of the book.",
 };
 
 const prompt = (
@@ -22,9 +25,9 @@ const prompt = (
   learningGoal: string,
   questionCount: number,
 ) => {
-  const goalDescription = goalMap[learningGoal] || goalMap.basic_comprehension;
+  const goalDescription = goalMap[learningGoal] || goalMap.basic_recollection;
 
-  return `Create a JSON object with these fields:\n- quizTitle\n- quizDescription\n- questions (array of exactly ${questionCount} objects)\nEach question object must include:\n- question\n- choices (array of exactly 4 strings)\n- answerIndex (0-based index of the correct choice)\n- answerText (the exact correct choice text)\n- explanation (one short sentence explaining why the answer is correct)\n\nAccuracy rules:\n- answerIndex MUST point to the same choice as answerText.\n- The correct answer must be unambiguous and must appear exactly in choices[answerIndex].\n- Do not ask impossible-to-answer questions, questions that require obscure trivia, or questions with multiple reasonable answers.\n- For easy quizzes, ask only simple questions about the title, main characters, obvious events, or clearly known book facts.\n- If asking a counting question, the correct choice must be a number, not one of the counted items.\n- If you are not certain of the answer, choose a different question.\n\nUse simple, child-friendly language for ages 7-12. Make the quiz feel unique. Do not add any extra text outside the JSON object.\n\nThe book title is: "${bookTitle}". The difficulty level is ${difficulty}, the reading level is ${bookLevel}, and the learning goal is ${goalDescription}.`;
+  return `Create a JSON object with these fields:\n- quizTitle\n- quizDescription\n- questions (array of exactly ${questionCount} objects)\nEach question object must include:\n- question\n- choices (array of exactly 4 strings)\n- answerIndex (0-based index of the correct choice)\n- answerText (the exact correct choice text)\n- explanation (one short sentence explaining why the answer is correct)\n\nAccuracy rules:\n- answerIndex MUST point to the same choice as answerText.\n- The correct answer must be unambiguous and must appear exactly in choices[answerIndex].\n- Do not ask impossible-to-answer questions, questions that require obscure trivia, or questions with multiple reasonable answers.\n- If asking a counting question, the correct choice must be a number, not one of the counted items.\n- If you are not certain of the answer, choose a different question.\n\nDifficulty rules:\n- Easy: ask simple questions about the title, main characters, obvious events, or clearly known book facts. Distractors may be easier, but should still be book/genre appropriate when possible.\n- Medium: ask questions that require remembering story details, character roles, settings, conflicts, motivations, or cause and effect. Do NOT ask overly broad questions like "Who is the main character?" unless all answer choices are plausible characters from the same book or series.\n- Hard: ask questions that require inference, theme, symbolism, political/social context, subtle motivations, character relationships, consequences, or comparing events. Avoid simple recall questions.\n\nTesting level rules:\n- The selected testing level is more important than making questions feel academically advanced.\n- Habit Forming should feel inviting and confidence-building even on longer quizzes.\n- Basic Recollection should mostly test concrete story facts.\n- Further Understanding should ask more "why" and cause/effect questions.\n- Full Understanding should ask about themes, meaning, growth, and bigger-picture interpretation while staying answerable from the book.\n\nAnswer choice quality rules:\n- All 4 choices must be plausible to a reader who knows the book's genre or world.\n- For medium and hard quizzes, every incorrect choice must be a believable distractor from the same book, same series, same author, or same kind of literary role. For example, on Dune, incorrect choices should be names like Duke Leto, Lady Jessica, Chani, Baron Harkonnen, Stilgar, Gurney Halleck, Duncan Idaho, or similar Dune-relevant concepts, not unrelated pop-culture characters.\n- Never use joke answers or obviously unrelated choices such as Luke Skywalker, Darth Vader, Homer Simpson, Harry Potter, SpongeBob, or other cross-franchise characters unless that character truly appears in the book.\n- For hard quizzes, avoid answer choices where only one option is obviously from the book.\n- Choices should be similar in length and style so the correct answer is not visually obvious.\n\nUse simple, child-friendly language for ages 7-12. Make the quiz feel unique. Do not add any extra text outside the JSON object.\n\nThe book title is: "${bookTitle}". The difficulty level is ${difficulty}, the reading level is ${bookLevel}, and the testing level is ${goalDescription}.`;
 };
 
 type GeneratedQuestion = {
@@ -144,7 +147,7 @@ export async function POST(request: Request) {
   const requestedDifficulty = String(body.difficulty || "easy").toLowerCase();
   const difficulty = difficultyMap[requestedDifficulty as keyof typeof difficultyMap] || "easy";
   const bookLevel = String(body.bookLevel || "intermediate");
-  const learningGoal = String(body.learningGoal || "basic_comprehension");
+  const learningGoal = String(body.learningGoal || "basic_recollection");
   const questionCount = getQuestionCount(difficulty);
 
   if (!bookTitle) {
@@ -156,7 +159,7 @@ export async function POST(request: Request) {
     messages: [
       {
         role: "system",
-        content: "You are a friendly teacher creating child-friendly quizzes for ages 7-12.",
+        content: "You are a careful reading teacher and literary quiz writer. You make accurate child-friendly quizzes with plausible answer choices that match the requested difficulty.",
       },
       {
         role: "user",

@@ -11,6 +11,28 @@ export type QuizHistory = {
   learningGoal: string;
 };
 
+export type BookAccessType = "owned" | "library" | "audiobook" | "ebook" | "read_aloud" | "borrowed";
+
+export type ReadingLog = {
+  id: string;
+  bookTitle: string;
+  date: string;
+  minutes: number;
+  chaptersFinished: number;
+  accessType: BookAccessType;
+  assisted: boolean;
+  effortPoints: number;
+};
+
+export type ReadingPreferences = {
+  storyKinds: string;
+  characters: string;
+  places: string;
+  feelings: string;
+  topics: string;
+  updatedAt?: string;
+};
+
 export type PrizeRedemption = {
   id: string;
   prizeId: string;
@@ -39,13 +61,48 @@ export type QuizIssueReport = {
   choices: string[];
   answerIndex: number;
   selectedChoice: number;
-  reason: "impossible" | "wrong_answer";
+  reason: "impossible" | "wrong_answer" | "too_hard" | "spoiler" | "not_from_book";
+  status?: "open" | "accepted" | "dismissed";
+  parentNote?: string;
   date: string;
+};
+
+export type ChallengeQuizQuestion = {
+  question: string;
+  choices: string[];
+  answerIndex: number;
+  answerText?: string;
+  explanation?: string;
+};
+
+export type ReadingChallenge = {
+  id: string;
+  bookTitle: string;
+  difficulty: string;
+  bookLevel: string;
+  quizTitle: string;
+  quizDescription: string;
+  questions: ChallengeQuizQuestion[];
+  fromProfileId: string;
+  fromName: string;
+  toProfileId: string;
+  toName: string;
+  initiatorScore: number;
+  initiatorMaxScore: number;
+  initiatorAnswers: number[];
+  responderScore?: number;
+  responderMaxScore?: number;
+  responderAnswers?: number[];
+  status: "pending" | "completed";
+  createdAt: string;
+  completedAt?: string;
 };
 
 export type FriendContact = {
   id: string;
   name: string;
+  profileId?: string;
+  profileCode?: string;
   email?: string;
   phone?: string;
   date: string;
@@ -67,6 +124,23 @@ export type ParentVerificationRequest = {
   expiresAt?: string;
 };
 
+export type ParentControls = {
+  prizeApprovalRequired: boolean;
+  allowQuizRetakes: boolean;
+  maxGoalDifficulty: "easy" | "medium" | "hard";
+  requireAiQuizReview: boolean;
+  allowLocationLookup: boolean;
+  testingLevel: TestingLevel;
+};
+
+export type SubscriptionTier = "free" | "premium" | "school" | "library";
+
+export type TestingLevel =
+  | "habit_formation"
+  | "basic_recollection"
+  | "further_understanding"
+  | "full_understanding";
+
 export type Profile = {
   id: string;
   name: string;
@@ -75,12 +149,23 @@ export type Profile = {
   phone?: string;
   friends?: FriendContact[];
   canAddFriends?: boolean;
+  profileCode?: string;
+  friendProfileIds?: string[];
   points: number;
   lifetimePoints?: number;
   prizeRedemptions?: PrizeRedemption[];
   quizzes: QuizHistory[];
   learningGoal?: string;
   favoriteBooks?: string[];
+  readingPreferences?: ReadingPreferences;
+  readingNow?: string[];
+  readingLogs?: ReadingLog[];
+  bookAccess?: Record<string, BookAccessType>;
+  avatarStyle?: string;
+  badges?: string[];
+  parentControls?: ParentControls;
+  leaderboardPrivate?: boolean;
+  subscriptionTier?: SubscriptionTier;
   isParent?: boolean;
   email?: string;
   verified?: boolean;
@@ -185,6 +270,41 @@ export function getRetakeStatus(profile: Profile, bookTitle: string): RetakeStat
 const STORAGE_KEY = "readingQuestProfiles";
 const CURRENT_USER_KEY = "readingQuestCurrentUserId";
 const PARENT_REQUESTS_KEY = "readingQuestParentVerificationRequests";
+const READING_CHALLENGES_KEY = "readingQuestReadingChallenges";
+
+export const defaultParentControls: ParentControls = {
+  prizeApprovalRequired: true,
+  allowQuizRetakes: true,
+  maxGoalDifficulty: "hard",
+  requireAiQuizReview: false,
+  allowLocationLookup: false,
+  testingLevel: "basic_recollection",
+};
+
+export const avatarStyles = ["Explorer", "Story Mage", "Space Reader", "Library Hero", "Mystery Solver"] as const;
+
+export const subscriptionPlans: Record<SubscriptionTier, { name: string; description: string; limits: string[] }> = {
+  free: {
+    name: "Free Family",
+    description: "A trust-first starter plan for home reading.",
+    limits: ["1 child profile", "Basic quizzes", "Basic prizes", "Daily recommendations"],
+  },
+  premium: {
+    name: "Parent Premium",
+    description: "More family tools without putting ads in front of kids.",
+    limits: ["More child profiles", "Advanced reports", "Custom prize systems", "Printable reading summaries"],
+  },
+  school: {
+    name: "School / Classroom",
+    description: "Designed for teachers, reading groups, and exportable progress.",
+    limits: ["Classroom leaderboards", "Reading groups", "Assignment support", "Progress exports"],
+  },
+  library: {
+    name: "Library Partner",
+    description: "Supports community reading programs and sponsored challenges.",
+    limits: ["Summer reading challenges", "Library book discovery", "Local prize sponsors", "No child-facing ads"],
+  },
+};
 
 function readStorage<T>(key: string): T | null {
   if (typeof window === "undefined") {
@@ -217,10 +337,21 @@ const defaultProfiles: Profile[] = [
     prizeRedemptions: [],
     quizzes: [],
     favoriteBooks: [],
+    readingPreferences: undefined,
+    readingNow: [],
+    readingLogs: [],
+    bookAccess: {},
+    avatarStyle: "Explorer",
+    badges: [],
+    parentControls: defaultParentControls,
+    leaderboardPrivate: false,
+    subscriptionTier: "free",
     isParent: false,
     verified: true,
     linkedChildren: [],
     canAddFriends: false,
+    profileCode: "RQ-TEST1",
+    friendProfileIds: [],
     friends: [],
   },
 ];
@@ -370,6 +501,11 @@ export function getPointTimeline(profile: Profile) {
       earned: 0,
       spent: redemption.pointsSpent,
     })),
+    ...(profile.readingLogs ?? []).map((log) => ({
+      date: log.date,
+      earned: log.effortPoints,
+      spent: 0,
+    })),
   ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   let earned = 0;
@@ -389,6 +525,105 @@ export function getPointTimeline(profile: Profile) {
   });
 }
 
+export function getEffortPoints(profile: Profile) {
+  return profile.readingLogs?.reduce((total, log) => total + log.effortPoints, 0) ?? 0;
+}
+
+export function getWeeklyEffort(profile: Profile) {
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  return profile.readingLogs
+    ?.filter((log) => new Date(log.date).getTime() >= weekAgo)
+    .reduce((total, log) => total + log.effortPoints, 0) ?? 0;
+}
+
+export function getForgivingStreak(profile: Profile) {
+  const readingDays = new Set(
+    (profile.readingLogs ?? []).map((log) => new Date(log.date).toDateString()),
+  );
+  const today = new Date();
+  let activeDaysThisWeek = 0;
+
+  for (let offset = 0; offset < 7; offset += 1) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - offset);
+    if (readingDays.has(date.toDateString())) {
+      activeDaysThisWeek += 1;
+    }
+  }
+
+  return {
+    activeDaysThisWeek,
+    goalDays: 4,
+    metThisWeek: activeDaysThisWeek >= 4,
+  };
+}
+
+export function getImprovementScore(profile: Profile) {
+  const byBook = new Map<string, QuizHistory[]>();
+  for (const quiz of profile.quizzes) {
+    const key = `${quiz.bookTitle.trim().toLowerCase()}-${quiz.difficulty}`;
+    byBook.set(key, [...(byBook.get(key) ?? []), quiz]);
+  }
+
+  let improvement = 0;
+  byBook.forEach((quizzes) => {
+    const sorted = quizzes.slice().sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    if (sorted.length < 2) return;
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    improvement += Math.max(0, last.score - first.score);
+  });
+
+  return improvement;
+}
+
+export function getGenreExplorerScore(profile: Profile) {
+  const categories = new Set<string>();
+  const text = [...(profile.favoriteBooks ?? []), ...profile.quizzes.map((quiz) => quiz.bookTitle)].join(" ").toLowerCase();
+  const checks: Array<[RegExp, string]> = [
+    [/\b(dragon|magic|fantasy|narnia|hobbit)\b/, "fantasy"],
+    [/\b(space|robot|future|alien|science)\b/, "sci-fi"],
+    [/\b(mystery|secret|clue|detective)\b/, "mystery"],
+    [/\b(dog|cat|mouse|horse|animal|fish)\b/, "animals"],
+    [/\b(funny|diary|silly|humor)\b/, "humor"],
+    [/\b(history|biography|true|science)\b/, "nonfiction"],
+  ];
+
+  for (const [pattern, category] of checks) {
+    if (pattern.test(text)) {
+      categories.add(category);
+    }
+  }
+
+  return categories.size;
+}
+
+export function getBadges(profile: Profile) {
+  const badges = new Set(profile.badges ?? []);
+  if (profile.quizzes.length > 0) badges.add("Finished first quiz");
+  if (profile.quizzes.some((quiz) => quiz.difficulty !== "easy")) badges.add("Tried a harder book");
+  if (getGenreExplorerScore(profile) >= 3) badges.add("Genre explorer");
+  if (getImprovementScore(profile) > 0) badges.add("Re-read and improved");
+  if (getReviewsForProfile(profile.id).length > 0) badges.add("Helped recommend a book");
+  if (getForgivingStreak(profile).metThisWeek) badges.add("Reading week complete");
+  return Array.from(badges);
+}
+
+export function getLeaderboardScore(profile: Profile, kind: "lifetime" | "weeklyEffort" | "improvement" | "genreExplorer" | "streak") {
+  switch (kind) {
+    case "weeklyEffort":
+      return getWeeklyEffort(profile);
+    case "improvement":
+      return getImprovementScore(profile);
+    case "genreExplorer":
+      return getGenreExplorerScore(profile);
+    case "streak":
+      return getForgivingStreak(profile).activeDaysThisWeek;
+    default:
+      return getLifetimePoints(profile);
+  }
+}
+
 function generateId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -399,6 +634,16 @@ function generateId() {
 
 function generateCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function generateProfileCode(name: string) {
+  const prefix = name.replace(/[^a-z0-9]/gi, "").slice(0, 4).toUpperCase().padEnd(4, "RQST");
+  const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `RQ-${prefix}-${suffix}`;
+}
+
+function normalizeProfileCode(code: string) {
+  return code.trim().toUpperCase().replace(/\s+/g, "-");
 }
 
 function isExpired(request: ParentVerificationRequest) {
@@ -578,6 +823,218 @@ export function addFriendContact(profile: Profile, details: { name: string; emai
   return updateProfile(updated);
 }
 
+export function ensureProfileCode(profile: Profile) {
+  if (profile.profileCode) {
+    return profile;
+  }
+
+  const existingCodes = new Set(getProfiles().map((item) => item.profileCode).filter(Boolean));
+  let nextCode = generateProfileCode(profile.name);
+  while (existingCodes.has(nextCode)) {
+    nextCode = generateProfileCode(profile.name);
+  }
+
+  return updateProfile({ ...profile, profileCode: nextCode });
+}
+
+export function regenerateProfileCode(profile: Profile) {
+  const existingCodes = new Set(
+    getProfiles()
+      .filter((item) => item.id !== profile.id)
+      .map((item) => item.profileCode)
+      .filter(Boolean),
+  );
+  let nextCode = generateProfileCode(profile.name);
+  while (existingCodes.has(nextCode)) {
+    nextCode = generateProfileCode(profile.name);
+  }
+  return updateProfile({ ...profile, profileCode: nextCode });
+}
+
+export function addFriendByProfileCode(profile: Profile, code: string) {
+  if (!profile.isParent && !profile.canAddFriends) {
+    throw new Error("Ask your parent to turn on code sharing first.");
+  }
+
+  const normalizedCode = normalizeProfileCode(code);
+  const profiles = getProfiles();
+  const currentWithCode = ensureProfileCode(profile);
+  const friend = profiles.find((item) => normalizeProfileCode(item.profileCode ?? "") === normalizedCode);
+
+  if (!friend) {
+    throw new Error("No reader was found with that profile code.");
+  }
+
+  if (friend.id === profile.id) {
+    throw new Error("That is your own profile code.");
+  }
+
+  if (!friend.isParent && !friend.canAddFriends) {
+    throw new Error("That child profile needs parent permission before connecting.");
+  }
+
+  const friendIds = new Set(currentWithCode.friendProfileIds ?? []);
+  if (friendIds.has(friend.id)) {
+    throw new Error("That reader is already your friend.");
+  }
+  friendIds.add(friend.id);
+
+  const friendFriendIds = new Set(friend.friendProfileIds ?? []);
+  friendFriendIds.add(profile.id);
+
+  const nextProfiles = getProfiles().map((item) => {
+    if (item.id === currentWithCode.id) {
+      return {
+        ...currentWithCode,
+        friendProfileIds: Array.from(friendIds),
+        friends: [
+          ...(currentWithCode.friends ?? []),
+          {
+            id: generateId(),
+            name: friend.realName || friend.name,
+            profileId: friend.id,
+            profileCode: friend.profileCode,
+            date: new Date().toISOString(),
+          },
+        ],
+      };
+    }
+
+    if (item.id === friend.id) {
+      return {
+        ...friend,
+        friendProfileIds: Array.from(friendFriendIds),
+        friends: [
+          ...(friend.friends ?? []),
+          {
+            id: generateId(),
+            name: currentWithCode.realName || currentWithCode.name,
+            profileId: currentWithCode.id,
+            profileCode: currentWithCode.profileCode,
+            date: new Date().toISOString(),
+          },
+        ],
+      };
+    }
+
+    return item;
+  });
+
+  saveProfiles(nextProfiles);
+  return nextProfiles.find((item) => item.id === currentWithCode.id) ?? currentWithCode;
+}
+
+export function getFriendProfiles(profile: Profile) {
+  const friendIds = new Set([
+    ...(profile.friendProfileIds ?? []),
+    ...(profile.friends ?? []).map((friend) => friend.profileId).filter(Boolean) as string[],
+  ]);
+  return getProfiles().filter((item) => friendIds.has(item.id));
+}
+
+export function getBookCompetitionRows(profile: Profile) {
+  const friends = getFriendProfiles(profile);
+  return friends.flatMap((friend) => {
+    const friendQuizzesByBook = new Map<string, QuizHistory>();
+    friend.quizzes.forEach((quiz) => {
+      const key = quiz.bookTitle.trim().toLowerCase();
+      const previous = friendQuizzesByBook.get(key);
+      if (!previous || quiz.score > previous.score) {
+        friendQuizzesByBook.set(key, quiz);
+      }
+    });
+
+    return profile.quizzes
+      .filter((quiz) => friendQuizzesByBook.has(quiz.bookTitle.trim().toLowerCase()))
+      .map((quiz) => {
+        const friendQuiz = friendQuizzesByBook.get(quiz.bookTitle.trim().toLowerCase());
+        return {
+          friend,
+          bookTitle: quiz.bookTitle,
+          difficulty: quiz.difficulty,
+          yourScore: quiz.score,
+          yourMaxScore: quiz.maxScore,
+          friendScore: friendQuiz?.score ?? 0,
+          friendMaxScore: friendQuiz?.maxScore ?? quiz.maxScore,
+        };
+      });
+  });
+}
+
+export function getReadingChallenges(): ReadingChallenge[] {
+  return readStorage<ReadingChallenge[]>(READING_CHALLENGES_KEY) ?? [];
+}
+
+export function saveReadingChallenges(challenges: ReadingChallenge[]) {
+  writeStorage(READING_CHALLENGES_KEY, challenges);
+}
+
+export function createReadingChallenge(details: {
+  bookTitle: string;
+  difficulty: string;
+  bookLevel: string;
+  quizTitle: string;
+  quizDescription: string;
+  questions: ChallengeQuizQuestion[];
+  fromProfile: Profile;
+  toProfileId: string;
+  initiatorScore: number;
+  initiatorMaxScore: number;
+  initiatorAnswers: number[];
+}) {
+  const friend = getProfiles().find((profile) => profile.id === details.toProfileId);
+  if (!friend) {
+    throw new Error("Challenge friend was not found.");
+  }
+
+  const challenge: ReadingChallenge = {
+    id: generateId(),
+    bookTitle: details.bookTitle,
+    difficulty: details.difficulty,
+    bookLevel: details.bookLevel,
+    quizTitle: details.quizTitle,
+    quizDescription: details.quizDescription,
+    questions: details.questions,
+    fromProfileId: details.fromProfile.id,
+    fromName: details.fromProfile.realName || details.fromProfile.name,
+    toProfileId: friend.id,
+    toName: friend.realName || friend.name,
+    initiatorScore: details.initiatorScore,
+    initiatorMaxScore: details.initiatorMaxScore,
+    initiatorAnswers: details.initiatorAnswers,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+  };
+
+  saveReadingChallenges([challenge, ...getReadingChallenges()]);
+  return challenge;
+}
+
+export function completeReadingChallenge(
+  challengeId: string,
+  details: {
+    responderScore: number;
+    responderMaxScore: number;
+    responderAnswers: number[];
+  },
+) {
+  const challenges = getReadingChallenges();
+  const next = challenges.map((challenge) =>
+    challenge.id === challengeId
+      ? {
+          ...challenge,
+          responderScore: details.responderScore,
+          responderMaxScore: details.responderMaxScore,
+          responderAnswers: details.responderAnswers,
+          status: "completed" as const,
+          completedAt: new Date().toISOString(),
+        }
+      : challenge,
+  );
+  saveReadingChallenges(next);
+  return next.find((challenge) => challenge.id === challengeId) ?? null;
+}
+
 export function verifyProfile(name: string, password: string): Profile | null {
   const profile = getProfiles().find((item) => {
     const identifier = item.isParent ? item.email ?? "" : item.name;
@@ -618,11 +1075,22 @@ export function createProfile(name: string, password: string, isParent = false, 
     prizeRedemptions: [],
     quizzes: [],
     favoriteBooks: [],
+    readingPreferences: undefined,
+    readingNow: [],
+    readingLogs: [],
+    bookAccess: {},
+    avatarStyle: isParent ? "Library Hero" : "Explorer",
+    badges: [],
+    parentControls: defaultParentControls,
+    leaderboardPrivate: false,
+    subscriptionTier: "free",
     isParent,
     email: isParent ? email : undefined,
     verified: !isParent, // children are auto-verified, parents need email verification
     linkedChildren: [],
     canAddFriends: isParent,
+    profileCode: generateProfileCode(trimmedName),
+    friendProfileIds: [],
     friends: [],
   };
 
@@ -656,25 +1124,86 @@ export function addQuizResult(
 
   const earnedPoints = getPotentialEarnedPoints(current, score, maxScore, details);
 
+  const quizEntry: QuizHistory = {
+    bookTitle: details.bookTitle,
+    date: new Date().toISOString(),
+    score,
+    maxScore,
+    earnedPoints,
+    difficulty: details.difficulty,
+    bookLevel: details.bookLevel,
+    learningGoal: details.learningGoal,
+  };
+
   const updated: Profile = {
     ...current,
     points: getSpendablePoints(current) + earnedPoints,
     lifetimePoints: getLifetimePoints(current) + earnedPoints,
     prizeRedemptions: current.prizeRedemptions ?? [],
-    quizzes: [
-      ...current.quizzes,
-      {
-        bookTitle: details.bookTitle,
-        date: new Date().toISOString(),
-        score,
-        maxScore,
-        earnedPoints,
-        difficulty: details.difficulty,
-        bookLevel: details.bookLevel,
-        learningGoal: details.learningGoal,
-      },
-    ],
+    quizzes: [...current.quizzes, quizEntry],
   };
+  updated.badges = getBadges(updated);
+
+  return updateProfile(updated);
+}
+
+export function saveReadingNow(profile: Profile, books: string[]) {
+  const nextBooks = books.map((book) => book.trim()).filter(Boolean).slice(0, 6);
+  return updateProfile({
+    ...profile,
+    readingNow: nextBooks,
+  });
+}
+
+export function saveBookAccess(profile: Profile, bookTitle: string, accessType: BookAccessType) {
+  const title = bookTitle.trim();
+  if (!title) return profile;
+  return updateProfile({
+    ...profile,
+    bookAccess: {
+      ...(profile.bookAccess ?? {}),
+      [title]: accessType,
+    },
+  });
+}
+
+export function addReadingLog(details: {
+  bookTitle: string;
+  minutes: number;
+  chaptersFinished: number;
+  accessType: BookAccessType;
+  assisted: boolean;
+}): Profile | null {
+  const current = getCurrentProfile();
+  if (!current) return null;
+
+  const minutes = Math.max(0, Math.min(240, Math.round(details.minutes)));
+  const chaptersFinished = Math.max(0, Math.min(20, Math.round(details.chaptersFinished)));
+  const effortPoints = Math.min(20, Math.floor(minutes / 10) + chaptersFinished * 2 + (details.assisted ? 1 : 0));
+
+  const log: ReadingLog = {
+    id: generateId(),
+    bookTitle: details.bookTitle.trim(),
+    date: new Date().toISOString(),
+    minutes,
+    chaptersFinished,
+    accessType: details.accessType,
+    assisted: details.assisted,
+    effortPoints,
+  };
+
+  const updated: Profile = {
+    ...current,
+    readingNow: Array.from(new Set([...(current.readingNow ?? []), log.bookTitle])).slice(0, 6),
+    bookAccess: {
+      ...(current.bookAccess ?? {}),
+      [log.bookTitle]: log.accessType,
+    },
+    readingLogs: [...(current.readingLogs ?? []), log],
+    points: getSpendablePoints(current) + effortPoints,
+    lifetimePoints: getLifetimePoints(current) + effortPoints,
+  };
+  updated.badges = getBadges(updated);
 
   return updateProfile(updated);
 }
@@ -748,9 +1277,24 @@ export function addQuizIssueReport(report: Omit<QuizIssueReport, "id" | "date">)
   const next: QuizIssueReport = {
     ...report,
     id: generateId(),
+    status: report.status ?? "open",
     date: new Date().toISOString(),
   };
   writeStorage("readingQuestQuizIssueReports", [...reports, next]);
   return next;
+}
+
+export function updateQuizIssueReport(
+  reportId: string,
+  updates: { status: "open" | "accepted" | "dismissed"; parentNote?: string },
+) {
+  const reports = getQuizIssueReports();
+  const next = reports.map((report) =>
+    report.id === reportId
+      ? { ...report, status: updates.status, parentNote: updates.parentNote ?? report.parentNote }
+      : report,
+  );
+  writeStorage("readingQuestQuizIssueReports", next);
+  return next.find((report) => report.id === reportId) ?? null;
 }
 
