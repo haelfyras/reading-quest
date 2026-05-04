@@ -4,14 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   getCurrentProfile,
-  getLeaderboardScore,
   getLifetimePoints,
   getProfiles,
   Profile,
 } from "../../lib/user";
 
 type LeaderboardKind = "children" | "adults" | "all";
-type LeaderboardMetric = "lifetime" | "weeklyEffort" | "improvement" | "genreExplorer" | "streak";
 
 export default function LeaderboardsPage() {
   const [leaderboards, setLeaderboards] = useState<Record<LeaderboardKind, Profile[]>>({
@@ -20,20 +18,19 @@ export default function LeaderboardsPage() {
     all: [],
   });
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
-  const [metric, setMetric] = useState<LeaderboardMetric>("lifetime");
 
   useEffect(() => {
     const profiles = getProfiles();
     const publicProfiles = profiles.filter((profile) => !profile.leaderboardPrivate || profile.id === getCurrentProfile()?.id);
-    const byMetric = (a: Profile, b: Profile) => getLeaderboardScore(b, metric) - getLeaderboardScore(a, metric);
+    const byLifetimePoints = (a: Profile, b: Profile) => getLifetimePoints(b) - getLifetimePoints(a);
 
     setLeaderboards({
-      children: publicProfiles.filter((profile) => !profile.isParent).slice().sort(byMetric),
-      adults: publicProfiles.filter((profile) => profile.isParent).slice().sort(byMetric),
-      all: publicProfiles.slice().sort(byMetric),
+      children: publicProfiles.filter((profile) => !profile.isParent).slice().sort(byLifetimePoints),
+      adults: publicProfiles.filter((profile) => profile.isParent).slice().sort(byLifetimePoints),
+      all: publicProfiles.slice().sort(byLifetimePoints),
     });
     setCurrentUser(getCurrentProfile());
-  }, [metric]);
+  }, []);
 
   const getRankIcon = (rank: number) => {
     switch (rank) {
@@ -69,7 +66,7 @@ export default function LeaderboardsPage() {
         {currentUser && currentRank > 0 ? (
           <div className="current-user-rank">
             <h3>Your Rank: {getRankIcon(currentRank)}</h3>
-            <p>Your score on this board is {getLeaderboardScore(currentUser, metric)}.</p>
+            <p>Your score on this board is {getLifetimePoints(currentUser)} lifetime points.</p>
           </div>
         ) : null}
 
@@ -87,7 +84,7 @@ export default function LeaderboardsPage() {
                 <div className="user-info">
                   <div className="name">{user.name}</div>
                   <div className="stats">
-                    {getLeaderboardScore(user, metric)} {metricLabel(metric).toLowerCase()} - {user.quizzes.length} quizzes
+                    {getLifetimePoints(user)} lifetime points - {user.quizzes.length} quizzes
                   </div>
                 </div>
                 <div className="you-badge">{user.isParent ? "ADULT" : "CHILD"}</div>
@@ -121,29 +118,6 @@ export default function LeaderboardsPage() {
         </Link>
       </div>
 
-      <section className="home-section" aria-labelledby="fair-ranks-heading">
-        <h2 id="fair-ranks-heading">Fair Ranking Mode</h2>
-        <p>Choose the kind of progress you want to celebrate. Total points are only one way to read well.</p>
-        <div className="segmented-control">
-          {([
-            ["lifetime", "Total Points"],
-            ["weeklyEffort", "Weekly Effort"],
-            ["improvement", "Most Improved"],
-            ["genreExplorer", "Genre Explorer"],
-            ["streak", "Reading Days"],
-          ] as Array<[LeaderboardMetric, string]>).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              className={metric === value ? "selected" : "secondary"}
-              onClick={() => setMetric(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </section>
-
       {renderLeaderboard(
         "children",
         "Children Leaderboard",
@@ -163,19 +137,4 @@ export default function LeaderboardsPage() {
       )}
     </main>
   );
-}
-
-function metricLabel(metric: LeaderboardMetric) {
-  switch (metric) {
-    case "weeklyEffort":
-      return "Weekly Effort";
-    case "improvement":
-      return "Improvement";
-    case "genreExplorer":
-      return "Genre Explorer";
-    case "streak":
-      return "Reading Days";
-    default:
-      return "Lifetime Points";
-  }
 }

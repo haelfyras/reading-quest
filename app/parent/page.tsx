@@ -22,7 +22,6 @@ import {
   getSpendablePoints,
   Profile,
   QuizIssueReport,
-  setCurrentUserId,
   updateProfile,
   updateQuizIssueReport,
 } from "../../lib/user";
@@ -79,11 +78,6 @@ export default function ParentPage() {
   const currentRank = currentUser ? adultLeaderboard.findIndex((profile) => profile.id === currentUser.id) + 1 : 0;
   const pointsProgressData = useMemo(() => currentUser ? getPointTimeline(currentUser) : [], [currentUser]);
 
-  const handleSignOut = () => {
-    setCurrentUserId(null);
-    router.push("/");
-  };
-
   const refreshParentData = () => {
     if (!currentUser) return;
     const profiles = getProfiles();
@@ -126,10 +120,6 @@ export default function ParentPage() {
           <h1>Reading Quest</h1>
           <p>Welcome, {currentUser.realName || currentUser.name}.</p>
         </div>
-        <div className="topbar-actions">
-          <Link href="/profile"><button type="button" className="secondary">Profile</button></Link>
-          <button type="button" className="secondary" onClick={handleSignOut}>Sign out</button>
-        </div>
       </div>
 
       <section className="home-section summary-section" aria-labelledby="parent-summary-heading">
@@ -155,74 +145,6 @@ export default function ParentPage() {
         <Link href="/quiz">
           <button type="button" className="primary-action">Take a Quiz</button>
         </Link>
-      </section>
-
-      <section className="home-section" aria-labelledby="parent-progress-heading">
-        <h2 id="parent-progress-heading">Points Journey</h2>
-        {pointsProgressData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={pointsProgressData} margin={{ top: 20, right: 20, bottom: 40, left: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="eventNumber" label={{ value: "Event", position: "bottom", offset: 20 }} tickMargin={10} />
-              <YAxis label={{ value: "Points", angle: -90, position: "left", offset: 0 }} tickMargin={10} />
-              <Tooltip formatter={(value) => `${value} points`} />
-              <Line type="monotone" name="Earned" dataKey="earned" stroke="var(--accent)" strokeWidth={3} dot={{ fill: "var(--accent)" }} />
-              <Line type="monotone" name="Available" dataKey="available" stroke="var(--success)" strokeWidth={3} dot={{ fill: "var(--success)" }} />
-            </LineChart>
-          </ResponsiveContainer>
-        ) : (
-          <p>Take your first quiz to start your points graph.</p>
-        )}
-      </section>
-
-      <section className="home-section" aria-labelledby="adult-leaderboard-heading">
-        <div className="section-header-row">
-          <div>
-            <h2 id="adult-leaderboard-heading">Adult Leaderboard</h2>
-            <p>Your rank among adult readers.</p>
-          </div>
-          <Link href="/leaderboards"><button type="button" className="secondary">View all</button></Link>
-        </div>
-        <div className="leaderboard-list compact-list">
-          {adultLeaderboard.slice(0, 3).map((profile, index) => (
-            <div key={profile.id} className={`leaderboard-item ${profile.id === currentUser.id ? "current-user" : ""}`}>
-              <div className="rank">#{index + 1}</div>
-              <div className="user-info">
-                <div className="name">{profile.realName || profile.name}</div>
-                <div className="stats">{getLifetimePoints(profile)} lifetime points</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="home-section" aria-labelledby="parent-trust-heading">
-        <div className="section-header-row">
-          <div>
-            <h2 id="parent-trust-heading">Parent Review Queue</h2>
-            <p>Quiz questions reported as wrong, impossible, too hard, spoilers, or not from the book.</p>
-          </div>
-          <span className="badge-pill">{reports.length} active</span>
-        </div>
-        {reports.length > 0 ? (
-          <div className="compact-list">
-            {reports.slice(0, 5).map((report) => (
-              <div key={report.id} className="review-queue-item">
-                <div>
-                  <strong>{report.bookTitle}</strong>
-                  <p>{report.question}</p>
-                  <small>{report.profileName} reported: {report.reason.replace(/_/g, " ")}</small>
-                </div>
-                <div className="button-row">
-                  <button type="button" className="secondary" onClick={() => resolveReport(report.id, "accepted")}>Needs review</button>
-                  <button type="button" className="secondary" onClick={() => resolveReport(report.id, "dismissed")}>Dismiss</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p>No active quiz reports.</p>
-        )}
       </section>
 
       {children.length > 0 ? (
@@ -309,17 +231,74 @@ export default function ParentPage() {
         </section>
       ) : null}
 
-      <nav className="home-section" aria-labelledby="parent-menu-heading">
-        <h2 id="parent-menu-heading">Menu</h2>
-        <div className="menu-grid app-menu-grid">
-          <Link href="/my-books"><button type="button" className="menu-button primary">My Books</button></Link>
-          <Link href="/leaderboards"><button type="button" className="menu-button secondary">Leaderboards</button></Link>
-          <Link href="/prizes"><button type="button" className="menu-button accent">Prizes</button></Link>
-          <Link href="/friends"><button type="button" className="menu-button neutral">Friends</button></Link>
-          <Link href="/settings"><button type="button" className="menu-button neutral">Settings</button></Link>
-          <Link href="/profile"><button type="button" className="menu-button neutral">Profile</button></Link>
+      <section className="home-section" aria-labelledby="parent-trust-heading">
+        <div className="section-header-row">
+          <div>
+            <h2 id="parent-trust-heading">Parent Review Queue</h2>
+            <p>Quiz questions reported as wrong, impossible, too hard, spoilers, or not from the book.</p>
+          </div>
+          <span className="badge-pill">{reports.length} active</span>
         </div>
-      </nav>
+        {reports.length > 0 ? (
+          <div className="compact-list">
+            {reports.slice(0, 5).map((report) => (
+              <div key={report.id} className="review-queue-item">
+                <div>
+                  <strong>{report.bookTitle}</strong>
+                  <p>{report.question}</p>
+                  <small>{report.profileName} reported: {report.reason.replace(/_/g, " ")}</small>
+                </div>
+                <div className="button-row">
+                  <button type="button" className="secondary" onClick={() => resolveReport(report.id, "accepted")}>Needs review</button>
+                  <button type="button" className="secondary" onClick={() => resolveReport(report.id, "dismissed")}>Dismiss</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p>No active quiz reports.</p>
+        )}
+      </section>
+
+      <section className="home-section" aria-labelledby="parent-progress-heading">
+        <h2 id="parent-progress-heading">Points Journey</h2>
+        {pointsProgressData.length > 0 ? (
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={pointsProgressData} margin={{ top: 20, right: 20, bottom: 40, left: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="eventNumber" label={{ value: "Event", position: "bottom", offset: 20 }} tickMargin={10} />
+              <YAxis label={{ value: "Points", angle: -90, position: "left", offset: 0 }} tickMargin={10} />
+              <Tooltip formatter={(value) => `${value} points`} />
+              <Line type="monotone" name="Earned" dataKey="earned" stroke="var(--accent)" strokeWidth={3} dot={{ fill: "var(--accent)" }} />
+              <Line type="monotone" name="Available" dataKey="available" stroke="var(--success)" strokeWidth={3} dot={{ fill: "var(--success)" }} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <p>Take your first quiz to start your points graph.</p>
+        )}
+      </section>
+
+      <section className="home-section" aria-labelledby="adult-leaderboard-heading">
+        <div className="section-header-row">
+          <div>
+            <h2 id="adult-leaderboard-heading">Adult Leaderboard</h2>
+            <p>Your rank among adult readers.</p>
+          </div>
+          <Link href="/leaderboards"><button type="button" className="secondary">View all</button></Link>
+        </div>
+        <div className="leaderboard-list compact-list">
+          {adultLeaderboard.slice(0, 3).map((profile, index) => (
+            <div key={profile.id} className={`leaderboard-item ${profile.id === currentUser.id ? "current-user" : ""}`}>
+              <div className="rank">#{index + 1}</div>
+              <div className="user-info">
+                <div className="name">{profile.realName || profile.name}</div>
+                <div className="stats">{getLifetimePoints(profile)} lifetime points</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
     </main>
   );
 }

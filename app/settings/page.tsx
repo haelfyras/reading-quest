@@ -7,6 +7,7 @@ import {
   getLifetimePoints,
   getSpendablePoints,
   getSpentPoints,
+  normalizeSubscriptionTier,
   Profile,
   setCurrentUserId,
   subscriptionPlans,
@@ -30,7 +31,7 @@ export default function SettingsPage() {
     const profile = getCurrentProfile();
     if (profile) {
       setLeaderboardPrivate(Boolean(profile.leaderboardPrivate));
-      setSubscriptionTier(profile.subscriptionTier ?? "free");
+      setSubscriptionTier(normalizeSubscriptionTier(profile.subscriptionTier));
     }
 
     const savedDarkMode = localStorage.getItem("readingQuestDarkMode") === "true";
@@ -257,7 +258,7 @@ export default function SettingsPage() {
 
         <div className="settings-section">
           <h2>Plan</h2>
-          <p className="setting-description">The child experience stays ad-free. Paid plans are for parents, schools, libraries, and community reading programs.</p>
+          <p className="setting-description">Free keeps Reading Quest accessible. Paid plans remove ads, increase family capacity, and unlock more reading tools.</p>
           <div className="field">
             <label htmlFor="subscriptionTier">Current plan</label>
             <select id="subscriptionTier" value={subscriptionTier} onChange={(event) => setSubscriptionTier(event.target.value as SubscriptionTier)}>
@@ -268,7 +269,16 @@ export default function SettingsPage() {
           </div>
           <div className="plan-card">
             <strong>{subscriptionPlans[subscriptionTier].name}</strong>
+            <div className="plan-price-row">
+              <span>{subscriptionPlans[subscriptionTier].monthlyPrice}</span>
+              {subscriptionPlans[subscriptionTier].annualPrice ? <span>{subscriptionPlans[subscriptionTier].annualPrice}</span> : null}
+            </div>
             <p>{subscriptionPlans[subscriptionTier].description}</p>
+            <p className="setting-description">
+              Includes {subscriptionPlans[subscriptionTier].includedChildren} child profiles.
+              {subscriptionPlans[subscriptionTier].extraChildPrice ? ` ${subscriptionPlans[subscriptionTier].extraChildPrice}.` : " Extra child seats are available on paid plans."}
+            </p>
+            <p className="setting-description">{subscriptionPlans[subscriptionTier].quizRule}</p>
             <ul className="small-list">
               {subscriptionPlans[subscriptionTier].limits.map((limit) => <li key={limit}>{limit}</li>)}
             </ul>

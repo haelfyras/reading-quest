@@ -105,6 +105,121 @@ body {
   color: var(--text);
 }
 
+.app-drawer-toggle {
+  position: fixed;
+  z-index: 1100;
+  top: 18px;
+  left: max(16px, calc((100vw - 960px) / 2 + 16px));
+  display: grid;
+  width: 48px;
+  min-height: 48px;
+  place-items: center;
+  gap: 5px;
+  border-color: var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-strong) 92%, var(--accent-soft));
+  padding: 11px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+}
+
+.app-drawer-toggle span {
+  display: block;
+  width: 22px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--text);
+}
+
+.app-drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  min-height: 100vh;
+  border: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 0;
+}
+
+.app-drawer {
+  position: fixed;
+  z-index: 1200;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  width: min(340px, calc(100vw - 32px));
+  grid-template-rows: auto 1fr auto;
+  gap: 18px;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-strong) 94%, var(--page-bg));
+  box-shadow: 18px 0 48px rgba(0, 0, 0, 0.28);
+  padding: 20px;
+  transform: translateX(-105%);
+  transition: transform 0.22s ease;
+}
+
+.app-drawer.open {
+  transform: translateX(0);
+}
+
+.app-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-left: 56px;
+}
+
+.app-drawer-header strong,
+.app-drawer-header span {
+  display: block;
+}
+
+.app-drawer-header strong {
+  font-size: 1.15rem;
+}
+
+.app-drawer-header span {
+  color: var(--muted);
+  font-weight: 750;
+}
+
+.drawer-close-button {
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.app-drawer-nav {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.app-drawer-nav a {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text);
+  padding: 12px 14px;
+  font-weight: 850;
+}
+
+.app-drawer-nav a:hover,
+.app-drawer-nav a.active {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+  color: var(--text);
+}
+
+.drawer-signout-button {
+  width: 100%;
+}
+
+.app-drawer-scrim:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
 body::before {
   position: fixed;
   inset: 0;
@@ -129,7 +244,7 @@ main {
   width: min(1180px, calc(100% - 32px));
   min-height: calc(100vh - 32px);
   margin: 16px auto;
-  padding: clamp(20px, 3vw, 36px);
+  padding: 76px clamp(20px, 3vw, 36px) clamp(20px, 3vw, 36px);
   border: 1px solid var(--border);
   border-radius: 14px;
   background: color-mix(in srgb, var(--panel) 92%, transparent);
@@ -1112,6 +1227,24 @@ tr:hover {
   margin-bottom: 0;
 }
 
+.prize-editor-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.prize-editor-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 88%, white);
+  padding: 14px;
+}
+
+.prize-editor-card .field:last-of-type {
+  margin-bottom: 8px;
+}
+
 .profile-code-box {
   width: fit-content;
   max-width: 100%;
@@ -1392,6 +1525,22 @@ pre {
   padding: 14px;
 }
 
+.plan-price-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.plan-price-row span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  color: var(--text);
+  padding: 6px 10px;
+  font-weight: 850;
+}
+
 .path-step {
   min-height: 96px;
 }
@@ -1455,7 +1604,7 @@ pre {
     min-height: 100vh;
     margin: 0;
     border-radius: 0;
-    padding: 16px;
+    padding: 76px 16px 16px;
   }
 
   .topbar,

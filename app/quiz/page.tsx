@@ -13,6 +13,7 @@ import {
   getCurrentProfile,
   getLastQuizEntry,
   getPotentialEarnedPoints,
+  getPlanQuizAvailability,
   getQuizAvailability,
   getReadingChallenges,
   ReadingChallenge,
@@ -100,6 +101,7 @@ function QuizPageContent() {
   const [reportedQuestions, setReportedQuestions] = useState<Record<string, string>>({});
   const [activeChallenge, setActiveChallenge] = useState<ReadingChallenge | null>(null);
   const [challengeSavedMessage, setChallengeSavedMessage] = useState("");
+  const [adUnlocked, setAdUnlocked] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const reviewWordCount = reviewText.trim().split(/\s+/).filter(Boolean).length;
@@ -234,6 +236,7 @@ function QuizPageContent() {
   const maxScore = quizData ? getMaxScore(difficulty) : 0;
   const timerClass = timeLeft > 10 ? "good" : timeLeft > 5 ? "warn" : "danger";
   const homeHref = user?.isParent ? "/parent" : "/home";
+  const planQuizAvailability = user ? getPlanQuizAvailability(user) : null;
 
   const detectReadingLevel = async (book: BookMatch) => {
     setError("");
@@ -382,6 +385,16 @@ function QuizPageContent() {
         return;
       }
       if (!isFriendlyChallenge) {
+        const planAvailability = getPlanQuizAvailability(user);
+        if (planAvailability.requiresAd && !adUnlocked) {
+          setError("Watch the ad unlock before starting this Free quiz.");
+          return;
+        }
+        if (!planAvailability.available) {
+          setError(planAvailability.message);
+          return;
+        }
+
         const availability = getQuizAvailability(user, book.title, difficulty);
         if (!availability.available) {
           setError(availability.message);
@@ -401,6 +414,7 @@ function QuizPageContent() {
     setSaved(false);
     setEarnedPoints(0);
     setReportedQuestions({});
+    setAdUnlocked(false);
 
     const learningGoal = getProfileTestingGoal(user);
 
@@ -744,6 +758,21 @@ function QuizPageContent() {
           <button onClick={handleGenerate} disabled={isLoading || isDetectingLevel || isCheckingBook}>
             {isLoading ? "Generating quiz..." : "Generate quiz"}
           </button>
+
+          {!isFriendlyChallenge && planQuizAvailability ? (
+            <div className="nested-section plan-quiz-gate">
+              <strong>{planQuizAvailability.tier === "free" ? "Free quiz unlock" : planQuizAvailability.tier === "ad_free" ? "Ad-Free quiz limit" : "Plus quiz access"}</strong>
+              <p>{planQuizAvailability.message}</p>
+              {planQuizAvailability.requiresAd ? (
+                <button type="button" className="secondary" onClick={() => {
+                  setAdUnlocked(true);
+                  setError("");
+                }}>
+                  {adUnlocked ? "Ad unlock ready" : "Watch ad to unlock quiz"}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           {error ? (
             <div className="error-box">

@@ -25,6 +25,19 @@ type Prize = {
   lastClaimedAt?: string;
 };
 
+type PrizeAddRequest = {
+  id: string;
+  childId: string;
+  childName: string;
+  name: string;
+  description: string;
+  pointsRequired: number;
+  status: "pending" | "added" | "dismissed";
+  requestedAt: string;
+};
+
+const PRIZE_ADD_REQUESTS_KEY = "readingQuestPrizeAddRequests";
+
 const defaultPrizes: Prize[] = [
   {
     id: "1",
@@ -136,6 +149,21 @@ const prizeSuggestionSets = [
   ],
 ];
 
+function readPrizeAddRequests() {
+  if (typeof window === "undefined") return [];
+  try {
+    const stored = window.localStorage.getItem(PRIZE_ADD_REQUESTS_KEY);
+    return stored ? JSON.parse(stored) as PrizeAddRequest[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePrizeAddRequests(requests: PrizeAddRequest[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(PRIZE_ADD_REQUESTS_KEY, JSON.stringify(requests));
+}
+
 export default function PrizesPage() {
   const router = useRouter();
   const [user, setUser] = useState<Profile | null>(null);
@@ -145,6 +173,10 @@ export default function PrizesPage() {
   const [hasParentSetup, setHasParentSetup] = useState(false);
   const [claimMessage, setClaimMessage] = useState("");
   const [suggestionSetIndex, setSuggestionSetIndex] = useState(0);
+  const [prizeAddRequests, setPrizeAddRequests] = useState<PrizeAddRequest[]>([]);
+  const [requestedPrizeName, setRequestedPrizeName] = useState("");
+  const [requestedPrizeDescription, setRequestedPrizeDescription] = useState("");
+  const [requestedPrizePoints, setRequestedPrizePoints] = useState(100);
 
   useEffect(() => {
     const currentUser = getCurrentProfile();
@@ -153,6 +185,7 @@ export default function PrizesPage() {
     if (!currentUser) {
       return;
     }
+    setPrizeAddRequests(readPrizeAddRequests());
 
     if (currentUser.isParent) {
       const linkedChildren = getProfiles().filter((profile) => currentUser.linkedChildren?.includes(profile.id));
@@ -217,6 +250,66 @@ export default function PrizesPage() {
       },
     ]);
     setClaimMessage(`${suggestion.name} added. Save prizes when you are ready.`);
+  };
+
+  const requestPrizeIdea = () => {
+    if (!user || user.isParent) return;
+
+    const name = requestedPrizeName.trim();
+    if (!name) {
+      setClaimMessage("Enter the prize you want to request.");
+      return;
+    }
+
+    const pointsRequired = Math.max(10, Math.round(Number(requestedPrizePoints) || 10));
+    const nextRequest: PrizeAddRequest = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      childId: user.id,
+      childName: user.name,
+      name,
+      description: requestedPrizeDescription.trim() || "Requested by child",
+      pointsRequired,
+      status: "pending",
+      requestedAt: new Date().toISOString(),
+    };
+    const nextRequests = [nextRequest, ...prizeAddRequests];
+    savePrizeAddRequests(nextRequests);
+    setPrizeAddRequests(nextRequests);
+    setRequestedPrizeName("");
+    setRequestedPrizeDescription("");
+    setRequestedPrizePoints(100);
+    setClaimMessage(`${name} was sent to your parent to review.`);
+  };
+
+  const addRequestedPrizeToMenu = (request: PrizeAddRequest) => {
+    setPrizes((current) => [
+      ...current,
+      {
+        id: `child-request-${request.id}`,
+        name: request.name,
+        description: request.description,
+        pointsRequired: request.pointsRequired,
+        icon: "Idea",
+        claimed: false,
+        claimCount: 0,
+      },
+    ]);
+
+    const nextRequests = prizeAddRequests.map((item) =>
+      item.id === request.id ? { ...item, status: "added" as const } : item,
+    );
+    savePrizeAddRequests(nextRequests);
+    setPrizeAddRequests(nextRequests);
+    setClaimMessage(`${request.name} added to the prize menu. Save prizes when you are ready.`);
+  };
+
+  const dismissRequestedPrize = (requestId: string) => {
+    const nextRequests = prizeAddRequests.map((item) =>
+      item.id === requestId ? { ...item, status: "dismissed" as const } : item,
+    );
+    savePrizeAddRequests(nextRequests);
+    setPrizeAddRequests(nextRequests);
+    setClaimMessage("Prize request dismissed.");
   };
 
   const saveParentPrizes = () => {
@@ -305,6 +398,13 @@ export default function PrizesPage() {
   const homeHref = user.isParent ? "/parent" : "/home";
   const progressMax = Math.max(spendablePoints, ...prizes.map((prize) => prize.pointsRequired), 1);
   const fillPercent = Math.min(100, (spendablePoints / progressMax) * 100);
+  const requestedPrizes = prizes.filter((prize) => prize.claimed);
+  const requestedPrizeIdeas = prizeAddRequests.filter(
+    (request) => request.childId === selectedChildId && request.status === "pending",
+  );
+  const childPendingPrizeIdeas = user.isParent ? [] : prizeAddRequests.filter(
+    (request) => request.childId === user.id && request.status === "pending",
+  );
 
   if (user.isParent) {
     return (
@@ -331,6 +431,59 @@ export default function PrizesPage() {
                     <option key={child.id} value={child.id}>{child.name}</option>
                   ))}
                 </select>
+              </div>
+              <div className="nested-section" aria-labelledby="requested-prizes-heading">
+                <div className="section-header-row">
+                  <div>
+                    <h3 id="requested-prizes-heading">Requested Prizes</h3>
+                    <p>Prizes waiting for parent confirmation.</p>
+                  </div>
+                  <span className="badge-pill">{requestedPrizes.length} active</span>
+                </div>
+                {requestedPrizes.length > 0 ? (
+                  <div className="compact-list">
+                    {requestedPrizes.map((prize) => (
+                      <div key={prize.id} className="review-queue-item">
+                        <div>
+                          <strong>{prize.name}</strong>
+                          <p>{prize.pointsRequired} points spent.</p>
+                          <small>Claimed {prize.claimCount ?? 0} {prize.claimCount === 1 ? "time" : "times"}</small>
+                        </div>
+                        <button type="button" onClick={() => markPrizeRedeemed(prize.id)}>Mark Redeemed</button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p>No prize requests right now.</p>
+                )}
+              </div>
+              <div className="nested-section" aria-labelledby="prize-ideas-heading">
+                <div className="section-header-row">
+                  <div>
+                    <h3 id="prize-ideas-heading">Prize Ideas From Child</h3>
+                    <p>Prize ideas your child asked you to add.</p>
+                  </div>
+                  <span className="badge-pill">{requestedPrizeIdeas.length} pending</span>
+                </div>
+                {requestedPrizeIdeas.length > 0 ? (
+                  <div className="compact-list">
+                    {requestedPrizeIdeas.map((request) => (
+                      <div key={request.id} className="review-queue-item">
+                        <div>
+                          <strong>{request.name}</strong>
+                          <p>{request.description}</p>
+                          <small>{request.childName} suggested {request.pointsRequired} points.</small>
+                        </div>
+                        <div className="button-row">
+                          <button type="button" onClick={() => addRequestedPrizeToMenu(request)}>Add to Menu</button>
+                          <button type="button" className="secondary" onClick={() => dismissRequestedPrize(request.id)}>Dismiss</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p>No prize ideas from this child right now.</p>
+                )}
               </div>
               <div className="nested-section prize-suggestions" aria-labelledby="prize-suggestions-heading">
                 <div className="section-header-row">
@@ -360,31 +513,28 @@ export default function PrizesPage() {
                   ))}
                 </div>
               </div>
-              {prizes.map((prize, index) => (
-                <div key={prize.id} className="nested-section">
-                  {prize.claimed ? (
-                    <div className="warning-box">
-                      <strong>Prize requested:</strong> {prize.name}
-                      <div className="button-row">
-                        <button type="button" onClick={() => markPrizeRedeemed(prize.id)}>Mark Redeemed</button>
+              <div className="nested-section" aria-labelledby="prize-menu-heading">
+                <h3 id="prize-menu-heading">Prize Menu</h3>
+                <div className="prize-editor-grid">
+                  {prizes.map((prize, index) => (
+                    <div key={prize.id} className="prize-editor-card">
+                      <div className="field">
+                        <label htmlFor={`prizeName-${index}`}>Prize name</label>
+                        <input id={`prizeName-${index}`} value={prize.name} onChange={(event) => updateParentPrize(index, "name", event.target.value)} />
                       </div>
+                      <div className="field">
+                        <label htmlFor={`prizePoints-${index}`}>Points needed</label>
+                        <input id={`prizePoints-${index}`} type="number" min={1} value={prize.pointsRequired} onChange={(event) => updateParentPrize(index, "pointsRequired", event.target.value)} />
+                      </div>
+                      <div className="field">
+                        <label htmlFor={`prizeDescription-${index}`}>Description</label>
+                        <input id={`prizeDescription-${index}`} value={prize.description} onChange={(event) => updateParentPrize(index, "description", event.target.value)} />
+                      </div>
+                      <p className="setting-description">Claimed {prize.claimCount ?? 0} {prize.claimCount === 1 ? "time" : "times"}</p>
                     </div>
-                  ) : null}
-                  <div className="field">
-                    <label htmlFor={`prizeName-${index}`}>Prize name</label>
-                    <input id={`prizeName-${index}`} value={prize.name} onChange={(event) => updateParentPrize(index, "name", event.target.value)} />
-                  </div>
-                  <div className="field">
-                    <label htmlFor={`prizePoints-${index}`}>Points needed</label>
-                    <input id={`prizePoints-${index}`} type="number" min={1} value={prize.pointsRequired} onChange={(event) => updateParentPrize(index, "pointsRequired", event.target.value)} />
-                  </div>
-                  <div className="field">
-                    <label htmlFor={`prizeDescription-${index}`}>Description</label>
-                    <input id={`prizeDescription-${index}`} value={prize.description} onChange={(event) => updateParentPrize(index, "description", event.target.value)} />
-                  </div>
-                  <p className="setting-description">Claimed {prize.claimCount ?? 0} {prize.claimCount === 1 ? "time" : "times"}</p>
+                  ))}
                 </div>
-              ))}
+              </div>
               <div className="button-row">
                 <button type="button" onClick={addParentPrize}>Add Prize</button>
                 <button type="button" onClick={saveParentPrizes}>Save Prizes</button>
@@ -393,7 +543,11 @@ export default function PrizesPage() {
           ) : (
             <p>Verify a child from Profile before setting prize goals.</p>
           )}
-          {claimMessage ? <div className={claimMessage.includes("saved") || claimMessage.includes("redeemed") ? "success-box" : "error-box"}>{claimMessage}</div> : null}
+          {claimMessage ? (
+            <div className={claimMessage.includes("Select") || claimMessage.includes("Add at least") ? "error-box" : "success-box"}>
+              {claimMessage}
+            </div>
+          ) : null}
         </section>
       </main>
     );
@@ -421,7 +575,11 @@ export default function PrizesPage() {
         </div>
       )}
 
-      {claimMessage ? <div className={claimMessage.includes("Unable") || claimMessage.includes("Not enough") ? "error-box" : "success-box"}>{claimMessage}</div> : null}
+      {claimMessage ? (
+        <div className={claimMessage.includes("Unable") || claimMessage.includes("Not enough") || claimMessage.includes("Enter") ? "error-box" : "success-box"}>
+          {claimMessage}
+        </div>
+      ) : null}
 
       <div className="points-panel">
         <div className="points-panel-header">
@@ -474,6 +632,47 @@ export default function PrizesPage() {
           );
         })}
       </div>
+
+      <section className="home-section" aria-labelledby="request-prize-heading">
+        <h2 id="request-prize-heading">Request a Prize</h2>
+        <p>Ask your parent to add a prize idea to your list.</p>
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor="requestedPrizeName">Prize idea</label>
+            <input
+              id="requestedPrizeName"
+              value={requestedPrizeName}
+              onChange={(event) => setRequestedPrizeName(event.target.value)}
+              placeholder="New soccer ball"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="requestedPrizePoints">Suggested points</label>
+            <input
+              id="requestedPrizePoints"
+              type="number"
+              min={10}
+              value={requestedPrizePoints}
+              onChange={(event) => setRequestedPrizePoints(Number(event.target.value))}
+            />
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="requestedPrizeDescription">Why this prize?</label>
+          <input
+            id="requestedPrizeDescription"
+            value={requestedPrizeDescription}
+            onChange={(event) => setRequestedPrizeDescription(event.target.value)}
+            placeholder="I would like to earn this after finishing a chapter book."
+          />
+        </div>
+        <button type="button" onClick={requestPrizeIdea}>Send to Parent</button>
+        {childPendingPrizeIdeas.length > 0 ? (
+          <p className="setting-description">
+            {childPendingPrizeIdeas.length} prize {childPendingPrizeIdeas.length === 1 ? "idea is" : "ideas are"} waiting for parent review.
+          </p>
+        ) : null}
+      </section>
 
       {hasParentSetup && (
         <div className="output">

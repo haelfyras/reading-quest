@@ -22,7 +22,6 @@ import {
   getProfiles,
   getSpendablePoints,
   Profile,
-  setCurrentUserId,
 } from "../../lib/user";
 import { getBookRecommendations as buildRecommendations } from "../../lib/recommendations";
 
@@ -110,11 +109,6 @@ export default function HomePage() {
   const currentRank = currentUser ? childLeaderboard.findIndex((profile) => profile.id === currentUser.id) + 1 : 0;
   const pointsProgressData = useMemo(() => currentUser ? getPointTimeline(currentUser) : [], [currentUser]);
 
-  const handleSignOut = () => {
-    setCurrentUserId(null);
-    router.push("/");
-  };
-
   if (!currentUser) {
     return (
       <main>
@@ -130,14 +124,6 @@ export default function HomePage() {
           <div className="kicker">Child Quest Hub</div>
           <h1>Reading Quest</h1>
           <p>Welcome back, {currentUser.name}.</p>
-        </div>
-        <div className="topbar-actions">
-          <Link href="/profile">
-            <button type="button" className="secondary">Profile</button>
-          </Link>
-          <button type="button" className="secondary" onClick={handleSignOut}>
-            Sign out
-          </button>
         </div>
       </div>
 
@@ -174,41 +160,6 @@ export default function HomePage() {
         <Link href="/quiz">
           <button type="button" className="primary-action">Take a Quiz</button>
         </Link>
-      </section>
-
-      <section className="home-section points-panel home-prize-journey" aria-labelledby="prize-journey-heading">
-        <div className="points-panel-header">
-          <div>
-            <h2 id="prize-journey-heading">Prize Journey</h2>
-            <p>
-              {currentPoints} points available
-              {nextPrizeGoal ? ` - ${pointsToNextPrize} points to ${nextPrizeGoal.name}` : " - all prize goals reached"}
-            </p>
-          </div>
-          <Link href="/prizes">
-            <button type="button" className="secondary">Prizes</button>
-          </Link>
-        </div>
-        <div
-          className="progress-track compact-progress"
-          role="progressbar"
-          aria-label="Prize progress"
-          aria-valuemin={0}
-          aria-valuemax={progressMax}
-          aria-valuenow={Math.min(currentPoints, progressMax)}
-        >
-          <div className="progress-fill" style={{ width: `${prizeProgressPercent}%` }} />
-        </div>
-        <div className="prize-milestone-list">
-          {sortedPrizeGoals.map((goal) => (
-            <span key={goal.id} className={currentPoints >= goal.pointsRequired ? "milestone-reached" : ""}>
-              {goal.name}: {goal.pointsRequired}
-            </span>
-          ))}
-        </div>
-        <p className="setting-description">
-          {reachedPrizeCount} of {sortedPrizeGoals.length} prize goals reached.
-        </p>
       </section>
 
       <section className="home-section reading-path" aria-labelledby="path-heading">
@@ -253,6 +204,41 @@ export default function HomePage() {
         )}
       </section>
 
+      <section className="home-section points-panel home-prize-journey" aria-labelledby="prize-journey-heading">
+        <div className="points-panel-header">
+          <div>
+            <h2 id="prize-journey-heading">Prize Journey</h2>
+            <p>
+              {currentPoints} points available
+              {nextPrizeGoal ? ` - ${pointsToNextPrize} points to ${nextPrizeGoal.name}` : " - all prize goals reached"}
+            </p>
+          </div>
+          <Link href="/prizes">
+            <button type="button" className="secondary">Prizes</button>
+          </Link>
+        </div>
+        <div
+          className="progress-track compact-progress"
+          role="progressbar"
+          aria-label="Prize progress"
+          aria-valuemin={0}
+          aria-valuemax={progressMax}
+          aria-valuenow={Math.min(currentPoints, progressMax)}
+        >
+          <div className="progress-fill" style={{ width: `${prizeProgressPercent}%` }} />
+        </div>
+        <div className="prize-milestone-list">
+          {sortedPrizeGoals.map((goal) => (
+            <span key={goal.id} className={currentPoints >= goal.pointsRequired ? "milestone-reached" : ""}>
+              {goal.name}: {goal.pointsRequired}
+            </span>
+          ))}
+        </div>
+        <p className="setting-description">
+          {reachedPrizeCount} of {sortedPrizeGoals.length} prize goals reached.
+        </p>
+      </section>
+
       <section className="home-section" aria-labelledby="progress-heading">
         <h2 id="progress-heading">Points Journey</h2>
         {pointsProgressData.length > 0 ? (
@@ -295,17 +281,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      <nav className="home-section" aria-labelledby="menu-heading">
-        <h2 id="menu-heading">Menu</h2>
-        <div className="menu-grid app-menu-grid">
-          <Link href="/my-books"><button type="button" className="menu-button primary">My Books</button></Link>
-          <Link href="/leaderboards"><button type="button" className="menu-button secondary">Leaderboards</button></Link>
-          <Link href="/prizes"><button type="button" className="menu-button accent">Prizes</button></Link>
-          <Link href="/friends"><button type="button" className="menu-button neutral">Friends</button></Link>
-          <Link href="/settings"><button type="button" className="menu-button neutral">Settings</button></Link>
-          <Link href="/profile"><button type="button" className="menu-button neutral">Profile</button></Link>
-        </div>
-      </nav>
     </main>
   );
 }

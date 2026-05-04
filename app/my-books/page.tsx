@@ -463,7 +463,7 @@ export default function MyBooksPage() {
         <div>
           <div className="kicker">Library</div>
           <h1>My Books</h1>
-          <p>Favorites, recommendations, and books you have tested.</p>
+          <p>Reading taste, next books, reading effort, and quiz history.</p>
         </div>
         <Link href={homeHref}>
           <button type="button" className="secondary">Home</button>
@@ -471,7 +471,7 @@ export default function MyBooksPage() {
       </div>
 
       <section className="home-section" aria-labelledby="favorite-books-heading">
-        <h2 id="favorite-books-heading">Favorite Books</h2>
+        <h2 id="favorite-books-heading">Reading Taste</h2>
         {hasFavoriteBooks && !editingFavorites ? (
           <>
             <ul className="favorite-books-list">

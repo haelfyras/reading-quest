@@ -133,7 +133,7 @@ export type ParentControls = {
   testingLevel: TestingLevel;
 };
 
-export type SubscriptionTier = "free" | "premium" | "school" | "library";
+export type SubscriptionTier = "free" | "ad_free" | "plus";
 
 export type TestingLevel =
   | "habit_formation"
@@ -283,26 +283,43 @@ export const defaultParentControls: ParentControls = {
 
 export const avatarStyles = ["Explorer", "Story Mage", "Space Reader", "Library Hero", "Mystery Solver"] as const;
 
-export const subscriptionPlans: Record<SubscriptionTier, { name: string; description: string; limits: string[] }> = {
+export const subscriptionPlans: Record<SubscriptionTier, {
+  name: string;
+  monthlyPrice: string;
+  annualPrice?: string;
+  includedChildren: number;
+  extraChildPrice?: string;
+  quizRule: string;
+  description: string;
+  limits: string[];
+}> = {
   free: {
-    name: "Free Family",
-    description: "A trust-first starter plan for home reading.",
-    limits: ["1 child profile", "Basic quizzes", "Basic prizes", "Daily recommendations"],
+    name: "Free",
+    monthlyPrice: "$0",
+    includedChildren: 2,
+    quizRule: "Ads required before quizzes",
+    description: "A simple starter plan for families beginning a reading habit.",
+    limits: ["2 child profiles", "Prizes", "Ad-unlocked quizzes", "Basic points"],
   },
-  premium: {
-    name: "Parent Premium",
-    description: "More family tools without putting ads in front of kids.",
-    limits: ["More child profiles", "Advanced reports", "Custom prize systems", "Printable reading summaries"],
+  ad_free: {
+    name: "Ad-Free Family",
+    monthlyPrice: "$2.99/mo",
+    annualPrice: "$24.99/year",
+    includedChildren: 3,
+    extraChildPrice: "+$1/mo per extra child",
+    quizRule: "10 quizzes per child per 24 hours",
+    description: "The same core reading loop without ads.",
+    limits: ["3 child profiles included", "No ads", "10 quizzes per child per 24 hours", "Prizes and basic progress"],
   },
-  school: {
-    name: "School / Classroom",
-    description: "Designed for teachers, reading groups, and exportable progress.",
-    limits: ["Classroom leaderboards", "Reading groups", "Assignment support", "Progress exports"],
-  },
-  library: {
-    name: "Library Partner",
-    description: "Supports community reading programs and sponsored challenges.",
-    limits: ["Summer reading challenges", "Library book discovery", "Local prize sponsors", "No child-facing ads"],
+  plus: {
+    name: "Reading Quest Plus",
+    monthlyPrice: "$7.99/mo",
+    annualPrice: "$69.99/year",
+    includedChildren: 5,
+    extraChildPrice: "+$1/mo per extra child",
+    quizRule: "Unlimited quizzes",
+    description: "The complete family reading toolkit.",
+    limits: ["5 child profiles included", "Unlimited quizzes", "All reading, friend, location, leaderboard, and parent review features", "Full prize and progress tools"],
   },
 };
 
@@ -397,6 +414,70 @@ export function getCurrentProfile(): Profile | null {
   }
 
   return getProfiles().find((profile) => profile.id === currentId) ?? null;
+}
+
+export function normalizeSubscriptionTier(tier: string | undefined): SubscriptionTier {
+  if (tier === "ad_free" || tier === "plus" || tier === "free") {
+    return tier;
+  }
+
+  if (tier === "premium" || tier === "school" || tier === "library") {
+    return "plus";
+  }
+
+  return "free";
+}
+
+export function getEffectiveSubscriptionTier(profile: Profile): SubscriptionTier {
+  if (profile.isParent) {
+    return normalizeSubscriptionTier(profile.subscriptionTier);
+  }
+
+  const parent = getProfiles().find((item) => item.isParent && item.linkedChildren?.includes(profile.id));
+  return normalizeSubscriptionTier(parent?.subscriptionTier ?? profile.subscriptionTier);
+}
+
+export function getQuizCountInLast24Hours(profile: Profile) {
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  return profile.quizzes.filter((quiz) => new Date(quiz.date).getTime() >= cutoff).length;
+}
+
+export function getPlanQuizAvailability(profile: Profile) {
+  const tier = getEffectiveSubscriptionTier(profile);
+  if (tier === "ad_free") {
+    const used = getQuizCountInLast24Hours(profile);
+    const limit = 10;
+    return {
+      tier,
+      available: used < limit,
+      requiresAd: false,
+      used,
+      limit,
+      message: used < limit
+        ? `${limit - used} ad-free quizzes left in this 24-hour period.`
+        : "This Ad-Free plan has reached 10 quizzes in the last 24 hours.",
+    };
+  }
+
+  if (tier === "plus") {
+    return {
+      tier,
+      available: true,
+      requiresAd: false,
+      used: getQuizCountInLast24Hours(profile),
+      limit: null,
+      message: "Plus includes unlimited quizzes.",
+    };
+  }
+
+  return {
+    tier,
+    available: true,
+    requiresAd: true,
+    used: getQuizCountInLast24Hours(profile),
+    limit: null,
+    message: "Free quizzes require an ad unlock before each quiz.",
+  };
 }
 
 export function getLastQuizForBook(profile: Profile, bookTitle: string) {
@@ -780,6 +861,15 @@ export function enterParentVerificationCode(
 
   if (updatedRequest.parentCodeEntered && updatedRequest.childCodeEntered) {
     const profiles = getProfiles();
+    const parent = profiles.find((profile) => profile.id === updatedRequest.parentId);
+    const currentChildCount = parent?.linkedChildren?.length ?? 0;
+    const parentTier = normalizeSubscriptionTier(parent?.subscriptionTier);
+    const childLimit = subscriptionPlans[parentTier].includedChildren;
+
+    if (currentChildCount >= childLimit) {
+      throw new Error(`${subscriptionPlans[parentTier].name} includes ${childLimit} child profiles. Add an extra child seat or change plans before linking another child.`);
+    }
+
     const nextProfiles = profiles.map((profile) => {
       if (profile.id === updatedRequest.parentId) {
         return {
