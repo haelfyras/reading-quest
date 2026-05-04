@@ -77,6 +77,10 @@ export default function AppMenu() {
         <span />
       </button>
 
+      <Link href="/quiz" className="fixed-quiz-action" onClick={() => setOpen(false)}>
+        Take a Quiz
+      </Link>
+
       {open ? <button type="button" className="app-drawer-scrim" aria-label="Close menu" onClick={() => setOpen(false)} /> : null}
 
       <aside id="app-navigation-drawer" className={`app-drawer ${open ? "open" : ""}`} aria-hidden={!open}>

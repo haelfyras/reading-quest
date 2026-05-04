@@ -130,6 +130,29 @@ body {
   background: var(--text);
 }
 
+.fixed-quiz-action {
+  position: fixed;
+  z-index: 1090;
+  top: 18px;
+  left: max(74px, calc((100vw - 960px) / 2 + 74px));
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--accent-strong) 78%, black);
+  border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white), var(--accent-strong));
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  color: white;
+  font-weight: 850;
+  padding: 0 16px;
+}
+
+.fixed-quiz-action:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
 .app-drawer-scrim {
   position: fixed;
   inset: 0;
@@ -1906,5 +1929,12 @@ pre {
 
   .password-field {
     grid-template-columns: 1fr;
+  }
+
+  .fixed-quiz-action {
+    left: 72px;
+    max-width: calc(100vw - 92px);
+    padding: 0 12px;
+    font-size: 0.92rem;
   }
 }
