@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION } from "../lib/product";
 import AppMenu from "./components/AppMenu";
+import AppTelemetry from "./components/AppTelemetry";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
+        <AppTelemetry />
         <AppMenu />
         {children}
         <footer className="product-footer" aria-label="Product information">

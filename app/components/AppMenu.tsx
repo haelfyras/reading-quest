@@ -21,6 +21,10 @@ export default function AppMenu() {
   const [profile, setProfile] = useState<Profile | null>(null);
 
   useEffect(() => {
+    if (pathname.startsWith("/admin")) {
+      setProfile(null);
+      return;
+    }
     setProfile(getCurrentProfile());
   }, [pathname]);
 
@@ -54,7 +58,7 @@ export default function AppMenu() {
     router.push("/");
   };
 
-  if (!profile) {
+  if (!profile || pathname.startsWith("/admin")) {
     return null;
   }
 
