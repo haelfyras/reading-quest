@@ -761,7 +761,13 @@ function QuizPageContent() {
 
           {!isFriendlyChallenge && planQuizAvailability ? (
             <div className="nested-section plan-quiz-gate">
-              <strong>{planQuizAvailability.tier === "free" ? "Free quiz unlock" : planQuizAvailability.tier === "ad_free" ? "Ad-Free quiz limit" : "Plus quiz access"}</strong>
+              <strong>
+                {planQuizAvailability.requiresAd
+                  ? "Free quiz unlock"
+                  : planQuizAvailability.tier === "plus"
+                    ? "Plus beta quiz limit"
+                    : "Beta quiz limit"}
+              </strong>
               <p>{planQuizAvailability.message}</p>
               {planQuizAvailability.requiresAd ? (
                 <button type="button" className="secondary" onClick={() => {

@@ -271,6 +271,7 @@ const STORAGE_KEY = "readingQuestProfiles";
 const CURRENT_USER_KEY = "readingQuestCurrentUserId";
 const PARENT_REQUESTS_KEY = "readingQuestParentVerificationRequests";
 const READING_CHALLENGES_KEY = "readingQuestReadingChallenges";
+const FREE_PLAN_REQUIRES_ADS = false;
 
 export const defaultParentControls: ParentControls = {
   prizeApprovalRequired: true,
@@ -297,9 +298,9 @@ export const subscriptionPlans: Record<SubscriptionTier, {
     name: "Free",
     monthlyPrice: "$0",
     includedChildren: 2,
-    quizRule: "Ads required before quizzes",
+    quizRule: "10 quizzes per child per 24 hours during beta",
     description: "A simple starter plan for families beginning a reading habit.",
-    limits: ["2 child profiles", "Prizes", "Ad-unlocked quizzes", "Basic points"],
+    limits: ["2 child profiles", "Prizes", "Quizzes without ads during beta", "10 quizzes per child per 24 hours during beta", "Basic points"],
   },
   ad_free: {
     name: "Ad-Free Family",
@@ -307,9 +308,9 @@ export const subscriptionPlans: Record<SubscriptionTier, {
     annualPrice: "$24.99/year",
     includedChildren: 3,
     extraChildPrice: "+$1/mo per extra child",
-    quizRule: "10 quizzes per child per 24 hours",
+    quizRule: "10 quizzes per child per 24 hours during beta",
     description: "The same core reading loop without ads.",
-    limits: ["3 child profiles included", "No ads", "10 quizzes per child per 24 hours", "Prizes and basic progress"],
+    limits: ["3 child profiles included", "No ads", "10 quizzes per child per 24 hours during beta", "Prizes and basic progress"],
   },
   plus: {
     name: "Reading Quest Plus",
@@ -317,9 +318,9 @@ export const subscriptionPlans: Record<SubscriptionTier, {
     annualPrice: "$69.99/year",
     includedChildren: 5,
     extraChildPrice: "+$1/mo per extra child",
-    quizRule: "Unlimited quizzes",
+    quizRule: "10 quizzes per child per 24 hours during beta",
     description: "The complete family reading toolkit.",
-    limits: ["5 child profiles included", "Unlimited quizzes", "All reading, friend, location, leaderboard, and parent review features", "Full prize and progress tools"],
+    limits: ["5 child profiles included", "10 quizzes per child per 24 hours during beta", "All reading, friend, location, leaderboard, and parent review features", "Full prize and progress tools"],
   },
 };
 
@@ -444,39 +445,19 @@ export function getQuizCountInLast24Hours(profile: Profile) {
 
 export function getPlanQuizAvailability(profile: Profile) {
   const tier = getEffectiveSubscriptionTier(profile);
-  if (tier === "ad_free") {
-    const used = getQuizCountInLast24Hours(profile);
-    const limit = 10;
-    return {
-      tier,
-      available: used < limit,
-      requiresAd: false,
-      used,
-      limit,
-      message: used < limit
-        ? `${limit - used} ad-free quizzes left in this 24-hour period.`
-        : "This Ad-Free plan has reached 10 quizzes in the last 24 hours.",
-    };
-  }
-
-  if (tier === "plus") {
-    return {
-      tier,
-      available: true,
-      requiresAd: false,
-      used: getQuizCountInLast24Hours(profile),
-      limit: null,
-      message: "Plus includes unlimited quizzes.",
-    };
-  }
+  const used = getQuizCountInLast24Hours(profile);
+  const limit = 10;
+  const available = used < limit;
 
   return {
     tier,
-    available: true,
-    requiresAd: true,
-    used: getQuizCountInLast24Hours(profile),
-    limit: null,
-    message: "Free quizzes require an ad unlock before each quiz.",
+    available,
+    requiresAd: tier === "free" && FREE_PLAN_REQUIRES_ADS,
+    used,
+    limit,
+    message: available
+      ? `${limit - used} quizzes left in this 24-hour period${tier === "free" && FREE_PLAN_REQUIRES_ADS ? ". Free quizzes also require an ad unlock." : "."}`
+      : "This account has reached 10 quizzes in the last 24 hours.",
   };
 }
 
