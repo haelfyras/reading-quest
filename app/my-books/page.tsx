@@ -16,6 +16,7 @@ import {
 } from "../../lib/user";
 import { getBookRecommendations } from "../../lib/recommendations";
 import type { BookLookupResult, BookMatch } from "../../lib/books";
+import { betaConfig } from "../../lib/beta";
 
 type NearbyBookPlace = {
   id: string;
@@ -455,7 +456,7 @@ export default function MyBooksPage() {
   const favoriteList = hasFavoriteBooks ? currentUser.favoriteBooks ?? [] : favoriteBooks.filter(Boolean);
   const homeHref = currentUser.isParent ? "/parent" : "/home";
   const controls = { ...defaultParentControls, ...(currentUser.parentControls ?? {}) };
-  const canUseLocation = currentUser.isParent || controls.allowLocationLookup;
+  const canUseLocation = betaConfig.locationLookupEnabled && (currentUser.isParent || controls.allowLocationLookup);
 
   return (
     <main className="app-screen">
@@ -640,7 +641,7 @@ export default function MyBooksPage() {
             <p>Optional location lookup for libraries and bookstores near you.</p>
           </div>
           <span className={canUseLocation ? "badge-pill" : "badge-pill muted-pill"}>
-            {canUseLocation ? "Allowed" : "Parent approval needed"}
+            {betaConfig.locationLookupEnabled ? (canUseLocation ? "Allowed" : "Parent approval needed") : "Paused for beta"}
           </span>
         </div>
         {canUseLocation ? (
@@ -680,7 +681,9 @@ export default function MyBooksPage() {
           </>
         ) : (
           <div className="warning-box">
-            Ask a verified parent to allow nearby libraries and bookstores for this child account.
+            {betaConfig.locationLookupEnabled
+              ? "Ask a verified parent to allow nearby libraries and bookstores for this child account."
+              : "Nearby library and bookstore lookup is visible but paused during private beta."}
           </div>
         )}
       </section>

@@ -25,6 +25,8 @@ import {
   updateProfile,
   updateQuizIssueReport,
 } from "../../lib/user";
+import { betaConfig } from "../../lib/beta";
+import BetaDisclaimer from "../components/BetaDisclaimer";
 
 const testingLevelOptions = [
   {
@@ -122,6 +124,8 @@ export default function ParentPage() {
         </div>
       </div>
 
+      <BetaDisclaimer />
+
       <section className="home-section summary-section" aria-labelledby="parent-summary-heading">
         <h2 id="parent-summary-heading">Today</h2>
         <div className="hero-stats">
@@ -200,9 +204,15 @@ export default function ParentPage() {
                       <span>Review AI quizzes first</span>
                     </label>
                     <label className="setting-label">
-                      <input type="checkbox" checked={controls.allowLocationLookup} onChange={(event) => updateChildControls(child, "allowLocationLookup", event.target.checked)} />
+                      <input
+                        type="checkbox"
+                        checked={betaConfig.locationLookupEnabled && controls.allowLocationLookup}
+                        disabled={!betaConfig.locationLookupEnabled}
+                        onChange={(event) => updateChildControls(child, "allowLocationLookup", event.target.checked)}
+                      />
                       <span>Allow nearby libraries and bookstores</span>
                     </label>
+                    {!betaConfig.locationLookupEnabled ? <p className="setting-description">Location lookup is visible but paused during private beta.</p> : null}
                     <div className="field">
                       <label htmlFor={`max-difficulty-${child.id}`}>Goal difficulty cap</label>
                       <select id={`max-difficulty-${child.id}`} value={controls.maxGoalDifficulty} onChange={(event) => updateChildControls(child, "maxGoalDifficulty", event.target.value)}>

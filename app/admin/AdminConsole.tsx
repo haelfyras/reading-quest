@@ -25,6 +25,7 @@ import {
   updateQuizIssueReport,
 } from "../../lib/user";
 import { COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION } from "../../lib/product";
+import { BETA_FEEDBACK_KEY } from "../../lib/beta";
 
 type AdminTab = "overview" | "accounts" | "quiz" | "safety" | "prizes" | "errors";
 
@@ -44,6 +45,16 @@ type PrizeAddRequest = {
   prizeName: string;
   points: number;
   status: "pending" | "added" | "dismissed";
+  date: string;
+};
+
+type FeedbackEntry = {
+  id: string;
+  profileId?: string;
+  profileName?: string;
+  category: string;
+  message: string;
+  page: string;
   date: string;
 };
 
@@ -104,6 +115,7 @@ export default function AdminConsole() {
   const [reports, setReports] = useState<QuizIssueReport[]>([]);
   const [telemetry, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [prizeAddRequests, setPrizeAddRequests] = useState<PrizeAddRequest[]>([]);
+  const [feedbackEntries, setFeedbackEntries] = useState<FeedbackEntry[]>([]);
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
 
@@ -112,6 +124,7 @@ export default function AdminConsole() {
     setReports(getQuizIssueReports());
     setTelemetry(readLocalStorage<TelemetryEvent[]>("readingQuestTelemetryEvents", []));
     setPrizeAddRequests(readLocalStorage<PrizeAddRequest[]>("readingQuestPrizeAddRequests", []));
+    setFeedbackEntries(readLocalStorage<FeedbackEntry[]>(BETA_FEEDBACK_KEY, []));
   };
 
   useEffect(() => {
@@ -268,8 +281,37 @@ export default function AdminConsole() {
               <div className="stat-tile"><span>Quizzes today</span><strong>{metrics.quizLast24.length}</strong></div>
               <div className="stat-tile"><span>Beta quiz usage</span><strong>{metrics.betaLimitUsed} / {metrics.betaLimitMax}</strong></div>
               <div className="stat-tile"><span>Open quiz reports</span><strong>{metrics.reportsOpen.length}</strong></div>
+              <div className="stat-tile"><span>Beta feedback</span><strong>{feedbackEntries.length}</strong></div>
               <div className="stat-tile"><span>Client errors</span><strong>{telemetry.length}</strong></div>
             </div>
+          </section>
+
+          <section className="admin-section" aria-labelledby="admin-feedback-heading">
+            <div className="section-header-row">
+              <div>
+                <h2 id="admin-feedback-heading">Beta Feedback</h2>
+                <p>Recent notes from families using the visible feedback button.</p>
+              </div>
+              <span className="badge-pill">{feedbackEntries.length} notes</span>
+            </div>
+            {feedbackEntries.length > 0 ? (
+              <div className="admin-card-list">
+                {feedbackEntries.slice(0, 6).map((entry) => (
+                  <article key={entry.id} className="nested-section">
+                    <div className="section-header-row">
+                      <div>
+                        <strong>{entry.category}</strong>
+                        <p>{entry.message}</p>
+                        <small>{entry.profileName || "Unknown profile"} on {entry.page}</small>
+                      </div>
+                      <span className="badge-pill">{formatDate(entry.date)}</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p>No beta feedback has been submitted yet.</p>
+            )}
           </section>
 
           <section className="admin-section" aria-labelledby="admin-priorities-heading">

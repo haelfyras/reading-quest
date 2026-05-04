@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION } from "../lib/product";
 import AppMenu from "./components/AppMenu";
 import AppTelemetry from "./components/AppTelemetry";
+import FeedbackButton from "./components/FeedbackButton";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AppTelemetry />
         <AppMenu />
         {children}
+        <FeedbackButton />
         <footer className="product-footer" aria-label="Product information">
           <span>{PRODUCT_NAME} {PRODUCT_VERSION}</span>
           <span>Built by {COMPANY_NAME}</span>

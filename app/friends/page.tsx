@@ -17,6 +17,7 @@ import {
   regenerateProfileCode,
   updateProfile,
 } from "../../lib/user";
+import { betaConfig } from "../../lib/beta";
 
 type FriendBookSuggestion = {
   id: string;
@@ -162,10 +163,14 @@ export default function FriendsPage() {
     [readingChallenges, user],
   );
   const homeHref = user?.isParent ? "/parent" : "/home";
-  const canUseCodes = Boolean(user?.isParent || user?.canAddFriends);
+  const canUseCodes = betaConfig.friendCodeSharingEnabled && Boolean(user?.isParent || user?.canAddFriends);
 
   const addFriend = () => {
     if (!user) return;
+    if (!betaConfig.friendCodeSharingEnabled) {
+      setMessage("Book suggestions to friends are visible but paused during private beta.");
+      return;
+    }
     try {
       const updated = addFriendByProfileCode(user, friendCode);
       setUser(updated);
@@ -197,6 +202,10 @@ export default function FriendsPage() {
   };
 
   const toggleChildFriends = (child: Profile) => {
+    if (!betaConfig.friendCodeSharingEnabled) {
+      setMessage("Friend code sharing is visible but paused during private beta.");
+      return;
+    }
     const updated = updateProfile({ ...child, canAddFriends: !child.canAddFriends });
     setLinkedChildren((current) => current.map((item) => item.id === updated.id ? updated : item));
     setMessage(`${child.name} friend sharing is now ${updated.canAddFriends ? "on" : "off"}.`);
@@ -252,9 +261,9 @@ export default function FriendsPage() {
         <div className="section-header-row">
           <div>
             <h2 id="code-sharing-heading">Profile Code</h2>
-            <p>{canUseCodes ? "Share this code with readers you know." : "Ask your parent to turn on code sharing first."}</p>
+            <p>{betaConfig.friendCodeSharingEnabled ? (canUseCodes ? "Share this code with readers you know." : "Ask your parent to turn on code sharing first.") : "Friend code sharing is visible but paused during private beta."}</p>
           </div>
-          <span className={canUseCodes ? "badge-pill" : "badge-pill muted-pill"}>{canUseCodes ? "Sharing on" : "Sharing off"}</span>
+          <span className={canUseCodes ? "badge-pill" : "badge-pill muted-pill"}>{betaConfig.friendCodeSharingEnabled ? (canUseCodes ? "Sharing on" : "Sharing off") : "Paused for beta"}</span>
         </div>
         {canUseCodes ? (
           <>
@@ -266,7 +275,9 @@ export default function FriendsPage() {
           </>
         ) : (
           <div className="warning-box">
-            A verified parent can turn this on from the Friends page or Profile page. Your code stays hidden until then.
+            {betaConfig.friendCodeSharingEnabled
+              ? "A verified parent can turn this on from the Friends page or Profile page. Your code stays hidden until then."
+              : "Friend codes, book sharing, and head-to-head challenges are visible but paused during private beta."}
           </div>
         )}
       </section>
@@ -288,7 +299,7 @@ export default function FriendsPage() {
             <button type="button" onClick={addFriend} disabled={!friendCode.trim()}>Add friend</button>
           </>
         ) : (
-          <p>Friend adding is locked for this child profile until a verified parent allows it.</p>
+          <p>{betaConfig.friendCodeSharingEnabled ? "Friend adding is locked for this child profile until a verified parent allows it." : "Friend adding is paused during private beta."}</p>
         )}
         {message ? <div className={message.includes("Unable") || message.includes("Ask") || message.includes("No reader") ? "error-box" : "success-box"}>{message}</div> : null}
       </section>
@@ -303,8 +314,8 @@ export default function FriendsPage() {
                   <strong>{child.name}</strong>
                   <p>Code sharing is {child.canAddFriends ? "on" : "off"}.</p>
                 </div>
-                <button type="button" className="secondary" onClick={() => toggleChildFriends(child)}>
-                  {child.canAddFriends ? "Turn off" : "Turn on"}
+                <button type="button" className="secondary" disabled={!betaConfig.friendCodeSharingEnabled} onClick={() => toggleChildFriends(child)}>
+                  {betaConfig.friendCodeSharingEnabled ? (child.canAddFriends ? "Turn off" : "Turn on") : "Paused"}
                 </button>
               </div>
             ))}
@@ -314,6 +325,9 @@ export default function FriendsPage() {
 
       <section className="home-section" aria-labelledby="friends-list-heading">
         <h2 id="friends-list-heading">My Friends</h2>
+        {!betaConfig.friendCodeSharingEnabled ? (
+          <div className="warning-box">Friend profiles, suggestions, and challenges are paused for private beta. Existing data remains visible.</div>
+        ) : null}
         {friends.length > 0 ? (
           <div className="friend-grid">
             {friends.map((friend) => (
@@ -336,10 +350,12 @@ export default function FriendsPage() {
                 </div>
                 <div className="friend-actions">
                   <span className="badge-pill">{friend.profileCode}</span>
-                  {getRecentBooks(friend)[0] ? (
+                  {getRecentBooks(friend)[0] && betaConfig.friendCodeSharingEnabled ? (
                     <Link href={`/quiz?bookTitle=${encodeURIComponent(getRecentBooks(friend)[0].title)}&challenge=true&friendId=${encodeURIComponent(friend.id)}&friendName=${encodeURIComponent(friend.name)}`}>
                       <button type="button" className="action-button small secondary">Challenge</button>
                     </Link>
+                  ) : getRecentBooks(friend)[0] ? (
+                    <button type="button" className="action-button small secondary" disabled>Challenge paused</button>
                   ) : null}
                 </div>
               </div>
@@ -372,7 +388,7 @@ export default function FriendsPage() {
               <label htmlFor="suggestionNote">Note</label>
               <input id="suggestionNote" value={suggestionNote} onChange={(event) => setSuggestionNote(event.target.value)} placeholder="Why they might like it" />
             </div>
-            <button type="button" onClick={sendBookSuggestion}>Send suggestion</button>
+            <button type="button" onClick={sendBookSuggestion} disabled={!betaConfig.friendCodeSharingEnabled}>Send suggestion</button>
           </>
         ) : (
           <p>Add a friend with a profile code before sending book suggestions.</p>
@@ -393,9 +409,13 @@ export default function FriendsPage() {
                   <Link href={`/quiz?bookTitle=${encodeURIComponent(suggestion.bookTitle)}`}>
                     <button type="button" className="action-button small secondary">Try quiz</button>
                   </Link>
-                  <Link href={`/quiz?bookTitle=${encodeURIComponent(suggestion.bookTitle)}&challenge=true&friendId=${encodeURIComponent(suggestion.fromProfileId)}&friendName=${encodeURIComponent(suggestion.fromName)}`}>
-                    <button type="button" className="action-button small secondary">Challenge</button>
-                  </Link>
+                  {betaConfig.friendCodeSharingEnabled ? (
+                    <Link href={`/quiz?bookTitle=${encodeURIComponent(suggestion.bookTitle)}&challenge=true&friendId=${encodeURIComponent(suggestion.fromProfileId)}&friendName=${encodeURIComponent(suggestion.fromName)}`}>
+                      <button type="button" className="action-button small secondary">Challenge</button>
+                    </Link>
+                  ) : (
+                    <button type="button" className="action-button small secondary" disabled>Challenge paused</button>
+                  )}
                 </div>
               </div>
             ))}
@@ -425,10 +445,12 @@ export default function FriendsPage() {
                 </div>
                 <div className="friend-actions">
                   <span className="badge-pill">{challenge.status === "completed" ? "Complete" : "Pending"}</span>
-                  {challenge.status === "pending" ? (
+                  {challenge.status === "pending" && betaConfig.friendCodeSharingEnabled ? (
                     <Link href={`/quiz?challenge=true&challengeId=${encodeURIComponent(challenge.id)}&friendName=${encodeURIComponent(challenge.fromName)}`}>
                       <button type="button" className="action-button small secondary">Accept</button>
                     </Link>
+                  ) : challenge.status === "pending" ? (
+                    <button type="button" className="action-button small secondary" disabled>Accept paused</button>
                   ) : null}
                 </div>
               </div>
@@ -504,9 +526,13 @@ export default function FriendsPage() {
                     <td>{row.yourScore} / {row.yourMaxScore}</td>
                     <td>{row.friendScore} / {row.friendMaxScore}</td>
                     <td>
-                      <Link href={`/quiz?bookTitle=${encodeURIComponent(row.bookTitle)}&difficulty=${encodeURIComponent(row.difficulty)}&challenge=true&friendId=${encodeURIComponent(row.friend.id)}&friendName=${encodeURIComponent(row.friend.name)}`}>
-                        <button type="button" className="action-button small secondary">Challenge</button>
-                      </Link>
+                      {betaConfig.friendCodeSharingEnabled ? (
+                        <Link href={`/quiz?bookTitle=${encodeURIComponent(row.bookTitle)}&difficulty=${encodeURIComponent(row.difficulty)}&challenge=true&friendId=${encodeURIComponent(row.friend.id)}&friendName=${encodeURIComponent(row.friend.name)}`}>
+                          <button type="button" className="action-button small secondary">Challenge</button>
+                        </Link>
+                      ) : (
+                        <button type="button" className="action-button small secondary" disabled>Challenge paused</button>
+                      )}
                     </td>
                   </tr>
                 ))}

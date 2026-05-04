@@ -17,6 +17,7 @@ import {
   rejectParentVerificationRequest,
   updateProfile,
 } from "../../lib/user";
+import { betaConfig } from "../../lib/beta";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -68,13 +69,22 @@ export default function ProfilePage() {
 
   const saveProfile = () => {
     if (!user) return;
-    const updated = updateProfile({ ...user, realName: realName.trim(), phone: phone.trim(), avatarStyle });
+    const updated = updateProfile({
+      ...user,
+      realName: realName.trim(),
+      phone: betaConfig.phoneCollectionEnabled ? phone.trim() : user.phone,
+      avatarStyle,
+    });
     setUser(updated);
     setProfileMessage("Profile saved.");
   };
 
   const addFriend = () => {
     if (!user) return;
+    if (!betaConfig.friendCodeSharingEnabled) {
+      setFriendMessage("Friend adding is visible but paused during private beta.");
+      return;
+    }
     try {
       const updated = addFriendContact(user, { name: friendName, email: friendEmail, phone: friendPhone });
       setUser(updated);
@@ -130,6 +140,10 @@ export default function ProfilePage() {
   };
 
   const toggleChildFriends = (child: Profile) => {
+    if (!betaConfig.friendCodeSharingEnabled) {
+      setRequestMessage("Child friend sharing is visible but paused during private beta.");
+      return;
+    }
     const updated = updateProfile({ ...child, canAddFriends: !child.canAddFriends });
     setLinkedChildren((current) => current.map((item) => item.id === updated.id ? updated : item));
   };
@@ -139,7 +153,7 @@ export default function ProfilePage() {
   }
 
   const homeHref = user.isParent ? "/parent" : "/home";
-  const canManageFriends = user.isParent || user.canAddFriends;
+  const canManageFriends = betaConfig.friendCodeSharingEnabled && (user.isParent || user.canAddFriends);
 
   return (
     <main className="app-screen">
@@ -164,7 +178,14 @@ export default function ProfilePage() {
         </div>
         <div className="field">
           <label htmlFor="phone">Phone number</label>
-          <input id="phone" value={phone} onChange={(event) => setPhone(event.target.value)} />
+          <input
+            id="phone"
+            value={phone}
+            disabled={!betaConfig.phoneCollectionEnabled}
+            onChange={(event) => setPhone(event.target.value)}
+            placeholder={betaConfig.phoneCollectionEnabled ? "" : "Paused during private beta"}
+          />
+          {!betaConfig.phoneCollectionEnabled ? <p className="setting-description">Phone number collection is visible but paused during private beta.</p> : null}
         </div>
         <div className="field">
           <label htmlFor="avatarStyle">Reader identity</label>
@@ -178,13 +199,15 @@ export default function ProfilePage() {
 
       <section className="home-section" aria-labelledby="privacy-heading">
         <h2 id="privacy-heading">Privacy</h2>
-        <p>Reading Quest uses your screen name for app progress and leaderboards. Your real name, phone number, email, friends, and family links are only for account and safety features.</p>
+        <p>Reading Quest uses your screen name for app progress and leaderboards. Your real name, email, friends, and family links are only for account and safety features. Phone numbers are not being collected during private beta.</p>
         <p>Verified parents can see linked child quiz history, reading logs, prize requests, and reported quiz questions. Friend adding for child accounts stays locked until a verified parent allows it.</p>
       </section>
 
       <section className="home-section" aria-labelledby="friends-heading">
         <h2 id="friends-heading">Friends</h2>
-        {canManageFriends ? (
+        {!betaConfig.friendCodeSharingEnabled ? (
+          <div className="warning-box">Friend adding by name, email, phone, or code is visible but paused during private beta.</div>
+        ) : canManageFriends ? (
           <>
             <div className="field">
               <label htmlFor="friendName">Friend name</label>
@@ -196,7 +219,7 @@ export default function ProfilePage() {
             </div>
             <div className="field">
               <label htmlFor="friendPhone">Friend phone</label>
-              <input id="friendPhone" value={friendPhone} onChange={(event) => setFriendPhone(event.target.value)} />
+              <input id="friendPhone" value={friendPhone} disabled={!betaConfig.phoneCollectionEnabled} onChange={(event) => setFriendPhone(event.target.value)} />
             </div>
             <button type="button" onClick={addFriend}>Add Friend</button>
           </>
@@ -234,8 +257,8 @@ export default function ProfilePage() {
                   <li key={child.id}>
                     {child.name}
                     <div className="button-row">
-                      <button type="button" className="secondary" onClick={() => toggleChildFriends(child)}>
-                        {child.canAddFriends ? "Disable child friends" : "Allow child friends"}
+                      <button type="button" className="secondary" disabled={!betaConfig.friendCodeSharingEnabled} onClick={() => toggleChildFriends(child)}>
+                        {betaConfig.friendCodeSharingEnabled ? (child.canAddFriends ? "Disable child friends" : "Allow child friends") : "Friend sharing paused"}
                       </button>
                     </div>
                   </li>

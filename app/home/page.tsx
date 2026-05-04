@@ -24,6 +24,7 @@ import {
   Profile,
 } from "../../lib/user";
 import { getBookRecommendations as buildRecommendations } from "../../lib/recommendations";
+import BetaDisclaimer from "../components/BetaDisclaimer";
 
 function recentTitle(profile: Profile | null) {
   if (!profile || profile.quizzes.length === 0) return "";
@@ -126,6 +127,8 @@ export default function HomePage() {
           <p>Welcome back, {currentUser.name}.</p>
         </div>
       </div>
+
+      <BetaDisclaimer />
 
       <section className="home-section summary-section" aria-labelledby="summary-heading">
         <h2 id="summary-heading">Today</h2>
