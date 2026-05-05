@@ -261,7 +261,7 @@ async function generateQuizSection(details: {
 }) {
   const response = await openai.chat.completions.create({
     model: quizModel,
-    max_tokens: 3500,
+    max_tokens: Math.min(7500, Math.max(2500, details.questionCount * 360)),
     messages: [
       {
         role: "system",
@@ -292,18 +292,11 @@ async function generateChunkedQuiz(details: {
   learningGoal: string;
   questionCount: number;
 }) {
-  const chunkSizes = [10, 5];
-  let lastError: unknown;
-
-  for (const chunkSize of chunkSizes) {
-    try {
-      return await generateQuizInChunks(details, chunkSize);
-    } catch (error) {
-      lastError = error;
-    }
+  const quizData = await generateQuizSection(details);
+  if (!isValidQuiz(quizData, details.questionCount)) {
+    throw new Error("Quiz generation returned duplicate or incomplete questions. Please try again.");
   }
-
-  throw lastError instanceof Error ? lastError : new Error("Quiz generation returned an incomplete quiz.");
+  return quizData;
 }
 
 async function generateQuizInChunks(
