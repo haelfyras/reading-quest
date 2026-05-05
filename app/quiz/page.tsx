@@ -7,6 +7,7 @@ import {
   addQuizResult,
   addQuizIssueReport,
   addReview,
+  awardQuizIssueReportPoints,
   completeReadingChallenge,
   createReadingChallenge,
   defaultParentControls,
@@ -21,6 +22,7 @@ import {
   difficultyLevels,
   Profile,
 } from "../../lib/user";
+import { getBookRecommendations } from "../../lib/recommendations";
 import type { BookLookupResult, BookMatch } from "../../lib/books";
 import {
   getAllowedDifficulties,
@@ -237,6 +239,7 @@ function QuizPageContent() {
   const timerClass = timeLeft > 10 ? "good" : timeLeft > 5 ? "warn" : "danger";
   const homeHref = user?.isParent ? "/parent" : "/home";
   const planQuizAvailability = user ? getPlanQuizAvailability(user) : null;
+  const loadingSuggestion = user ? getBookRecommendations({ profile: user, limit: 1 }).suggestions[0] : "";
 
   const detectReadingLevel = async (book: BookMatch) => {
     setError("");
@@ -566,9 +569,17 @@ function QuizPageContent() {
     reason: "impossible" | "wrong_answer" | "too_hard" | "spoiler" | "not_from_book",
   ) => {
     if (!quizData || !user) return;
+    const alreadyReportedForQuestion = Object.keys(reportedQuestions).some((key) => key.startsWith(`${questionIndex}-`));
+    if (alreadyReportedForQuestion) {
+      setReportedQuestions((current) => ({
+        ...current,
+        [`${questionIndex}-${reason}`]: "This question has already been sent for review.",
+      }));
+      return;
+    }
 
     const question = quizData.questions[questionIndex];
-    addQuizIssueReport({
+    const report = addQuizIssueReport({
       profileId: user.id,
       profileName: user.name,
       bookTitle,
@@ -577,12 +588,22 @@ function QuizPageContent() {
       choices: question.choices,
       answerIndex: question.answerIndex,
       selectedChoice: selectedAnswers[questionIndex] ?? -1,
+      questionValue,
       reason,
     });
 
+    if (user.isParent) {
+      const updated = awardQuizIssueReportPoints(report.id);
+      if (updated) {
+        setUser(updated);
+      }
+    }
+
     setReportedQuestions((current) => ({
       ...current,
-      [`${questionIndex}-${reason}`]: "Sent to the parent review queue.",
+      [`${questionIndex}-${reason}`]: user.isParent
+        ? "Accepted. Correction points were added for this question."
+        : "Sent to the parent review queue.",
     }));
   };
 
@@ -758,6 +779,19 @@ function QuizPageContent() {
           <button onClick={handleGenerate} disabled={isLoading || isDetectingLevel || isCheckingBook}>
             {isLoading ? "Generating quiz..." : "Generate quiz"}
           </button>
+
+          {isLoading ? (
+            <div className="quiz-loading-panel" role="status" aria-live="polite">
+              <div className="quiz-loading-spinner" aria-hidden="true" />
+              <div>
+                <strong>Building and checking your quiz...</strong>
+                <p>
+                  We are checking the questions and answers before the quiz starts.
+                  {loadingSuggestion ? ` After this, you might like ${loadingSuggestion}.` : " Keep a favorite book nearby in case you want to look back after the quiz."}
+                </p>
+              </div>
+            </div>
+          ) : null}
 
           {!isFriendlyChallenge && planQuizAvailability ? (
             <div className="nested-section plan-quiz-gate">

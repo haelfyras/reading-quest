@@ -2,11 +2,15 @@ import { NextResponse } from "next/server";
 import { openai } from "../../../lib/openai";
 import { getQuestionCount } from "../../../lib/scoring";
 
+export const maxDuration = 30;
+
 const difficultyMap = {
   easy: "easy",
   medium: "medium",
   hard: "hard",
 };
+
+const quizModel = process.env.OPENAI_QUIZ_MODEL || "gpt-4o-mini";
 
 const goalMap: Record<string, string> = {
   habit_formation: "Habit Forming: prioritize confidence, completion, and encouraging the child to read more. Ask approachable questions about obvious story moments, main characters, and broad events. Avoid trick questions.",
@@ -141,6 +145,48 @@ function normalizeQuiz(rawQuiz: GeneratedQuiz, bookTitle: string, questionCount:
   };
 }
 
+function parseJsonObject(text: string) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const jsonMatch = text.trim().match(/\{[\s\S]*\}$/);
+    if (!jsonMatch) {
+      throw new Error("No JSON object found.");
+    }
+    return JSON.parse(jsonMatch[0]);
+  }
+}
+
+async function reviewQuizWithModel(
+  quizData: ReturnType<typeof normalizeQuiz>,
+  details: {
+    bookTitle: string;
+    difficulty: string;
+    bookLevel: string;
+    learningGoal: string;
+    questionCount: number;
+  },
+) {
+  const response = await openai.chat.completions.create({
+    model: quizModel,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are a strict quiz quality reviewer. Return only corrected JSON. Fix wrong answers, impossible questions, weak distractors, answerIndex mismatches, and difficulty mismatches. If a question cannot be verified, replace it with a safer question.",
+      },
+      {
+        role: "user",
+        content: `Review this quiz for "${details.bookTitle}". Difficulty: ${details.difficulty}. Reading level: ${details.bookLevel}. Testing level: ${details.learningGoal}. It must have exactly ${details.questionCount} questions, 4 choices per question, a correct answerIndex, answerText matching choices[answerIndex], and a short explanation. For medium/hard quizzes, distractors must be plausible and from the same book, series, author, or literary role. Return only the corrected JSON object.\n\n${JSON.stringify(quizData)}`,
+      },
+    ],
+  });
+
+  const text = response.choices?.[0]?.message?.content?.trim() ?? "";
+  const parsed = parseJsonObject(text);
+  return normalizeQuiz(parsed, details.bookTitle, details.questionCount);
+}
+
 export async function POST(request: Request) {
   const body = await request.json();
   const bookTitle = String(body.bookTitle || "").trim();
@@ -155,7 +201,7 @@ export async function POST(request: Request) {
   }
 
   const response = await openai.chat.completions.create({
-    model: "gpt-3.5-turbo",
+    model: quizModel,
     messages: [
       {
         role: "system",
@@ -172,14 +218,28 @@ export async function POST(request: Request) {
   const trimmedText = text.trim();
 
   try {
-    const quizData = normalizeQuiz(JSON.parse(trimmedText), bookTitle, questionCount);
-    return NextResponse.json({ quiz: quizData });
+    const quizData = normalizeQuiz(parseJsonObject(trimmedText), bookTitle, questionCount);
+    const reviewedQuiz = await reviewQuizWithModel(quizData, {
+      bookTitle,
+      difficulty,
+      bookLevel,
+      learningGoal,
+      questionCount,
+    });
+    return NextResponse.json({ quiz: reviewedQuiz });
   } catch (parseError) {
     const jsonMatch = trimmedText.match(/\{[\s\S]*\}$/);
     if (jsonMatch) {
       try {
         const quizData = normalizeQuiz(JSON.parse(jsonMatch[0]), bookTitle, questionCount);
-        return NextResponse.json({ quiz: quizData });
+        const reviewedQuiz = await reviewQuizWithModel(quizData, {
+          bookTitle,
+          difficulty,
+          bookLevel,
+          learningGoal,
+          questionCount,
+        });
+        return NextResponse.json({ quiz: reviewedQuiz });
       } catch {
         // continue to fallback
       }

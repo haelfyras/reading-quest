@@ -179,7 +179,7 @@ export default function Page() {
               <div className="role-picker" aria-label="Account type">
                 <button
                   type="button"
-                  className={userType === "child" ? "role-card selected" : "role-card"}
+                  className={userType === "child" ? "role-card child-role selected" : "role-card child-role"}
                   onClick={() => {
                     setUserType("child");
                     resetMessages();
@@ -190,13 +190,13 @@ export default function Page() {
                 </button>
                 <button
                   type="button"
-                  className={userType === "parent" ? "role-card selected" : "role-card"}
+                  className={userType === "parent" ? "role-card parent-role selected" : "role-card parent-role"}
                   onClick={() => {
                     setUserType("parent");
                     resetMessages();
                   }}
                 >
-                  <strong>Grown-up</strong>
+                  <strong>Parent account</strong>
                   <span>Family controls, review queue, reports, and prize approval.</span>
                 </button>
               </div>

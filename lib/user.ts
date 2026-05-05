@@ -1,4 +1,4 @@
-import { getNextAllowedDifficulty } from "./scoring";
+import { getNextAllowedDifficulty, getQuestionValue } from "./scoring";
 
 export type QuizHistory = {
   bookTitle: string;
@@ -61,6 +61,9 @@ export type QuizIssueReport = {
   choices: string[];
   answerIndex: number;
   selectedChoice: number;
+  questionValue?: number;
+  correctionPointsAwarded?: boolean;
+  correctionPoints?: number;
   reason: "impossible" | "wrong_answer" | "too_hard" | "spoiler" | "not_from_book";
   status?: "open" | "accepted" | "dismissed";
   parentNote?: string;
@@ -1367,5 +1370,75 @@ export function updateQuizIssueReport(
   );
   writeStorage("readingQuestQuizIssueReports", next);
   return next.find((report) => report.id === reportId) ?? null;
+}
+
+export function awardQuizIssueReportPoints(reportId: string) {
+  const reports = getQuizIssueReports();
+  const report = reports.find((item) => item.id === reportId);
+  if (!report || report.correctionPointsAwarded || report.selectedChoice === report.answerIndex) {
+    return null;
+  }
+
+  const questionValue = report.questionValue ?? getQuestionValue(report.difficulty);
+  const profiles = getProfiles();
+  const profile = profiles.find((item) => item.id === report.profileId);
+  if (!profile) {
+    return null;
+  }
+
+  let adjustedQuiz = false;
+  let actualPoints = 0;
+  const quizzes = profile.quizzes
+    .slice()
+    .reverse()
+    .map((quiz) => {
+      if (
+        !adjustedQuiz &&
+        quiz.bookTitle.trim().toLowerCase() === report.bookTitle.trim().toLowerCase() &&
+        quiz.difficulty === report.difficulty
+      ) {
+        adjustedQuiz = true;
+        const adjustedScore = Math.min(quiz.maxScore, quiz.score + questionValue);
+        actualPoints = Math.max(0, adjustedScore - quiz.score);
+        return {
+          ...quiz,
+          score: adjustedScore,
+          earnedPoints: (quiz.earnedPoints ?? quiz.score) + actualPoints,
+        };
+      }
+      return quiz;
+    })
+    .reverse();
+
+  if (!adjustedQuiz) {
+    actualPoints = questionValue;
+  }
+
+  if (actualPoints <= 0) {
+    return null;
+  }
+
+  const updatedProfile: Profile = {
+    ...profile,
+    points: getSpendablePoints(profile) + actualPoints,
+    lifetimePoints: getLifetimePoints(profile) + actualPoints,
+    quizzes,
+  };
+
+  saveProfiles(profiles.map((item) => (item.id === profile.id ? updatedProfile : item)));
+
+  const nextReports = reports.map((item) =>
+    item.id === reportId
+      ? {
+          ...item,
+          status: "accepted" as const,
+          correctionPointsAwarded: true,
+          correctionPoints: actualPoints,
+          parentNote: item.parentNote ?? `Awarded ${actualPoints} point correction.`,
+        }
+      : item,
+  );
+  writeStorage("readingQuestQuizIssueReports", nextReports);
+  return updatedProfile;
 }
 

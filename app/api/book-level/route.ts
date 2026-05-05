@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { openai } from "../../../lib/openai";
 
+export const maxDuration = 15;
+
+const quizModel = process.env.OPENAI_QUIZ_MODEL || "gpt-4o-mini";
+
 export async function POST(request: Request) {
   const body = await request.json();
   const bookTitle = String(body.bookTitle || "").trim();
@@ -11,7 +15,7 @@ export async function POST(request: Request) {
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: quizModel,
       messages: [
         {
           role: "system",

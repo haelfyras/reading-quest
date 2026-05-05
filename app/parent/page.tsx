@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import {
+  awardQuizIssueReportPoints,
   defaultParentControls,
   getCurrentProfile,
   getLifetimePoints,
@@ -103,10 +104,20 @@ export default function ParentPage() {
   };
 
   const resolveReport = (reportId: string, status: "accepted" | "dismissed") => {
-    updateQuizIssueReport(reportId, {
-      status,
-      parentNote: status === "accepted" ? "Parent agreed this quiz item needs review." : "Parent dismissed this report.",
-    });
+    if (status === "accepted") {
+      awardQuizIssueReportPoints(reportId);
+      updateQuizIssueReport(reportId, {
+        status,
+        parentNote: "Parent agreed this quiz item needs review and awarded the missed points.",
+      });
+      setParentMessage("Report accepted. The reader received the missed points for that question.");
+    } else {
+      updateQuizIssueReport(reportId, {
+        status,
+        parentNote: "Parent dismissed this report.",
+      });
+      setParentMessage("Report dismissed.");
+    }
     refreshParentData();
   };
 
@@ -256,10 +267,15 @@ export default function ParentPage() {
                 <div>
                   <strong>{report.bookTitle}</strong>
                   <p>{report.question}</p>
-                  <small>{report.profileName} reported: {report.reason.replace(/_/g, " ")}</small>
+                  <small>
+                    {report.profileName} reported: {report.reason.replace(/_/g, " ")}
+                    {report.correctionPointsAwarded ? ` - ${report.correctionPoints ?? 0} correction points awarded` : ""}
+                  </small>
                 </div>
                 <div className="button-row">
-                  <button type="button" className="secondary" onClick={() => resolveReport(report.id, "accepted")}>Needs review</button>
+                  <button type="button" className="secondary" disabled={report.correctionPointsAwarded} onClick={() => resolveReport(report.id, "accepted")}>
+                    {report.correctionPointsAwarded ? "Points awarded" : "Agree and award points"}
+                  </button>
                   <button type="button" className="secondary" onClick={() => resolveReport(report.id, "dismissed")}>Dismiss</button>
                 </div>
               </div>
