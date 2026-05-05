@@ -4,7 +4,12 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION } from "../lib/product";
 import { createProfile, getCurrentProfile, Profile, setCurrentUserId, verifyProfile } from "../lib/user";
-import { createParentWithSupabase, EmailConfirmationRequiredError, signInParentWithSupabase } from "../lib/supabase/auth";
+import {
+  createParentWithSupabase,
+  EmailConfirmationRequiredError,
+  getSupabaseErrorMessage,
+  signInParentWithSupabase,
+} from "../lib/supabase/auth";
 
 type UserType = "child" | "parent";
 type AuthMode = "signIn" | "create";
@@ -82,7 +87,7 @@ export default function Page() {
           return;
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : "Unable to sign in with Supabase.";
+        const message = getSupabaseErrorMessage(err);
         if (/email not confirmed|confirm/i.test(message)) {
           setNotice("Almost done. Please confirm your email address, then come back to sign in.");
           setError("");
@@ -137,7 +142,7 @@ export default function Page() {
           setNotice(err.message);
           setError("");
         } else {
-          setError(err instanceof Error ? err.message : "Failed to create parent account.");
+          setError(getSupabaseErrorMessage(err));
           setNotice("");
         }
         setIsSubmitting(false);

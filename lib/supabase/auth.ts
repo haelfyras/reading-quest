@@ -1,6 +1,5 @@
 "use client";
 
-import type { User } from "@supabase/supabase-js";
 import { createBrowserSupabaseClient, isSupabaseConfigured } from "./client";
 import type { Database } from "./database.types";
 import {
@@ -24,11 +23,6 @@ function getAuthRedirectUrl() {
   const configuredUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   const origin = configuredUrl || (typeof window !== "undefined" ? window.location.origin : "");
   return origin ? `${origin.replace(/\/$/, "")}/` : undefined;
-}
-
-function generateProfileCode(name: string) {
-  const prefix = name.replace(/[^a-z0-9]/gi, "").slice(0, 4).toUpperCase() || "READ";
-  return `RQ-${prefix}-${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
 function mapDbProfileToLocalProfile(row: DbProfile): Profile {
@@ -81,48 +75,33 @@ function saveLocalMirror(profile: Profile) {
   return profile;
 }
 
-async function fetchParentProfile(user: User) {
-  const supabase = createBrowserSupabaseClient();
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("auth_user_id", user.id)
-    .eq("account_type", "parent")
-    .maybeSingle();
-
-  if (error) {
-    throw error;
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
   }
-
-  return data;
+  if (typeof error === "object" && error && "message" in error) {
+    return String((error as { message?: unknown }).message || "Unknown error");
+  }
+  return typeof error === "string" ? error : "Unknown error";
 }
 
-async function createParentProfile(user: User, realName: string) {
-  const supabase = createBrowserSupabaseClient();
-  const email = user.email ?? "";
-  const screenName = realName.trim() || email.split("@")[0] || "Parent";
+async function ensureParentProfile(accessToken: string, realName?: string) {
+  const response = await fetch("/api/auth/parent-profile", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ realName }),
+  });
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .insert({
-      auth_user_id: user.id,
-      account_type: "parent",
-      screen_name: screenName,
-      real_name: realName.trim() || screenName,
-      email,
-      profile_code: generateProfileCode(screenName),
-      can_add_friends: true,
-      avatar_style: "Library Hero",
-      verified: Boolean(user.email_confirmed_at),
-    })
-    .select("*")
-    .single();
+  const data = await response.json().catch(() => ({})) as { profile?: DbProfile; error?: string };
 
-  if (error) {
-    throw error;
+  if (!response.ok || !data.profile) {
+    throw new Error(data.error || "Unable to load your Reading Quest parent profile.");
   }
 
-  return data;
+  return data.profile;
 }
 
 export async function signInParentWithSupabase(email: string, password: string) {
@@ -144,11 +123,15 @@ export async function signInParentWithSupabase(email: string, password: string) 
     throw new Error("Supabase did not return a parent account.");
   }
 
-  const dbProfile = await fetchParentProfile(data.user) ?? await createParentProfile(
-    data.user,
+  if (!data.session?.access_token) {
+    throw new Error("Supabase did not return a valid session. Please sign in again.");
+  }
+
+  const dbProfile = await ensureParentProfile(
+    data.session.access_token,
     typeof data.user.user_metadata?.real_name === "string"
       ? data.user.user_metadata.real_name
-      : data.user.email?.split("@")[0] ?? "Parent",
+      : data.user.email?.split("@")[0],
   );
 
   return saveLocalMirror(mapDbProfileToLocalProfile(dbProfile));
@@ -184,10 +167,11 @@ export async function createParentWithSupabase(details: {
     throw new EmailConfirmationRequiredError(details.email.trim());
   }
 
-  const existingProfile = await fetchParentProfile(data.user);
-  const dbProfile = existingProfile ?? await createParentProfile(data.user, details.realName);
+  const dbProfile = await ensureParentProfile(data.session.access_token, details.realName);
   return saveLocalMirror(mapDbProfileToLocalProfile(dbProfile));
 }
+
+export { getErrorMessage as getSupabaseErrorMessage };
 
 export async function signOutSupabase() {
   if (!isSupabaseConfigured()) {
