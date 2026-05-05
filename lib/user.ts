@@ -1,4 +1,4 @@
-import { getNextAllowedDifficulty, getQuestionValue } from "./scoring";
+import { calculateQuizPoints, getNextAllowedDifficulty, getQuestionValue } from "./scoring";
 
 export type QuizHistory = {
   bookTitle: string;
@@ -264,7 +264,7 @@ export function getRetakeStatus(profile: Profile, bookTitle: string): RetakeStat
   return {
     nextDifficulty,
     available: true,
-    waitText: `Earn up to ${pointsAvailable}`,
+    waitText: `Improve ${pointsAvailable} ${pointsAvailable === 1 ? "question" : "questions"}`,
     pointsAvailable,
     forFunOnly: false,
   };
@@ -500,7 +500,7 @@ export function getQuizAvailability(profile: Profile, bookTitle: string, difficu
   if (!mastered) {
     return {
       available: true,
-      message: `You can retake this ${difficulty} quiz to earn up to ${lastSameDifficulty.maxScore - lastSameDifficulty.score} missing points.`,
+      message: `You can retake this ${difficulty} quiz to improve the ${lastSameDifficulty.maxScore - lastSameDifficulty.score} missed ${lastSameDifficulty.maxScore - lastSameDifficulty.score === 1 ? "question" : "questions"}.`,
       forFunOnly: false,
     };
   }
@@ -528,15 +528,23 @@ export function getPotentialEarnedPoints(
   },
 ) {
   const normalizedTitle = details.bookTitle.trim().toLowerCase();
-  const previousBest = profile.quizzes
-    .filter(
-      (quiz) =>
-        quiz.bookTitle.trim().toLowerCase() === normalizedTitle &&
-        quiz.difficulty === details.difficulty,
-    )
-    .reduce((best, quiz) => Math.max(best, quiz.score), 0);
+  const previousBookQuizzes = profile.quizzes.filter(
+    (quiz) => quiz.bookTitle.trim().toLowerCase() === normalizedTitle,
+  );
+  const previousSameDifficulty = previousBookQuizzes.filter((quiz) => quiz.difficulty === details.difficulty);
+  const firstTimeCompletion = previousBookQuizzes.length === 0;
+  const calculatedPoints = calculateQuizPoints({
+    difficulty: details.difficulty,
+    score,
+    maxScore,
+    firstTimeCompletion,
+  });
+  const previousBestEarned = previousSameDifficulty.reduce(
+    (best, quiz) => Math.max(best, quiz.earnedPoints ?? quiz.score),
+    0,
+  );
 
-  return Math.max(0, Math.min(score, maxScore - previousBest));
+  return Math.max(0, calculatedPoints - previousBestEarned);
 }
 
 export function getLifetimePoints(profile: Profile) {
@@ -1398,8 +1406,8 @@ export function awardQuizIssueReportPoints(reportId: string) {
         quiz.difficulty === report.difficulty
       ) {
         adjustedQuiz = true;
-        const adjustedScore = Math.min(quiz.maxScore, quiz.score + questionValue);
-        actualPoints = Math.max(0, adjustedScore - quiz.score);
+        const adjustedScore = Math.min(quiz.maxScore, quiz.score + 1);
+        actualPoints = adjustedScore > quiz.score ? questionValue : 0;
         return {
           ...quiz,
           score: adjustedScore,

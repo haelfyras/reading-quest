@@ -5,26 +5,22 @@ export type BookLevel = "beginner" | "intermediate" | "advanced";
 export const difficultyRules: Record<Difficulty, {
   label: string;
   questionCount: number;
-  pointsPerQuestion: number;
-  totalPoints: number;
+  basePoints: number;
 }> = {
   easy: {
     label: "Easy",
     questionCount: 5,
-    pointsPerQuestion: 2,
-    totalPoints: 10,
+    basePoints: 10,
   },
   medium: {
     label: "Medium",
     questionCount: 10,
-    pointsPerQuestion: 5,
-    totalPoints: 50,
+    basePoints: 40,
   },
   hard: {
     label: "Hard",
-    questionCount: 25,
-    pointsPerQuestion: 6,
-    totalPoints: 150,
+    questionCount: 20,
+    basePoints: 100,
   },
 };
 
@@ -61,7 +57,8 @@ export function getNextAllowedDifficulty(difficulty: string, bookLevel: string |
 }
 
 export function getQuestionValue(difficulty: string) {
-  return difficultyRules[difficulty as Difficulty]?.pointsPerQuestion ?? difficultyRules.easy.pointsPerQuestion;
+  const rules = difficultyRules[difficulty as Difficulty] ?? difficultyRules.easy;
+  return Math.ceil(rules.basePoints / rules.questionCount);
 }
 
 export function getQuestionCount(difficulty: string) {
@@ -69,5 +66,30 @@ export function getQuestionCount(difficulty: string) {
 }
 
 export function getMaxScore(difficulty: string) {
-  return difficultyRules[difficulty as Difficulty]?.totalPoints ?? difficultyRules.easy.totalPoints;
+  return getQuestionCount(difficulty);
+}
+
+export function getBasePoints(difficulty: string) {
+  return difficultyRules[difficulty as Difficulty]?.basePoints ?? difficultyRules.easy.basePoints;
+}
+
+export function getAccuracyMultiplier(score: number, maxScore: number) {
+  if (maxScore <= 0) return 0;
+  const accuracy = score / maxScore;
+  if (accuracy < 0.5) return 0.5;
+  if (accuracy <= 0.8) return 1;
+  if (accuracy <= 0.95) return 1.2;
+  return 1.5;
+}
+
+export function calculateQuizPoints(details: {
+  difficulty: string;
+  score: number;
+  maxScore: number;
+  firstTimeCompletion?: boolean;
+}) {
+  const basePoints = getBasePoints(details.difficulty);
+  const accuracyMultiplier = getAccuracyMultiplier(details.score, details.maxScore);
+  const firstTimeMultiplier = details.firstTimeCompletion ? 1.1 : 1;
+  return Math.ceil(basePoints * accuracyMultiplier * firstTimeMultiplier);
 }

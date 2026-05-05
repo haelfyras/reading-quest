@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { BookLookupResult, BookMatch } from "../../lib/books";
 import {
   getAllowedDifficulties,
-  getMaxScore,
+  getBasePoints,
   isDifficultyAllowedForBookLevel,
   type BookLevel,
 } from "../../lib/scoring";
@@ -48,7 +48,7 @@ export default function Home() {
   const [reviewMode, setReviewMode] = useState(false);
   const [editableQuiz, setEditableQuiz] = useState<QuizData | null>(null);
 
-  const pointEstimate = getMaxScore(difficulty);
+  const pointEstimate = getBasePoints(difficulty);
   const allowedDifficulties = getAllowedDifficulties(bookLevel);
 
   const detectReadingLevel = async (book: BookMatch) => {
@@ -455,7 +455,7 @@ export default function Home() {
         <select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as "easy" | "medium" | "hard")}>
           {allowedDifficulties.map((level) => (
             <option key={level} value={level}>
-              {level === "easy" ? "Easy - 5 questions, 10 points" : level === "medium" ? "Medium - 10 questions, 50 points" : "Hard - 25 questions, 150 points"}
+              {level === "easy" ? "Easy - 5 questions, 10 base points" : level === "medium" ? "Medium - 10 questions, 40 base points" : "Hard - 20 questions, 100 base points"}
             </option>
           ))}
         </select>

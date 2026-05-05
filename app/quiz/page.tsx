@@ -26,6 +26,7 @@ import { getBookRecommendations } from "../../lib/recommendations";
 import type { BookLookupResult, BookMatch } from "../../lib/books";
 import {
   getAllowedDifficulties,
+  getBasePoints,
   getMaxScore,
   getNextAllowedDifficulty,
   getQuestionValue,
@@ -235,6 +236,7 @@ function QuizPageContent() {
   const allowedDifficulties = getAllowedDifficulties(bookLevel);
   const nextAllowedDifficulty = bookLevel ? getNextAllowedDifficulty(difficulty, bookLevel) : null;
   const questionValue = getQuestionValue(difficulty);
+  const basePoints = getBasePoints(difficulty);
   const maxScore = quizData ? getMaxScore(difficulty) : 0;
   const timerClass = timeLeft > 10 ? "good" : timeLeft > 5 ? "warn" : "danger";
   const homeHref = user?.isParent ? "/parent" : "/home";
@@ -538,7 +540,7 @@ function QuizPageContent() {
     const isTimeout = choiceIndex === -1;
 
     if (correct && !isTimeout) {
-      setScore((prev) => prev + questionValue);
+      setScore((prev) => prev + 1);
     }
     setSelectedChoice(choiceIndex);
     setSelectedAnswers((current) => {
@@ -761,7 +763,7 @@ function QuizPageContent() {
             <select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value)}>
               {allowedDifficulties.map((level) => (
                 <option key={level} value={level}>
-                  {level === "easy" ? "Easy (5 questions, 10 points)" : level === "medium" ? "Medium (10 questions, 50 points)" : "Hard (25 questions, 150 points)"}
+                  {level === "easy" ? "Easy (5 questions, 10 base points)" : level === "medium" ? "Medium (10 questions, 40 base points)" : "Hard (20 questions, 100 base points)"}
                 </option>
               ))}
             </select>
@@ -826,7 +828,7 @@ function QuizPageContent() {
           <p>{quizData.quizDescription}</p>
           <div className="quiz-status">
             <span>Question {currentQuestion + 1} of {quizData.questions.length}</span>
-            <span>Current score: {score} / {maxScore}</span>
+            <span>Correct answers: {score} / {maxScore}</span>
           </div>
 
           <div className="question-card">
@@ -890,8 +892,13 @@ function QuizPageContent() {
         <div className="output">
           <h2>Quiz complete!</h2>
           <p>
-            You scored <strong>{score}</strong> / {maxScore}.
+            You answered <strong>{score}</strong> / {maxScore} correctly.
           </p>
+          {!isFriendlyChallenge ? (
+            <p className="setting-description">
+              Base points: {basePoints}. Accuracy and first-time book bonuses are included in the points earned below.
+            </p>
+          ) : null}
           <p>
             {isFriendlyChallenge ? (
               <>Friendly challenge complete. No points were awarded to your account.</>
