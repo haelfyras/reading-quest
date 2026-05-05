@@ -6,7 +6,8 @@ This folder contains the database foundation for moving Reading Quest from brows
 
 1. Open Supabase SQL Editor.
 2. Run `supabase/migrations/001_initial_reading_quest_schema.sql`.
-3. In Vercel, add these environment variables for Production and Preview:
+3. Run `supabase/migrations/002_data_api_grants.sql`.
+4. In Vercel, add these environment variables for Production and Preview:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
