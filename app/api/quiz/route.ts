@@ -146,10 +146,16 @@ function normalizeQuiz(rawQuiz: GeneratedQuiz, bookTitle: string, questionCount:
 }
 
 function parseJsonObject(text: string) {
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
   try {
-    return JSON.parse(text);
+    return JSON.parse(cleaned);
   } catch {
-    const jsonMatch = text.trim().match(/\{[\s\S]*\}$/);
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       throw new Error("No JSON object found.");
     }
@@ -173,7 +179,7 @@ async function reviewQuizWithModel(
       {
         role: "system",
         content:
-          "You are a strict quiz quality reviewer. Return only corrected JSON. Fix wrong answers, impossible questions, weak distractors, answerIndex mismatches, and difficulty mismatches. If a question cannot be verified, replace it with a safer question.",
+          "You are a strict quiz quality reviewer. Return only a valid JSON object, with no markdown and no commentary. Fix wrong answers, impossible questions, weak distractors, answerIndex mismatches, and difficulty mismatches. If a question cannot be verified, replace it with a safer question.",
       },
       {
         role: "user",
@@ -185,6 +191,28 @@ async function reviewQuizWithModel(
   const text = response.choices?.[0]?.message?.content?.trim() ?? "";
   const parsed = parseJsonObject(text);
   return normalizeQuiz(parsed, details.bookTitle, details.questionCount);
+}
+
+function isValidQuiz(quizData: ReturnType<typeof normalizeQuiz>, questionCount: number) {
+  return (
+    typeof quizData.quizTitle === "string" &&
+    typeof quizData.quizDescription === "string" &&
+    Array.isArray(quizData.questions) &&
+    quizData.questions.length === questionCount &&
+    quizData.questions.every((question) => {
+      const answerIndex = Number(question.answerIndex);
+      return (
+        typeof question.question === "string" &&
+        question.question.trim().length > 0 &&
+        Array.isArray(question.choices) &&
+        question.choices.length === 4 &&
+        question.choices.every((choice) => typeof choice === "string" && choice.trim().length > 0) &&
+        Number.isInteger(answerIndex) &&
+        answerIndex >= 0 &&
+        answerIndex < 4
+      );
+    })
+  );
 }
 
 export async function POST(request: Request) {
@@ -205,7 +233,7 @@ export async function POST(request: Request) {
     messages: [
       {
         role: "system",
-        content: "You are a careful reading teacher and literary quiz writer. You make accurate child-friendly quizzes with plausible answer choices that match the requested difficulty.",
+        content: "You are a careful reading teacher and literary quiz writer. You make accurate child-friendly quizzes with plausible answer choices that match the requested difficulty. Return only a valid JSON object, with no markdown and no commentary.",
       },
       {
         role: "user",
@@ -217,8 +245,24 @@ export async function POST(request: Request) {
   const text = response.choices?.[0]?.message?.content ?? "";
   const trimmedText = text.trim();
 
+  let quizData: ReturnType<typeof normalizeQuiz>;
   try {
-    const quizData = normalizeQuiz(parseJsonObject(trimmedText), bookTitle, questionCount);
+    quizData = normalizeQuiz(parseJsonObject(trimmedText), bookTitle, questionCount);
+  } catch {
+    return NextResponse.json(
+      { error: "Quiz generation returned invalid JSON. Please try again." },
+      { status: 502 },
+    );
+  }
+
+  if (!isValidQuiz(quizData, questionCount)) {
+    return NextResponse.json(
+      { error: "Quiz generation returned an incomplete quiz. Please try again." },
+      { status: 502 },
+    );
+  }
+
+  try {
     const reviewedQuiz = await reviewQuizWithModel(quizData, {
       bookTitle,
       difficulty,
@@ -226,24 +270,11 @@ export async function POST(request: Request) {
       learningGoal,
       questionCount,
     });
-    return NextResponse.json({ quiz: reviewedQuiz });
-  } catch (parseError) {
-    const jsonMatch = trimmedText.match(/\{[\s\S]*\}$/);
-    if (jsonMatch) {
-      try {
-        const quizData = normalizeQuiz(JSON.parse(jsonMatch[0]), bookTitle, questionCount);
-        const reviewedQuiz = await reviewQuizWithModel(quizData, {
-          bookTitle,
-          difficulty,
-          bookLevel,
-          learningGoal,
-          questionCount,
-        });
-        return NextResponse.json({ quiz: reviewedQuiz });
-      } catch {
-        // continue to fallback
-      }
+    if (!isValidQuiz(reviewedQuiz, questionCount)) {
+      return NextResponse.json({ quiz: quizData });
     }
-    return NextResponse.json({ quiz: trimmedText }); // Fallback to string if parsing fails
+    return NextResponse.json({ quiz: reviewedQuiz });
+  } catch {
+    return NextResponse.json({ quiz: quizData });
   }
 }
