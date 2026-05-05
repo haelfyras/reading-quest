@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { openai } from "../../../lib/openai";
-import { getQuestionCount } from "../../../lib/scoring";
+import {
+  getAllowedDifficulties,
+  getQuestionCount,
+  isDifficultyAllowedForBookLevel,
+} from "../../../lib/scoring";
 
 export const maxDuration = 30;
 
@@ -226,6 +230,16 @@ export async function POST(request: Request) {
 
   if (!bookTitle) {
     return new NextResponse("Book title is required.", { status: 400 });
+  }
+
+  if (!isDifficultyAllowedForBookLevel(difficulty, bookLevel)) {
+    const allowed = getAllowedDifficulties(bookLevel);
+    return NextResponse.json(
+      {
+        error: `This book level can only be tested on: ${allowed.join(", ")}.`,
+      },
+      { status: 400 },
+    );
   }
 
   const response = await openai.chat.completions.create({

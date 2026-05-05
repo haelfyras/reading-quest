@@ -26,8 +26,13 @@ import { getBookRecommendations } from "../../lib/recommendations";
 import type { BookLookupResult, BookMatch } from "../../lib/books";
 import {
   getBasePoints,
+  getAllowedDifficulties,
   getMaxScore,
+  getNextAllowedDifficulty,
   getQuestionValue,
+  isBookLevel,
+  isDifficultyAllowedForBookLevel,
+  type BookLevel,
 } from "../../lib/scoring";
 
 type QuizQuestion = {
@@ -117,8 +122,8 @@ function QuizPageContent() {
   const [isCheckingBook, setIsCheckingBook] = useState(false);
   const [bookLookupMessage, setBookLookupMessage] = useState("");
   const [showIsbnFallback, setShowIsbnFallback] = useState(false);
-  const [difficulty, setDifficulty] = useState("easy");
-  const [bookLevel, setBookLevel] = useState<string | null>(null);
+  const [difficulty, setDifficulty] = useState<typeof difficultyLevels[number]>("easy");
+  const [bookLevel, setBookLevel] = useState<BookLevel | null>(null);
   const [quizData, setQuizData] = useState<QuizData | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedChoice, setSelectedChoice] = useState<number | null>(null);
@@ -173,8 +178,12 @@ function QuizPageContent() {
         title: challenge.bookTitle,
         author: "Friend challenge",
       });
-      setDifficulty(challenge.difficulty);
-      setBookLevel(challenge.bookLevel);
+      const challengeLevel = isBookLevel(challenge.bookLevel) ? challenge.bookLevel : "intermediate";
+      const challengeDifficulty = difficultyLevels.includes(challenge.difficulty as typeof difficultyLevels[number])
+        ? challenge.difficulty as typeof difficultyLevels[number]
+        : "easy";
+      setBookLevel(challengeLevel);
+      setDifficulty(isDifficultyAllowedForBookLevel(challengeDifficulty, challengeLevel) ? challengeDifficulty : getAllowedDifficulties(challengeLevel)[0]);
       setQuizData({
         quizTitle: challenge.quizTitle,
         quizDescription: challenge.quizDescription,
@@ -208,8 +217,12 @@ function QuizPageContent() {
               author: "Parent approved",
             });
           }
-          setDifficulty(approvedQuiz.difficulty || "easy");
-          setBookLevel(approvedQuiz.bookLevel || "intermediate");
+          const approvedLevel = isBookLevel(approvedQuiz.bookLevel || "") ? approvedQuiz.bookLevel as BookLevel : "intermediate";
+          const approvedDifficulty = difficultyLevels.includes(approvedQuiz.difficulty as typeof difficultyLevels[number])
+            ? approvedQuiz.difficulty as typeof difficultyLevels[number]
+            : "easy";
+          setBookLevel(approvedLevel);
+          setDifficulty(isDifficultyAllowedForBookLevel(approvedDifficulty, approvedLevel) ? approvedDifficulty : getAllowedDifficulties(approvedLevel)[0]);
           setQuizData(approvedQuiz);
           setSelectedAnswers([]);
           setParentApprovedQuiz(approvedQuiz);
@@ -227,6 +240,10 @@ function QuizPageContent() {
       const bookTitleParam = searchParams.get("bookTitle") || "";
       const difficultyParam = searchParams.get("difficulty") || "easy";
       const bookLevelParam = searchParams.get("bookLevel") || "";
+      const parsedBookLevel = isBookLevel(bookLevelParam) ? bookLevelParam : null;
+      const parsedDifficulty = difficultyLevels.includes(difficultyParam as typeof difficultyLevels[number])
+        ? difficultyParam as typeof difficultyLevels[number]
+        : "easy";
 
       if (bookTitleParam.trim()) {
         setBookTitle(bookTitleParam);
@@ -236,11 +253,12 @@ function QuizPageContent() {
           author: "Saved quiz history",
         });
       }
-      if (difficultyLevels.includes(difficultyParam as typeof difficultyLevels[number])) {
-        setDifficulty(difficultyParam);
+      if (parsedBookLevel) {
+        setBookLevel(parsedBookLevel);
       }
-      if (bookLevelParam.trim()) {
-        setBookLevel(bookLevelParam);
+      setDifficulty(isDifficultyAllowedForBookLevel(parsedDifficulty, parsedBookLevel) ? parsedDifficulty : getAllowedDifficulties(parsedBookLevel)[0]);
+      if (bookLevelParam.trim() && !parsedBookLevel) {
+        setBookLevel(null);
       }
     }
   }, [searchParams]);
@@ -270,8 +288,8 @@ function QuizPageContent() {
     };
   }, []);
 
-  const nextDifficultyIndex = difficultyLevels.indexOf(difficulty as typeof difficultyLevels[number]) + 1;
-  const nextAllowedDifficulty = difficultyLevels[nextDifficultyIndex] ?? null;
+  const allowedDifficulties = getAllowedDifficulties(bookLevel);
+  const nextAllowedDifficulty = getNextAllowedDifficulty(difficulty, bookLevel);
   const questionValue = getQuestionValue(difficulty);
   const basePoints = getBasePoints(difficulty);
   const maxScore = quizData ? getMaxScore(difficulty) : 0;
@@ -297,8 +315,12 @@ function QuizPageContent() {
       }
 
       const data = await response.json();
-      setBookLevel(data.level);
-      return data.level as string;
+      const level = isBookLevel(String(data.level)) ? String(data.level) as BookLevel : "intermediate";
+      setBookLevel(level);
+      if (!isDifficultyAllowedForBookLevel(difficulty, level)) {
+        setDifficulty(getAllowedDifficulties(level)[0]);
+      }
+      return level;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to detect book level.");
       return null;
@@ -399,6 +421,12 @@ function QuizPageContent() {
     if (!resolvedBookLevel) {
       return;
     }
+    if (!isDifficultyAllowedForBookLevel(difficulty, resolvedBookLevel)) {
+      const allowedDifficulty = getAllowedDifficulties(resolvedBookLevel)[0];
+      setDifficulty(allowedDifficulty);
+      setError(`Beginner books can only use Easy quizzes. I switched this quiz to ${allowedDifficulty}.`);
+      return;
+    }
 
     if (user) {
       const controls = { ...defaultParentControls, ...(user.parentControls ?? {}) };
@@ -462,7 +490,14 @@ function QuizPageContent() {
       });
 
       if (!response.ok) {
-        const message = await response.text();
+        const rawMessage = await response.text();
+        let message = rawMessage;
+        try {
+          const parsed = JSON.parse(rawMessage) as { error?: string };
+          message = parsed.error || rawMessage;
+        } catch {
+          message = rawMessage;
+        }
         throw new Error(message || "Failed to generate quiz.");
       }
 
@@ -786,8 +821,8 @@ function QuizPageContent() {
 
           <div className="field">
             <label htmlFor="difficulty">Difficulty</label>
-            <select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value)}>
-              {difficultyLevels.map((level) => (
+            <select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as typeof difficultyLevels[number])}>
+              {allowedDifficulties.map((level) => (
                 <option key={level} value={level}>
                   {level === "easy" ? "Easy (5 questions, 10 base points)" : level === "medium" ? "Medium (10 questions, 40 base points)" : "Hard (20 questions, 100 base points)"}
                 </option>
@@ -795,7 +830,11 @@ function QuizPageContent() {
             </select>
             {bookLevel ? (
               <p className="setting-description">
-                Book reading level detected: {bookLevel}. Choose the test difficulty you want to take.
+                {bookLevel === "beginner"
+                  ? "Beginner books can only be tested on Easy."
+                  : bookLevel === "intermediate"
+                    ? "Intermediate books can be tested on Easy or Medium."
+                    : "Advanced books can be tested on Easy, Medium, or Hard."}
               </p>
             ) : confirmedBook ? (
               <p className="setting-description">Reading Quest will detect the book reading level after you confirm the book.</p>
