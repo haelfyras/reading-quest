@@ -42,6 +42,39 @@ const prompt = (
   return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. The questions array must contain exactly ${questionCount} complete question objects. Do not return fewer than ${questionCount}. Each question must have: question, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation.\n\nBook: "${bookTitle}". Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}.\n\nRules:\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Easy = simple title/character/obvious-event questions.\n- Medium = details, roles, setting, conflict, motivation, cause/effect.\n- Hard = inference, theme, symbolism, context, subtle motivation, relationships, consequences, or comparisons.\n- Choices must be plausible, similar in style, and from the same book, series, author, or literary role.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the book.\n- Use child-friendly language for ages 7-12.\n- Silently count the questions before returning JSON and make sure there are exactly ${questionCount}.${sectionInstruction}`;
 };
 
+const hardPrompt = (bookTitle: string, bookLevel: string, learningGoal: string) => {
+  const goalDescription = goalMap[learningGoal] || goalMap.basic_recollection;
+
+  return `Return only valid compact JSON with this exact shape:
+{"quizTitle": string, "quizDescription": string, "questions": [
+{"question": string, "choices": [string, string, string, string], "answerIndex": number, "answerText": string, "explanation": string}
+]}
+
+Create exactly 20 hard questions for "${bookTitle}". The book reading level is ${bookLevel}. Testing goal: ${goalDescription}.
+
+Question plan:
+1-4 character motivation
+5-8 cause and effect
+9-12 theme or lesson
+13-15 relationships or conflict
+16-18 consequences of choices
+19-20 bigger-picture meaning
+
+Rules:
+- The questions array must contain exactly 20 complete objects.
+- Do not return fewer than 20 questions.
+- Do not repeat the same question idea, event, character focus, or theme focus.
+- Do not ask simple recall, obscure trivia, trick questions, or impossible questions.
+- Each answer must be clearly correct from the book.
+- Each wrong answer must be plausible and from the same book, series, author, or literary role.
+- Keep each question under 18 words.
+- Keep each answer choice under 7 words.
+- Keep each explanation under 14 words.
+- answerIndex must point to answerText exactly.
+- Use child-friendly language for ages 7-12.
+- Count the questions before returning. Return JSON only.`;
+};
+
 type GeneratedQuestion = {
   question?: unknown;
   choices?: unknown;
@@ -231,6 +264,17 @@ async function generateQuizSection(details: {
   questionCount: number;
   section?: { number: number; total: number; previousQuestions: string[] };
 }) {
+  const userPrompt = details.difficulty === "hard"
+    ? hardPrompt(details.bookTitle, details.bookLevel, details.learningGoal)
+    : prompt(
+        details.bookTitle,
+        details.difficulty,
+        details.bookLevel,
+        details.learningGoal,
+        details.questionCount,
+        details.section,
+      );
+
   const response = await openai.chat.completions.create({
     model: quizModel,
     max_tokens: Math.min(6500, Math.max(2200, details.questionCount * 320)),
@@ -241,14 +285,7 @@ async function generateQuizSection(details: {
       },
       {
         role: "user",
-        content: prompt(
-          details.bookTitle,
-          details.difficulty,
-          details.bookLevel,
-          details.learningGoal,
-          details.questionCount,
-          details.section,
-        ),
+        content: userPrompt,
       },
     ],
   });
