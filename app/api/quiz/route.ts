@@ -32,10 +32,14 @@ const prompt = (
   bookLevel: string,
   learningGoal: string,
   questionCount: number,
+  section?: { number: number; total: number; previousQuestions: string[] },
 ) => {
   const goalDescription = goalMap[learningGoal] || goalMap.basic_recollection;
+  const sectionInstruction = section
+    ? `\n\nThis is section ${section.number} of ${section.total}. Create exactly ${questionCount} new questions for this section only. Do not repeat these earlier questions: ${section.previousQuestions.length ? section.previousQuestions.map((question) => `"${question}"`).join("; ") : "none"}.`
+    : "";
 
-  return `Create a JSON object with these fields:\n- quizTitle\n- quizDescription\n- questions (array of exactly ${questionCount} objects)\nEach question object must include:\n- question\n- choices (array of exactly 4 strings)\n- answerIndex (0-based index of the correct choice)\n- answerText (the exact correct choice text)\n- explanation (one short sentence explaining why the answer is correct)\n\nAccuracy rules:\n- answerIndex MUST point to the same choice as answerText.\n- The correct answer must be unambiguous and must appear exactly in choices[answerIndex].\n- Do not ask impossible-to-answer questions, questions that require obscure trivia, or questions with multiple reasonable answers.\n- If asking a counting question, the correct choice must be a number, not one of the counted items.\n- If you are not certain of the answer, choose a different question.\n\nDifficulty rules:\n- Easy: ask simple questions about the title, main characters, obvious events, or clearly known book facts. Distractors may be easier, but should still be book/genre appropriate when possible.\n- Medium: ask questions that require remembering story details, character roles, settings, conflicts, motivations, or cause and effect. Do NOT ask overly broad questions like "Who is the main character?" unless all answer choices are plausible characters from the same book or series.\n- Hard: ask questions that require inference, theme, symbolism, political/social context, subtle motivations, character relationships, consequences, or comparing events. Avoid simple recall questions.\n\nTesting level rules:\n- The selected testing level is more important than making questions feel academically advanced.\n- Habit Forming should feel inviting and confidence-building even on longer quizzes.\n- Basic Recollection should mostly test concrete story facts.\n- Further Understanding should ask more "why" and cause/effect questions.\n- Full Understanding should ask about themes, meaning, growth, and bigger-picture interpretation while staying answerable from the book.\n\nAnswer choice quality rules:\n- All 4 choices must be plausible to a reader who knows the book's genre or world.\n- For medium and hard quizzes, every incorrect choice must be a believable distractor from the same book, same series, same author, or same kind of literary role. For example, on Dune, incorrect choices should be names like Duke Leto, Lady Jessica, Chani, Baron Harkonnen, Stilgar, Gurney Halleck, Duncan Idaho, or similar Dune-relevant concepts, not unrelated pop-culture characters.\n- Never use joke answers or obviously unrelated choices such as Luke Skywalker, Darth Vader, Homer Simpson, Harry Potter, SpongeBob, or other cross-franchise characters unless that character truly appears in the book.\n- For hard quizzes, avoid answer choices where only one option is obviously from the book.\n- Choices should be similar in length and style so the correct answer is not visually obvious.\n\nUse simple, child-friendly language for ages 7-12. Make the quiz feel unique. Do not add any extra text outside the JSON object.\n\nThe book title is: "${bookTitle}". The difficulty level is ${difficulty}, the reading level is ${bookLevel}, and the testing level is ${goalDescription}.`;
+  return `Create a JSON object with these fields:\n- quizTitle\n- quizDescription\n- questions (array of exactly ${questionCount} objects)\nEach question object must include:\n- question\n- choices (array of exactly 4 strings)\n- answerIndex (0-based index of the correct choice)\n- answerText (the exact correct choice text)\n- explanation (one short sentence explaining why the answer is correct)\n\nAccuracy rules:\n- answerIndex MUST point to the same choice as answerText.\n- The correct answer must be unambiguous and must appear exactly in choices[answerIndex].\n- Do not ask impossible-to-answer questions, questions that require obscure trivia, or questions with multiple reasonable answers.\n- If asking a counting question, the correct choice must be a number, not one of the counted items.\n- If you are not certain of the answer, choose a different question.\n- Before returning the JSON, silently verify every question, answerIndex, answerText, and answer choice.\n\nDifficulty rules:\n- Easy: ask simple questions about the title, main characters, obvious events, or clearly known book facts. Distractors may be easier, but should still be book/genre appropriate when possible.\n- Medium: ask questions that require remembering story details, character roles, settings, conflicts, motivations, or cause and effect. Do NOT ask overly broad questions like "Who is the main character?" unless all answer choices are plausible characters from the same book or series.\n- Hard: ask questions that require inference, theme, symbolism, political/social context, subtle motivations, character relationships, consequences, or comparing events. Avoid simple recall questions.\n\nTesting level rules:\n- The selected testing level is more important than making questions feel academically advanced.\n- Habit Forming should feel inviting and confidence-building even on longer quizzes.\n- Basic Recollection should mostly test concrete story facts.\n- Further Understanding should ask more "why" and cause/effect questions.\n- Full Understanding should ask about themes, meaning, growth, and bigger-picture interpretation while staying answerable from the book.\n\nAnswer choice quality rules:\n- All 4 choices must be plausible to a reader who knows the book's genre or world.\n- For medium and hard quizzes, every incorrect choice must be a believable distractor from the same book, same series, same author, or same kind of literary role. For example, on Dune, incorrect choices should be names like Duke Leto, Lady Jessica, Chani, Baron Harkonnen, Stilgar, Gurney Halleck, Duncan Idaho, or similar Dune-relevant concepts, not unrelated pop-culture characters.\n- Never use joke answers or obviously unrelated choices such as Luke Skywalker, Darth Vader, Homer Simpson, Harry Potter, SpongeBob, or other cross-franchise characters unless that character truly appears in the book.\n- For hard quizzes, avoid answer choices where only one option is obviously from the book.\n- Choices should be similar in length and style so the correct answer is not visually obvious.\n- Do not repeat or rephrase the same question within this quiz section.${sectionInstruction}\n\nUse simple, child-friendly language for ages 7-12. Make the quiz feel unique. Do not add any extra text outside the JSON object.\n\nThe book title is: "${bookTitle}". The difficulty level is ${difficulty}, the reading level is ${bookLevel}, and the testing level is ${goalDescription}.`;
 };
 
 type GeneratedQuestion = {
@@ -71,6 +75,33 @@ const colorWords = [
 
 function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function questionSignature(value: unknown) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/["'`]/g, "")
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\b(the|a|an|in|on|of|to|for|and|or|does|do|did|is|are|was|were)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function hasDuplicateQuestions(questions: Array<{ question?: unknown }>) {
+  const seen = new Set<string>();
+
+  for (const question of questions) {
+    const signature = questionSignature(question.question);
+    if (!signature) {
+      continue;
+    }
+    if (seen.has(signature)) {
+      return true;
+    }
+    seen.add(signature);
+  }
+
+  return false;
 }
 
 function countColorsInTitle(bookTitle: string) {
@@ -203,6 +234,7 @@ function isValidQuiz(quizData: ReturnType<typeof normalizeQuiz>, questionCount: 
     typeof quizData.quizDescription === "string" &&
     Array.isArray(quizData.questions) &&
     quizData.questions.length === questionCount &&
+    !hasDuplicateQuestions(quizData.questions) &&
     quizData.questions.every((question) => {
       const answerIndex = Number(question.answerIndex);
       return (
@@ -217,6 +249,132 @@ function isValidQuiz(quizData: ReturnType<typeof normalizeQuiz>, questionCount: 
       );
     })
   );
+}
+
+async function generateQuizSection(details: {
+  bookTitle: string;
+  difficulty: string;
+  bookLevel: string;
+  learningGoal: string;
+  questionCount: number;
+  section?: { number: number; total: number; previousQuestions: string[] };
+}) {
+  const response = await openai.chat.completions.create({
+    model: quizModel,
+    max_tokens: 3500,
+    messages: [
+      {
+        role: "system",
+        content: "You are a careful reading teacher and literary quiz writer. You make accurate child-friendly quizzes with plausible answer choices that match the requested difficulty. Return only a valid JSON object, with no markdown and no commentary.",
+      },
+      {
+        role: "user",
+        content: prompt(
+          details.bookTitle,
+          details.difficulty,
+          details.bookLevel,
+          details.learningGoal,
+          details.questionCount,
+          details.section,
+        ),
+      },
+    ],
+  });
+
+  const text = response.choices?.[0]?.message?.content ?? "";
+  return normalizeQuiz(parseJsonObject(text.trim()), details.bookTitle, details.questionCount);
+}
+
+async function generateChunkedQuiz(details: {
+  bookTitle: string;
+  difficulty: string;
+  bookLevel: string;
+  learningGoal: string;
+  questionCount: number;
+}) {
+  const chunkSizes = [10, 5];
+  let lastError: unknown;
+
+  for (const chunkSize of chunkSizes) {
+    try {
+      return await generateQuizInChunks(details, chunkSize);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Quiz generation returned an incomplete quiz.");
+}
+
+async function generateQuizInChunks(
+  details: {
+    bookTitle: string;
+    difficulty: string;
+    bookLevel: string;
+    learningGoal: string;
+    questionCount: number;
+  },
+  chunkSize: number,
+) {
+  const totalSections = Math.ceil(details.questionCount / chunkSize);
+  const allQuestions: ReturnType<typeof normalizeQuiz>["questions"] = [];
+  const seenQuestionSignatures = new Set<string>();
+
+  for (let index = 0; index < totalSections; index += 1) {
+    const remaining = details.questionCount - allQuestions.length;
+    const sectionQuestionCount = Math.min(chunkSize, remaining);
+    let acceptedSection: ReturnType<typeof normalizeQuiz> | null = null;
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const sectionQuiz = await generateQuizSection({
+        ...details,
+        questionCount: sectionQuestionCount,
+        section: {
+          number: index + 1,
+          total: totalSections,
+          previousQuestions: allQuestions.map((question) => String(question.question || "")),
+        },
+      });
+
+      if (!isValidQuiz(sectionQuiz, sectionQuestionCount)) {
+        continue;
+      }
+
+      const sectionSignatures = sectionQuiz.questions.map((question) => questionSignature(question.question));
+      const hasRepeatedQuestion = sectionSignatures.some(
+        (signature, questionIndex) =>
+          !signature ||
+          seenQuestionSignatures.has(signature) ||
+          sectionSignatures.indexOf(signature) !== questionIndex,
+      );
+
+      if (!hasRepeatedQuestion) {
+        acceptedSection = sectionQuiz;
+        break;
+      }
+    }
+
+    if (!acceptedSection) {
+      throw new Error("Quiz generation repeated questions. Please try again.");
+    }
+
+    acceptedSection.questions.forEach((question) => {
+      seenQuestionSignatures.add(questionSignature(question.question));
+    });
+    allQuestions.push(...acceptedSection.questions);
+  }
+
+  const quizData = {
+    quizTitle: `${details.bookTitle} ${details.difficulty.charAt(0).toUpperCase()}${details.difficulty.slice(1)} Quiz`,
+    quizDescription: "Answer each question about the book.",
+    questions: allQuestions.slice(0, details.questionCount),
+  };
+
+  if (!isValidQuiz(quizData, details.questionCount)) {
+    throw new Error("Quiz generation returned an incomplete quiz.");
+  }
+
+  return quizData;
 }
 
 export async function POST(request: Request) {
@@ -242,29 +400,14 @@ export async function POST(request: Request) {
     );
   }
 
-  const response = await openai.chat.completions.create({
-    model: quizModel,
-    messages: [
-      {
-        role: "system",
-        content: "You are a careful reading teacher and literary quiz writer. You make accurate child-friendly quizzes with plausible answer choices that match the requested difficulty. Return only a valid JSON object, with no markdown and no commentary.",
-      },
-      {
-        role: "user",
-        content: prompt(bookTitle, difficulty, bookLevel, learningGoal, questionCount),
-      },
-    ],
-  });
-
-  const text = response.choices?.[0]?.message?.content ?? "";
-  const trimmedText = text.trim();
-
   let quizData: ReturnType<typeof normalizeQuiz>;
   try {
-    quizData = normalizeQuiz(parseJsonObject(trimmedText), bookTitle, questionCount);
-  } catch {
+    quizData = questionCount > 10
+      ? await generateChunkedQuiz({ bookTitle, difficulty, bookLevel, learningGoal, questionCount })
+      : await generateQuizSection({ bookTitle, difficulty, bookLevel, learningGoal, questionCount });
+  } catch (error) {
     return NextResponse.json(
-      { error: "Quiz generation returned invalid JSON. Please try again." },
+      { error: error instanceof Error ? error.message : "Quiz generation returned invalid JSON. Please try again." },
       { status: 502 },
     );
   }
@@ -277,6 +420,10 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (questionCount > 10) {
+      return NextResponse.json({ quiz: quizData });
+    }
+
     const reviewedQuiz = await reviewQuizWithModel(quizData, {
       bookTitle,
       difficulty,
