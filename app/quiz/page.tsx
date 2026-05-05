@@ -25,12 +25,9 @@ import {
 import { getBookRecommendations } from "../../lib/recommendations";
 import type { BookLookupResult, BookMatch } from "../../lib/books";
 import {
-  getAllowedDifficulties,
   getBasePoints,
   getMaxScore,
-  getNextAllowedDifficulty,
   getQuestionValue,
-  isDifficultyAllowedForBookLevel,
 } from "../../lib/scoring";
 
 type QuizQuestion = {
@@ -273,8 +270,8 @@ function QuizPageContent() {
     };
   }, []);
 
-  const allowedDifficulties = getAllowedDifficulties(bookLevel);
-  const nextAllowedDifficulty = bookLevel ? getNextAllowedDifficulty(difficulty, bookLevel) : null;
+  const nextDifficultyIndex = difficultyLevels.indexOf(difficulty as typeof difficultyLevels[number]) + 1;
+  const nextAllowedDifficulty = difficultyLevels[nextDifficultyIndex] ?? null;
   const questionValue = getQuestionValue(difficulty);
   const basePoints = getBasePoints(difficulty);
   const maxScore = quizData ? getMaxScore(difficulty) : 0;
@@ -301,9 +298,6 @@ function QuizPageContent() {
 
       const data = await response.json();
       setBookLevel(data.level);
-      if (!isDifficultyAllowedForBookLevel(difficulty, data.level)) {
-        setDifficulty(getAllowedDifficulties(data.level)[0]);
-      }
       return data.level as string;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to detect book level.");
@@ -341,16 +335,12 @@ function QuizPageContent() {
       }
 
       const data = (await response.json()) as BookLookupResult;
-      if (data.status === "exact" && data.books[0]) {
-        applyConfirmedBook(data.books[0]);
-        return data.books[0];
-      }
-
-      if (data.status === "options") {
+      const firstBook = data.books[0];
+      if ((data.status === "exact" || data.status === "options") && data.books.length > 0) {
         setConfirmedBook(null);
         setBookOptions(data.books);
         setShowIsbnFallback(false);
-        setBookLookupMessage("We found a few possible matches. Which book did you mean?");
+        setBookLookupMessage(data.status === "exact" && firstBook ? "Please confirm this is the book you want." : "We found a few possible matches. Which book did you mean?");
         return null;
       }
 
@@ -407,11 +397,6 @@ function QuizPageContent() {
 
     const resolvedBookLevel = bookLevel ?? await detectReadingLevel(book);
     if (!resolvedBookLevel) {
-      return;
-    }
-
-    if (!isDifficultyAllowedForBookLevel(difficulty, resolvedBookLevel)) {
-      setError("That difficulty is not available for this book's reading level.");
       return;
     }
 
@@ -802,7 +787,7 @@ function QuizPageContent() {
           <div className="field">
             <label htmlFor="difficulty">Difficulty</label>
             <select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value)}>
-              {allowedDifficulties.map((level) => (
+              {difficultyLevels.map((level) => (
                 <option key={level} value={level}>
                   {level === "easy" ? "Easy (5 questions, 10 base points)" : level === "medium" ? "Medium (10 questions, 40 base points)" : "Hard (20 questions, 100 base points)"}
                 </option>
@@ -810,12 +795,10 @@ function QuizPageContent() {
             </select>
             {bookLevel ? (
               <p className="setting-description">
-                {bookLevel === "beginner"
-                  ? "Beginner books can only be tested on Easy."
-                  : bookLevel === "intermediate"
-                    ? "Intermediate books can be tested on Easy or Medium."
-                    : "Advanced books can be tested on Easy, Medium, or Hard."}
+                Book reading level detected: {bookLevel}. Choose the test difficulty you want to take.
               </p>
+            ) : confirmedBook ? (
+              <p className="setting-description">Reading Quest will detect the book reading level after you confirm the book.</p>
             ) : null}
           </div>
 

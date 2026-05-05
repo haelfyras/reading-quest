@@ -182,16 +182,15 @@ export default function MyBooksPage() {
       }
 
       const data = (await response.json()) as BookLookupResult;
-      if (data.status === "exact" && data.books[0]) {
-        applyFavoriteBook(index, data.books[0]);
-        return data.books[0];
-      }
-
-      if (data.status === "options") {
+      if ((data.status === "exact" || data.status === "options") && data.books.length > 0) {
         setConfirmedFavorites((current) => current.map((book, idx) => idx === index ? null : book));
         setFavoriteOptions((current) => current.map((options, idx) => idx === index ? data.books : options));
         setShowFavoriteIsbnFallback((current) => current.map((show, idx) => idx === index ? false : show));
-        setFavoriteLookupMessages((current) => current.map((message, idx) => idx === index ? "We found a few possible matches. Which book did you mean?" : message));
+        setFavoriteLookupMessages((current) => current.map((message, idx) => idx === index
+          ? data.status === "exact"
+            ? "Please confirm this is the book you want."
+            : "We found a few possible matches. Which book did you mean?"
+          : message));
         return null;
       }
 
