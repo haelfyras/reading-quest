@@ -39,7 +39,7 @@ const prompt = (
     ? `\n\nThis is section ${section.number} of ${section.total}. Create exactly ${questionCount} new questions for this section only. Do not repeat these earlier questions: ${section.previousQuestions.length ? section.previousQuestions.map((question) => `"${question}"`).join("; ") : "none"}.`
     : "";
 
-  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. Create exactly ${questionCount} questions. Each question must have: question, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation.\n\nBook: "${bookTitle}". Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}.\n\nRules:\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Easy = simple title/character/obvious-event questions.\n- Medium = details, roles, setting, conflict, motivation, cause/effect.\n- Hard = inference, theme, symbolism, context, subtle motivation, relationships, consequences, or comparisons.\n- Choices must be plausible, similar in style, and from the same book, series, author, or literary role.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the book.\n- Use child-friendly language for ages 7-12.\n- Silently verify all answers before returning JSON.${sectionInstruction}`;
+  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. The questions array must contain exactly ${questionCount} complete question objects. Do not return fewer than ${questionCount}. Each question must have: question, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation.\n\nBook: "${bookTitle}". Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}.\n\nRules:\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Easy = simple title/character/obvious-event questions.\n- Medium = details, roles, setting, conflict, motivation, cause/effect.\n- Hard = inference, theme, symbolism, context, subtle motivation, relationships, consequences, or comparisons.\n- Choices must be plausible, similar in style, and from the same book, series, author, or literary role.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the book.\n- Use child-friendly language for ages 7-12.\n- Silently count the questions before returning JSON and make sure there are exactly ${questionCount}.${sectionInstruction}`;
 };
 
 type GeneratedQuestion = {
@@ -233,7 +233,7 @@ async function generateQuizSection(details: {
 }) {
   const response = await openai.chat.completions.create({
     model: quizModel,
-    max_tokens: Math.min(5200, Math.max(2200, details.questionCount * 260)),
+    max_tokens: Math.min(6500, Math.max(2200, details.questionCount * 320)),
     messages: [
       {
         role: "system",
