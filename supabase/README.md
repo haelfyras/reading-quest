@@ -10,8 +10,17 @@ This folder contains the database foundation for moving Reading Quest from brows
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
+   - `NEXT_PUBLIC_SITE_URL`
 
 Keep `SUPABASE_SERVICE_ROLE_KEY` server-only. Do not expose it to browser code.
+
+Set `NEXT_PUBLIC_SITE_URL` to the deployed beta URL, for example:
+
+```text
+https://reading-quest-delta.vercel.app
+```
+
+Supabase Auth confirmation emails use this value for redirects.
 
 ## What This Adds
 

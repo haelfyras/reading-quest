@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION } from "../lib/product";
 import { createProfile, getCurrentProfile, Profile, setCurrentUserId, verifyProfile } from "../lib/user";
-import { createParentWithSupabase, signInParentWithSupabase } from "../lib/supabase/auth";
+import { createParentWithSupabase, EmailConfirmationRequiredError, signInParentWithSupabase } from "../lib/supabase/auth";
 
 type UserType = "child" | "parent";
 type AuthMode = "signIn" | "create";
@@ -26,6 +26,7 @@ export default function Page() {
   const [showVerification, setShowVerification] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     const profile = getCurrentProfile();
@@ -55,6 +56,7 @@ export default function Page() {
 
   const resetMessages = () => {
     setError("");
+    setNotice("");
     setShowVerification(false);
     setVerificationCode("");
   };
@@ -80,7 +82,14 @@ export default function Page() {
           return;
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unable to sign in with Supabase.");
+        const message = err instanceof Error ? err.message : "Unable to sign in with Supabase.";
+        if (/email not confirmed|confirm/i.test(message)) {
+          setNotice("Almost done. Please confirm your email address, then come back to sign in.");
+          setError("");
+        } else {
+          setError(message);
+          setNotice("");
+        }
         setIsSubmitting(false);
         return;
       }
@@ -124,7 +133,13 @@ export default function Page() {
           return;
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to create parent account.");
+        if (err instanceof EmailConfirmationRequiredError) {
+          setNotice(err.message);
+          setError("");
+        } else {
+          setError(err instanceof Error ? err.message : "Failed to create parent account.");
+          setNotice("");
+        }
         setIsSubmitting(false);
         return;
       }
@@ -312,6 +327,12 @@ export default function Page() {
           {error ? (
             <div className="error-box" role="alert">
               <strong>Error:</strong> {error}
+            </div>
+          ) : null}
+
+          {notice ? (
+            <div className="success-box" role="status">
+              <strong>{notice}</strong>
             </div>
           ) : null}
 

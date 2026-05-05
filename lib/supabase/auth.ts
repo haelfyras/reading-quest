@@ -13,6 +13,19 @@ import {
 
 type DbProfile = Database["public"]["Tables"]["profiles"]["Row"];
 
+export class EmailConfirmationRequiredError extends Error {
+  constructor(email: string) {
+    super(`Almost done. Check ${email} and confirm your email address, then come back to sign in.`);
+    this.name = "EmailConfirmationRequiredError";
+  }
+}
+
+function getAuthRedirectUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  const origin = configuredUrl || (typeof window !== "undefined" ? window.location.origin : "");
+  return origin ? `${origin.replace(/\/$/, "")}/` : undefined;
+}
+
 function generateProfileCode(name: string) {
   const prefix = name.replace(/[^a-z0-9]/gi, "").slice(0, 4).toUpperCase() || "READ";
   return `RQ-${prefix}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -151,10 +164,12 @@ export async function createParentWithSupabase(details: {
   }
 
   const supabase = createBrowserSupabaseClient();
+  const redirectTo = getAuthRedirectUrl();
   const { data, error } = await supabase.auth.signUp({
     email: details.email.trim(),
     password: details.password,
     options: {
+      emailRedirectTo: redirectTo,
       data: {
         real_name: details.realName.trim(),
       },
@@ -166,7 +181,7 @@ export async function createParentWithSupabase(details: {
   }
 
   if (!data.user || !data.session) {
-    throw new Error("Check your email to finish creating your parent account.");
+    throw new EmailConfirmationRequiredError(details.email.trim());
   }
 
   const existingProfile = await fetchParentProfile(data.user);
