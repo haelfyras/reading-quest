@@ -75,6 +75,44 @@ Rules:
 - Count the questions before returning. Return JSON only.`;
 };
 
+const hardQuestionPlan = [
+  { start: 1, end: 4, count: 4, focus: "character motivation" },
+  { start: 5, end: 8, count: 4, focus: "cause and effect" },
+  { start: 9, end: 12, count: 4, focus: "theme or lesson" },
+  { start: 13, end: 15, count: 3, focus: "relationships or conflict" },
+  { start: 16, end: 18, count: 3, focus: "consequences of choices" },
+  { start: 19, end: 20, count: 2, focus: "bigger-picture meaning" },
+];
+
+const hardSectionPrompt = (
+  bookTitle: string,
+  bookLevel: string,
+  learningGoal: string,
+  section: typeof hardQuestionPlan[number],
+) => {
+  const goalDescription = goalMap[learningGoal] || goalMap.basic_recollection;
+
+  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}.
+Create exactly ${section.count} hard questions for "${bookTitle}".
+These are questions ${section.start}-${section.end} of a 20-question quiz.
+Focus only on: ${section.focus}.
+Book level: ${bookLevel}. Testing goal: ${goalDescription}.
+
+Each question object must have: question, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation.
+Rules:
+- The questions array must contain exactly ${section.count} complete objects.
+- Keep each question under 18 words.
+- Keep each choice under 7 words.
+- Keep each explanation under 14 words.
+- Do not repeat the same question idea within this section.
+- Do not ask simple recall, obscure trivia, trick questions, or impossible questions.
+- Each answer must be clearly correct from the book.
+- Each wrong answer must be plausible and from the same book, series, author, or literary role.
+- answerIndex must point to answerText exactly.
+- Use child-friendly language for ages 7-12.
+- Return JSON only.`;
+};
+
 type GeneratedQuestion = {
   question?: unknown;
   choices?: unknown;
@@ -301,7 +339,44 @@ async function generateHardQuiz(details: {
   learningGoal: string;
   questionCount: number;
 }) {
-  return generateQuizSection(details);
+  const sectionQuizzes = await Promise.all(
+    hardQuestionPlan.map(async (section) => {
+      const response = await openai.chat.completions.create({
+        model: quizModel,
+        max_tokens: Math.max(1200, section.count * 360),
+        messages: [
+          {
+            role: "system",
+            content: "You are a careful reading teacher. Return only valid JSON for the requested hard quiz section.",
+          },
+          {
+            role: "user",
+            content: hardSectionPrompt(details.bookTitle, details.bookLevel, details.learningGoal, section),
+          },
+        ],
+      });
+
+      const text = response.choices?.[0]?.message?.content ?? "";
+      const quiz = normalizeQuiz(parseJsonObject(text.trim()), details.bookTitle, section.count);
+      if (!isValidQuiz(quiz, section.count)) {
+        throw new Error("Quiz generation returned an incomplete hard quiz section.");
+      }
+      return quiz;
+    }),
+  );
+
+  const questions = sectionQuizzes.flatMap((quiz) => quiz.questions).slice(0, details.questionCount);
+  const quizData = {
+    quizTitle: `${details.bookTitle} Hard Quiz`,
+    quizDescription: "Answer each question about the book.",
+    questions,
+  };
+
+  if (!isValidQuiz(quizData, details.questionCount)) {
+    throw new Error("Quiz generation returned an incomplete quiz. Please try again.");
+  }
+
+  return quizData;
 }
 
 export async function POST(request: Request) {
