@@ -1257,6 +1257,11 @@ button.preference-chip {
   margin-bottom: 0;
 }
 
+.quiz-encouragement {
+  margin-bottom: 16px;
+  font-size: 1.05rem;
+}
+
 .quiz-loading-spinner {
   width: 38px;
   height: 38px;

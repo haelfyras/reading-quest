@@ -71,6 +71,46 @@ function getProfileTestingGoal(profile: Profile | null, approvedQuiz?: ParentApp
   return profile.learningGoal || "basic_recollection";
 }
 
+const encouragementMessages = {
+  low: [
+    "You started the quest. That's what matters!",
+    "You showed up and gave this book a try. That counts.",
+    "Every reader starts somewhere. This quest is officially begun.",
+  ],
+  growing: [
+    "Nice effort. Try looking back through the book and retaking it for a higher score!",
+    "Good work. A quick look back at the story could help you climb higher next time.",
+    "You're building understanding. Revisit the book and try again when you're ready.",
+  ],
+  nearPerfect: [
+    "Great job! You only missed one question!",
+    "So close to perfect. Just one question got away!",
+    "Excellent work. One more correct answer would have made it perfect.",
+  ],
+  mastered: [
+    "Excellent! You've mastered this book!",
+    "Outstanding. This book is mastered!",
+    "Brilliant work. You clearly know this book.",
+  ],
+};
+
+function getEncouragementMessage(score: number, maxScore: number, bookTitle: string) {
+  const missed = Math.max(0, maxScore - score);
+  const accuracy = maxScore > 0 ? score / maxScore : 0;
+  const category =
+    score === maxScore
+      ? "mastered"
+      : missed === 1
+        ? "nearPerfect"
+        : accuracy < 0.5
+          ? "low"
+          : "growing";
+  const options = encouragementMessages[category];
+  const seed = `${bookTitle}-${score}-${maxScore}-${new Date().toDateString()}`;
+  const index = Array.from(seed).reduce((total, character) => total + character.charCodeAt(0), 0) % options.length;
+  return options[index];
+}
+
 function QuizPageContent() {
   const [user, setUser] = useState<Profile | null>(null);
   const [bookTitle, setBookTitle] = useState("");
@@ -242,6 +282,7 @@ function QuizPageContent() {
   const homeHref = user?.isParent ? "/parent" : "/home";
   const planQuizAvailability = user ? getPlanQuizAvailability(user) : null;
   const loadingSuggestion = user ? getBookRecommendations({ profile: user, limit: 1 }).suggestions[0] : "";
+  const encouragementMessage = quizData ? getEncouragementMessage(score, maxScore, bookTitle) : "";
 
   const detectReadingLevel = async (book: BookMatch) => {
     setError("");
@@ -891,6 +932,9 @@ function QuizPageContent() {
       {completed ? (
         <div className="output">
           <h2>Quiz complete!</h2>
+          <div className="success-box quiz-encouragement">
+            <strong>{encouragementMessage}</strong>
+          </div>
           <p>
             You answered <strong>{score}</strong> / {maxScore} correctly.
           </p>
