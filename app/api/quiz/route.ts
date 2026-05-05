@@ -77,33 +77,6 @@ function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function questionSignature(value: unknown) {
-  return String(value || "")
-    .toLowerCase()
-    .replace(/["'`]/g, "")
-    .replace(/[^\w\s]/g, " ")
-    .replace(/\b(the|a|an|in|on|of|to|for|and|or|does|do|did|is|are|was|were)\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function hasDuplicateQuestions(questions: Array<{ question?: unknown }>) {
-  const seen = new Set<string>();
-
-  for (const question of questions) {
-    const signature = questionSignature(question.question);
-    if (!signature) {
-      continue;
-    }
-    if (seen.has(signature)) {
-      return true;
-    }
-    seen.add(signature);
-  }
-
-  return false;
-}
-
 function countColorsInTitle(bookTitle: string) {
   const words = bookTitle.toLowerCase().match(/[a-z]+/g) ?? [];
   return words.filter((word) => colorWords.includes(word)).length;
@@ -234,7 +207,6 @@ function isValidQuiz(quizData: ReturnType<typeof normalizeQuiz>, questionCount: 
     typeof quizData.quizDescription === "string" &&
     Array.isArray(quizData.questions) &&
     quizData.questions.length === questionCount &&
-    !hasDuplicateQuestions(quizData.questions) &&
     quizData.questions.every((question) => {
       const answerIndex = Number(question.answerIndex);
       return (
@@ -261,7 +233,7 @@ async function generateQuizSection(details: {
 }) {
   const response = await openai.chat.completions.create({
     model: quizModel,
-    max_tokens: Math.min(5200, Math.max(2200, details.questionCount * 240)),
+    max_tokens: Math.min(5200, Math.max(2200, details.questionCount * 260)),
     messages: [
       {
         role: "system",
@@ -285,89 +257,14 @@ async function generateQuizSection(details: {
   return normalizeQuiz(parseJsonObject(text.trim()), details.bookTitle, details.questionCount);
 }
 
-async function generateChunkedQuiz(details: {
+async function generateHardQuiz(details: {
   bookTitle: string;
   difficulty: string;
   bookLevel: string;
   learningGoal: string;
   questionCount: number;
 }) {
-  const quizData = await generateQuizSection(details);
-  if (!isValidQuiz(quizData, details.questionCount)) {
-    throw new Error("Quiz generation returned duplicate or incomplete questions. Please try again.");
-  }
-  return quizData;
-}
-
-async function generateQuizInChunks(
-  details: {
-    bookTitle: string;
-    difficulty: string;
-    bookLevel: string;
-    learningGoal: string;
-    questionCount: number;
-  },
-  chunkSize: number,
-) {
-  const totalSections = Math.ceil(details.questionCount / chunkSize);
-  const allQuestions: ReturnType<typeof normalizeQuiz>["questions"] = [];
-  const seenQuestionSignatures = new Set<string>();
-
-  for (let index = 0; index < totalSections; index += 1) {
-    const remaining = details.questionCount - allQuestions.length;
-    const sectionQuestionCount = Math.min(chunkSize, remaining);
-    let acceptedSection: ReturnType<typeof normalizeQuiz> | null = null;
-
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const sectionQuiz = await generateQuizSection({
-        ...details,
-        questionCount: sectionQuestionCount,
-        section: {
-          number: index + 1,
-          total: totalSections,
-          previousQuestions: allQuestions.map((question) => String(question.question || "")),
-        },
-      });
-
-      if (!isValidQuiz(sectionQuiz, sectionQuestionCount)) {
-        continue;
-      }
-
-      const sectionSignatures = sectionQuiz.questions.map((question) => questionSignature(question.question));
-      const hasRepeatedQuestion = sectionSignatures.some(
-        (signature, questionIndex) =>
-          !signature ||
-          seenQuestionSignatures.has(signature) ||
-          sectionSignatures.indexOf(signature) !== questionIndex,
-      );
-
-      if (!hasRepeatedQuestion) {
-        acceptedSection = sectionQuiz;
-        break;
-      }
-    }
-
-    if (!acceptedSection) {
-      throw new Error("Quiz generation repeated questions. Please try again.");
-    }
-
-    acceptedSection.questions.forEach((question) => {
-      seenQuestionSignatures.add(questionSignature(question.question));
-    });
-    allQuestions.push(...acceptedSection.questions);
-  }
-
-  const quizData = {
-    quizTitle: `${details.bookTitle} ${details.difficulty.charAt(0).toUpperCase()}${details.difficulty.slice(1)} Quiz`,
-    quizDescription: "Answer each question about the book.",
-    questions: allQuestions.slice(0, details.questionCount),
-  };
-
-  if (!isValidQuiz(quizData, details.questionCount)) {
-    throw new Error("Quiz generation returned an incomplete quiz.");
-  }
-
-  return quizData;
+  return generateQuizSection(details);
 }
 
 export async function POST(request: Request) {
@@ -396,7 +293,7 @@ export async function POST(request: Request) {
   let quizData: ReturnType<typeof normalizeQuiz>;
   try {
     quizData = questionCount > 10
-      ? await generateChunkedQuiz({ bookTitle, difficulty, bookLevel, learningGoal, questionCount })
+      ? await generateHardQuiz({ bookTitle, difficulty, bookLevel, learningGoal, questionCount })
       : await generateQuizSection({ bookTitle, difficulty, bookLevel, learningGoal, questionCount });
   } catch (error) {
     return NextResponse.json(
