@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION } from "../lib/product";
 import { createProfile, getCurrentProfile, Profile, setCurrentUserId, verifyProfile } from "../lib/user";
+import { createParentWithSupabase, signInParentWithSupabase } from "../lib/supabase/auth";
 
 type UserType = "child" | "parent";
 type AuthMode = "signIn" | "create";
@@ -23,6 +24,7 @@ export default function Page() {
   const [showPassword, setShowPassword] = useState(false);
   const [verificationCode, setVerificationCode] = useState("");
   const [showVerification, setShowVerification] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -63,22 +65,38 @@ export default function Page() {
     router.push(profile.isParent ? "/parent" : "/home");
   };
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!canSubmit) {
       setError("Please enter your account information.");
       return;
     }
 
+    if (userType === "parent") {
+      try {
+        setIsSubmitting(true);
+        const supabaseProfile = await signInParentWithSupabase(parentEmail, password);
+        if (supabaseProfile) {
+          goToProfile(supabaseProfile);
+          return;
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Unable to sign in with Supabase.");
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     const profile = verifyProfile(identifier, password);
     if (!profile) {
       setError("That account information did not match. Check the spelling and try again.");
+      setIsSubmitting(false);
       return;
     }
 
     goToProfile(profile);
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!canSubmit) {
       setError("Please enter your account information.");
       return;
@@ -94,6 +112,23 @@ export default function Page() {
         setError("Please enter the grown-up's real name.");
         return;
       }
+      try {
+        setIsSubmitting(true);
+        const supabaseProfile = await createParentWithSupabase({
+          email: parentEmail,
+          password,
+          realName: parentName,
+        });
+        if (supabaseProfile) {
+          goToProfile(supabaseProfile);
+          return;
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to create parent account.");
+        setIsSubmitting(false);
+        return;
+      }
+      setIsSubmitting(false);
       setShowVerification(true);
       setError("");
       return;
@@ -104,12 +139,14 @@ export default function Page() {
       goToProfile(profile);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create account.");
+      setIsSubmitting(false);
     }
   };
 
   const handleVerify = () => {
     if (verificationCode.trim() !== demoVerificationCode) {
       setError("That verification code does not match.");
+      setIsSubmitting(false);
       return;
     }
 
@@ -118,19 +155,24 @@ export default function Page() {
       goToProfile(profile);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create account.");
+      setIsSubmitting(false);
     }
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isSubmitting) {
+      return;
+    }
+    setIsSubmitting(true);
     if (showVerification) {
       handleVerify();
       return;
     }
     if (authMode === "signIn") {
-      handleLogin();
+      void handleLogin();
     } else {
-      handleCreate();
+      void handleCreate();
     }
   };
 
@@ -274,8 +316,8 @@ export default function Page() {
           ) : null}
 
           <div className="auth-actions">
-            <button type="submit" disabled={!showVerification && !canSubmit}>
-              {showVerification ? "Verify and continue" : authMode === "signIn" ? "Continue" : "Create account"}
+            <button type="submit" disabled={isSubmitting || (!showVerification && !canSubmit)}>
+              {isSubmitting ? "Working..." : showVerification ? "Verify and continue" : authMode === "signIn" ? "Continue" : "Create account"}
             </button>
             {showVerification ? (
               <button type="button" className="secondary" onClick={() => setShowVerification(false)}>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { getCurrentProfile, Profile, setCurrentUserId } from "../../lib/user";
+import { signOutSupabase } from "../../lib/supabase/auth";
 
 const sharedLinks = [
   { href: "/my-books", label: "My Books" },
@@ -52,6 +53,7 @@ export default function AppMenu() {
   }, [profile]);
 
   const signOut = () => {
+    void signOutSupabase();
     setCurrentUserId(null);
     setProfile(null);
     setOpen(false);

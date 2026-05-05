@@ -42,6 +42,7 @@ export type Database = {
           screen_name: string;
         };
         Update: Partial<Database["public"]["Tables"]["profiles"]["Row"]>;
+        Relationships: [];
       };
       parent_child_links: {
         Row: {
@@ -53,6 +54,7 @@ export type Database = {
         };
         Insert: Database["public"]["Tables"]["parent_child_links"]["Row"];
         Update: Partial<Database["public"]["Tables"]["parent_child_links"]["Row"]>;
+        Relationships: [];
       };
       quiz_results: {
         Row: {
@@ -79,6 +81,7 @@ export type Database = {
           max_score: number;
         };
         Update: Partial<Database["public"]["Tables"]["quiz_results"]["Row"]>;
+        Relationships: [];
       };
       quiz_issue_reports: {
         Row: {
@@ -109,6 +112,7 @@ export type Database = {
           reason: "impossible" | "wrong_answer" | "too_hard" | "spoiler" | "not_from_book";
         };
         Update: Partial<Database["public"]["Tables"]["quiz_issue_reports"]["Row"]>;
+        Relationships: [];
       };
       feedback_entries: {
         Row: {
@@ -125,7 +129,12 @@ export type Database = {
           message: string;
         };
         Update: Partial<Database["public"]["Tables"]["feedback_entries"]["Row"]>;
+        Relationships: [];
       };
     };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
   };
 };
