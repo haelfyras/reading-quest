@@ -1,183 +1,40 @@
 import { calculateQuizPoints, getNextAllowedDifficulty, getQuestionValue } from "./scoring";
+import { readStorage, readString, writeStorage, writeString } from "./localStorage";
+import {
+  difficultyLevels,
+  type BookAccessType,
+  type ChallengeQuizQuestion,
+  type Difficulty,
+  type ParentControls,
+  type ParentVerificationRequest,
+  type Profile,
+  type QuizHistory,
+  type QuizIssueReport,
+  type ReadingChallenge,
+  type ReadingLog,
+  type Review,
+  type SubscriptionTier,
+} from "./types";
 
-export type QuizHistory = {
-  bookTitle: string;
-  date: string;
-  score: number;
-  maxScore: number;
-  earnedPoints?: number;
-  difficulty: string;
-  bookLevel: string;
-  learningGoal: string;
-};
-
-export type BookAccessType = "owned" | "library" | "audiobook" | "ebook" | "read_aloud" | "borrowed";
-
-export type ReadingLog = {
-  id: string;
-  bookTitle: string;
-  date: string;
-  minutes: number;
-  chaptersFinished: number;
-  accessType: BookAccessType;
-  assisted: boolean;
-  effortPoints: number;
-};
-
-export type ReadingPreferences = {
-  storyKinds: string;
-  characters: string;
-  places: string;
-  feelings: string;
-  topics: string;
-  updatedAt?: string;
-};
-
-export type PrizeRedemption = {
-  id: string;
-  prizeId: string;
-  prizeName: string;
-  pointsSpent: number;
-  date: string;
-};
-
-export type Review = {
-  id: string;
-  profileId: string;
-  profileName: string;
-  bookTitle: string;
-  rating: number;
-  reviewText: string;
-  date: string;
-};
-
-export type QuizIssueReport = {
-  id: string;
-  profileId: string;
-  profileName: string;
-  bookTitle: string;
-  difficulty: string;
-  question: string;
-  choices: string[];
-  answerIndex: number;
-  selectedChoice: number;
-  questionValue?: number;
-  correctionPointsAwarded?: boolean;
-  correctionPoints?: number;
-  reason: "impossible" | "wrong_answer" | "too_hard" | "spoiler" | "not_from_book";
-  status?: "open" | "accepted" | "dismissed";
-  parentNote?: string;
-  date: string;
-};
-
-export type ChallengeQuizQuestion = {
-  question: string;
-  choices: string[];
-  answerIndex: number;
-  answerText?: string;
-  explanation?: string;
-};
-
-export type ReadingChallenge = {
-  id: string;
-  bookTitle: string;
-  difficulty: string;
-  bookLevel: string;
-  quizTitle: string;
-  quizDescription: string;
-  questions: ChallengeQuizQuestion[];
-  fromProfileId: string;
-  fromName: string;
-  toProfileId: string;
-  toName: string;
-  initiatorScore: number;
-  initiatorMaxScore: number;
-  initiatorAnswers: number[];
-  responderScore?: number;
-  responderMaxScore?: number;
-  responderAnswers?: number[];
-  status: "pending" | "completed";
-  createdAt: string;
-  completedAt?: string;
-};
-
-export type FriendContact = {
-  id: string;
-  name: string;
-  profileId?: string;
-  profileCode?: string;
-  email?: string;
-  phone?: string;
-  date: string;
-};
-
-export type ParentVerificationRequest = {
-  id: string;
-  parentId: string;
-  parentName: string;
-  parentEmail?: string;
-  childId: string;
-  childScreenName: string;
-  childFirstName: string;
-  status: "child_pending" | "code_pending" | "verified" | "expired" | "rejected";
-  code?: string;
-  parentCodeEntered?: boolean;
-  childCodeEntered?: boolean;
-  createdAt: string;
-  expiresAt?: string;
-};
-
-export type ParentControls = {
-  prizeApprovalRequired: boolean;
-  allowQuizRetakes: boolean;
-  maxGoalDifficulty: "easy" | "medium" | "hard";
-  requireAiQuizReview: boolean;
-  allowLocationLookup: boolean;
-  testingLevel: TestingLevel;
-};
-
-export type SubscriptionTier = "free" | "ad_free" | "plus";
-
-export type TestingLevel =
-  | "habit_formation"
-  | "basic_recollection"
-  | "further_understanding"
-  | "full_understanding";
-
-export type Profile = {
-  id: string;
-  name: string;
-  password: string;
-  realName?: string;
-  phone?: string;
-  friends?: FriendContact[];
-  canAddFriends?: boolean;
-  profileCode?: string;
-  friendProfileIds?: string[];
-  points: number;
-  lifetimePoints?: number;
-  prizeRedemptions?: PrizeRedemption[];
-  quizzes: QuizHistory[];
-  learningGoal?: string;
-  favoriteBooks?: string[];
-  readingPreferences?: ReadingPreferences;
-  readingNow?: string[];
-  readingLogs?: ReadingLog[];
-  bookAccess?: Record<string, BookAccessType>;
-  avatarStyle?: string;
-  badges?: string[];
-  parentControls?: ParentControls;
-  leaderboardPrivate?: boolean;
-  subscriptionTier?: SubscriptionTier;
-  isParent?: boolean;
-  email?: string;
-  verified?: boolean;
-  linkedChildren?: string[]; // array of child profile ids
-};
-
-export const difficultyLevels = ["easy", "medium", "hard"] as const;
-export type Difficulty = typeof difficultyLevels[number];
-
+export {
+  difficultyLevels,
+  type BookAccessType,
+  type ChallengeQuizQuestion,
+  type Difficulty,
+  type FriendContact,
+  type ParentControls,
+  type ParentVerificationRequest,
+  type PrizeRedemption,
+  type Profile,
+  type QuizHistory,
+  type QuizIssueReport,
+  type ReadingChallenge,
+  type ReadingLog,
+  type ReadingPreferences,
+  type Review,
+  type SubscriptionTier,
+  type TestingLevel,
+} from "./types";
 export function getNextDifficulty(difficulty: string): Difficulty | null {
   const index = difficultyLevels.indexOf(difficulty as Difficulty);
   if (index === -1 || index >= difficultyLevels.length - 1) {
@@ -327,64 +184,13 @@ export const subscriptionPlans: Record<SubscriptionTier, {
   },
 };
 
-function readStorage<T>(key: string): T | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const item = window.localStorage.getItem(key);
-    return item ? (JSON.parse(item) as T) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeStorage<T>(key: string, value: T) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
-
-const defaultProfiles: Profile[] = [
-  {
-    id: "demo-child-1",
-    name: "Test1Test",
-    password: "password123",
-    points: 0,
-    lifetimePoints: 0,
-    prizeRedemptions: [],
-    quizzes: [],
-    favoriteBooks: [],
-    readingPreferences: undefined,
-    readingNow: [],
-    readingLogs: [],
-    bookAccess: {},
-    avatarStyle: "Explorer",
-    badges: [],
-    parentControls: defaultParentControls,
-    leaderboardPrivate: false,
-    subscriptionTier: "free",
-    isParent: false,
-    verified: true,
-    linkedChildren: [],
-    canAddFriends: false,
-    profileCode: "RQ-TEST1",
-    friendProfileIds: [],
-    friends: [],
-  },
-];
-
 export function getProfiles(): Profile[] {
   const stored = readStorage<Profile[]>(STORAGE_KEY);
   if (stored && stored.length > 0) {
     return stored;
   }
 
-  saveProfiles(defaultProfiles);
-  return defaultProfiles;
+  return [];
 }
 
 export function saveProfiles(profiles: Profile[]) {
@@ -392,23 +198,11 @@ export function saveProfiles(profiles: Profile[]) {
 }
 
 export function getCurrentUserId(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  return window.localStorage.getItem(CURRENT_USER_KEY);
+  return readString(CURRENT_USER_KEY);
 }
 
 export function setCurrentUserId(id: string | null) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (id) {
-    window.localStorage.setItem(CURRENT_USER_KEY, id);
-  } else {
-    window.localStorage.removeItem(CURRENT_USER_KEY);
-  }
+  writeString(CURRENT_USER_KEY, id);
 }
 
 export function getCurrentProfile(): Profile | null {
@@ -749,7 +543,7 @@ export function createParentVerificationRequest(
   parent: Profile,
   details: {
     childScreenName: string;
-    childFirstName: string;
+    childFirstName?: string;
   },
 ) {
   const child = getProfiles().find(
@@ -784,7 +578,7 @@ export function createParentVerificationRequest(
     parentEmail: parent.email,
     childId: child.id,
     childScreenName: child.name,
-    childFirstName: details.childFirstName.trim(),
+    childFirstName: details.childFirstName?.trim() || undefined,
     status: "child_pending",
     createdAt: new Date().toISOString(),
   };
@@ -1449,4 +1243,5 @@ export function awardQuizIssueReportPoints(reportId: string) {
   writeStorage("readingQuestQuizIssueReports", nextReports);
   return updatedProfile;
 }
+
 

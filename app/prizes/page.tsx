@@ -12,157 +12,18 @@ import {
   Profile,
   redeemPrize,
 } from "../../lib/user";
-
-type Prize = {
-  id: string;
-  name: string;
-  description: string;
-  pointsRequired: number;
-  icon?: string;
-  claimed?: boolean;
-  claimCount?: number;
-  requestedAt?: string;
-  lastClaimedAt?: string;
-};
-
-type PrizeAddRequest = {
-  id: string;
-  childId: string;
-  childName: string;
-  name: string;
-  description: string;
-  pointsRequired: number;
-  status: "pending" | "added" | "dismissed";
-  requestedAt: string;
-};
-
-const PRIZE_ADD_REQUESTS_KEY = "readingQuestPrizeAddRequests";
-
-const defaultPrizes: Prize[] = [
-  {
-    id: "1",
-    name: "Book Buddy",
-    description: "A special bookmark and reading light",
-    pointsRequired: 100,
-    icon: "Book",
-    claimed: false,
-    claimCount: 0,
-  },
-  {
-    id: "2",
-    name: "Story Time",
-    description: "Extra 30 minutes of screen time",
-    pointsRequired: 250,
-    icon: "Time",
-    claimed: false,
-    claimCount: 0,
-  },
-  {
-    id: "3",
-    name: "Library Trip",
-    description: "Family trip to the library",
-    pointsRequired: 500,
-    icon: "Trip",
-    claimed: false,
-    claimCount: 0,
-  },
-  {
-    id: "4",
-    name: "Reading Champion",
-    description: "Special badge and certificate",
-    pointsRequired: 1000,
-    icon: "Badge",
-    claimed: false,
-    claimCount: 0,
-  },
-];
-
-const prizeSuggestionSets = [
-  [
-    {
-      name: "Screen Time",
-      description: "Extra 20 minutes of screen time",
-      pointsRequired: 10,
-      icon: "Time",
-      tier: "Cheap or free",
-    },
-    {
-      name: "New Book",
-      description: "Choose a new or used book",
-      pointsRequired: 10,
-      icon: "Book",
-      tier: "Tangible",
-    },
-    {
-      name: "Zoo Trip",
-      description: "Family trip to the zoo",
-      pointsRequired: 750,
-      icon: "Trip",
-      tier: "Larger reward",
-    },
-  ],
-  [
-    {
-      name: "Playground Time",
-      description: "Special trip to a favorite playground",
-      pointsRequired: 25,
-      icon: "Play",
-      tier: "Cheap or free",
-    },
-    {
-      name: "Small Toy",
-      description: "Pick a small toy within the family budget",
-      pointsRequired: 100,
-      icon: "Toy",
-      tier: "Tangible",
-    },
-    {
-      name: "Aquarium Trip",
-      description: "Family trip to an aquarium",
-      pointsRequired: 900,
-      icon: "Trip",
-      tier: "Larger reward",
-    },
-  ],
-  [
-    {
-      name: "Movie Night",
-      description: "Family movie night at home",
-      pointsRequired: 50,
-      icon: "Movie",
-      tier: "Cheap or free",
-    },
-    {
-      name: "New Game",
-      description: "Choose a board game, card game, or used video game",
-      pointsRequired: 250,
-      icon: "Game",
-      tier: "Tangible",
-    },
-    {
-      name: "Theme Park Day",
-      description: "A larger family outing or special day trip",
-      pointsRequired: 1500,
-      icon: "Trip",
-      tier: "Larger reward",
-    },
-  ],
-];
-
-function readPrizeAddRequests() {
-  if (typeof window === "undefined") return [];
-  try {
-    const stored = window.localStorage.getItem(PRIZE_ADD_REQUESTS_KEY);
-    return stored ? JSON.parse(stored) as PrizeAddRequest[] : [];
-  } catch {
-    return [];
-  }
-}
-
-function savePrizeAddRequests(requests: PrizeAddRequest[]) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(PRIZE_ADD_REQUESTS_KEY, JSON.stringify(requests));
-}
+import {
+  defaultPrizes,
+  hasSavedPrizes,
+  prizeSuggestionSets,
+  readPrizeAddRequests,
+  readPrizes,
+  savePrizeAddRequests,
+  savePrizes,
+  type Prize,
+  type PrizeAddRequest,
+  type PrizeSuggestion,
+} from "../../lib/prizeData";
 
 export default function PrizesPage() {
   const router = useRouter();
@@ -192,16 +53,14 @@ export default function PrizesPage() {
       setChildren(linkedChildren);
       if (linkedChildren[0]) {
         setSelectedChildId(linkedChildren[0].id);
-        const savedPrizes = localStorage.getItem(`readingQuestPrizes_${linkedChildren[0].id}`);
-        setPrizes(savedPrizes ? JSON.parse(savedPrizes) : defaultPrizes);
+        setPrizes(readPrizes(linkedChildren[0].id));
       }
       return;
     }
 
-    const parentPrizes = localStorage.getItem(`readingQuestPrizes_${currentUser.id}`);
-    if (parentPrizes) {
+    if (hasSavedPrizes(currentUser.id)) {
       setHasParentSetup(true);
-      setPrizes(JSON.parse(parentPrizes));
+      setPrizes(readPrizes(currentUser.id));
     } else {
       setPrizes(defaultPrizes);
     }
@@ -209,8 +68,7 @@ export default function PrizesPage() {
 
   const loadChildPrizes = (childId: string) => {
     setSelectedChildId(childId);
-    const savedPrizes = localStorage.getItem(`readingQuestPrizes_${childId}`);
-    setPrizes(savedPrizes ? JSON.parse(savedPrizes) : defaultPrizes);
+    setPrizes(readPrizes(childId));
     setClaimMessage("");
   };
 
@@ -236,7 +94,7 @@ export default function PrizesPage() {
     ]);
   };
 
-  const addSuggestedPrize = (suggestion: typeof prizeSuggestionSets[number][number]) => {
+  const addSuggestedPrize = (suggestion: PrizeSuggestion) => {
     setPrizes((current) => [
       ...current,
       {
@@ -324,7 +182,7 @@ export default function PrizesPage() {
       return;
     }
 
-    localStorage.setItem(`readingQuestPrizes_${selectedChildId}`, JSON.stringify(validPrizes));
+    savePrizes(selectedChildId, validPrizes);
     setPrizes(validPrizes);
     setClaimMessage("Prizes saved.");
   };
@@ -337,7 +195,7 @@ export default function PrizesPage() {
       claimed: false,
       requestedAt: undefined,
     } : prize);
-    localStorage.setItem(`readingQuestPrizes_${selectedChildId}`, JSON.stringify(updatedPrizes));
+    savePrizes(selectedChildId, updatedPrizes);
     setPrizes(updatedPrizes);
     setClaimMessage("Prize marked as redeemed.");
   };
@@ -377,7 +235,7 @@ export default function PrizesPage() {
     setUser(updatedUser);
     setPrizes(updatedPrizes);
     setClaimMessage(`${selectedPrize.pointsRequired} points spent on ${selectedPrize.name}. Your parent can mark it redeemed when you receive it.`);
-    localStorage.setItem(`readingQuestPrizes_${updatedUser.id}`, JSON.stringify(updatedPrizes));
+    savePrizes(updatedUser.id, updatedPrizes);
   };
 
   if (!user) {

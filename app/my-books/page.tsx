@@ -15,8 +15,10 @@ import {
   updateProfile,
 } from "../../lib/user";
 import { getBookRecommendations } from "../../lib/recommendations";
-import type { BookLookupResult, BookMatch } from "../../lib/books";
+import type { BookMatch } from "../../lib/books";
+import { lookupBook as lookupBookFromApi } from "../../lib/bookClient";
 import { betaConfig } from "../../lib/beta";
+import { emptyReadingPreferences, preferencePrompts, type PreferenceKey } from "../../lib/readingPreferences";
 
 type NearbyBookPlace = {
   id: string;
@@ -36,49 +38,6 @@ type OverpassElement = {
     lon: number;
   };
   tags?: Record<string, string>;
-};
-
-const preferencePrompts = [
-  {
-    key: "storyKinds",
-    label: "What kind of stories do you like?",
-    placeholder: "space, fantasy, princesses, pirates",
-    suggestions: ["space", "fantasy", "princesses", "pirates", "mystery", "animals"],
-  },
-  {
-    key: "characters",
-    label: "Who do you like reading about?",
-    placeholder: "dragons, kids like me, robots, funny animals",
-    suggestions: ["dragons", "kids like me", "robots", "funny animals", "superheroes", "detectives"],
-  },
-  {
-    key: "places",
-    label: "Where should the story happen?",
-    placeholder: "school, castles, forests, other planets",
-    suggestions: ["school", "castles", "forests", "other planets", "the ocean", "big cities"],
-  },
-  {
-    key: "feelings",
-    label: "How should the book feel?",
-    placeholder: "funny, exciting, cozy, spooky",
-    suggestions: ["funny", "exciting", "cozy", "spooky", "magical", "adventurous"],
-  },
-  {
-    key: "topics",
-    label: "What else do you want in a book?",
-    placeholder: "friendship, games, science, treasure",
-    suggestions: ["friendship", "games", "science", "treasure", "family", "sports"],
-  },
-] as const;
-
-type PreferenceKey = typeof preferencePrompts[number]["key"];
-
-const emptyReadingPreferences: Record<PreferenceKey, string> = {
-  storyKinds: "",
-  characters: "",
-  places: "",
-  feelings: "",
-  topics: "",
 };
 
 function distanceInMiles(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -171,17 +130,7 @@ export default function MyBooksPage() {
     setFavoriteSaveMessage("");
 
     try {
-      const response = await fetch("/api/book-lookup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-
-      const data = (await response.json()) as BookLookupResult;
+      const data = await lookupBookFromApi(payload);
       if ((data.status === "exact" || data.status === "options") && data.books.length > 0) {
         setConfirmedFavorites((current) => current.map((book, idx) => idx === index ? null : book));
         setFavoriteOptions((current) => current.map((options, idx) => idx === index ? data.books : options));

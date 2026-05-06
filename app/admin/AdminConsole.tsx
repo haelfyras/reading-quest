@@ -500,7 +500,7 @@ export default function AdminConsole() {
                 <div className="section-header-row">
                   <div>
                     <strong>{request.parentName} requested {request.childScreenName}</strong>
-                    <p>Child first name check: {request.childFirstName}</p>
+                    <p>Child approval required from the child profile.</p>
                     <small>Created {formatDate(request.createdAt)}{request.expiresAt ? `, expires ${formatDate(request.expiresAt)}` : ""}</small>
                   </div>
                   <span className="badge-pill">{request.status.replace(/_/g, " ")}</span>

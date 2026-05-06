@@ -16,8 +16,6 @@ import {
 type UserType = "child" | "parent";
 type AuthMode = "signIn" | "create";
 
-const demoVerificationCode = "123456";
-
 export default function Page() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
@@ -29,8 +27,6 @@ export default function Page() {
   const [parentEmail, setParentEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [verificationCode, setVerificationCode] = useState("");
-  const [showVerification, setShowVerification] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -64,8 +60,6 @@ export default function Page() {
   const resetMessages = () => {
     setError("");
     setNotice("");
-    setShowVerification(false);
-    setVerificationCode("");
   };
 
   const goToProfile = (profile: Profile) => {
@@ -88,6 +82,9 @@ export default function Page() {
           goToProfile(supabaseProfile);
           return;
         }
+        setError("Parent accounts require secure database sign-in. Check Supabase configuration and try again.");
+        setIsSubmitting(false);
+        return;
       } catch (err) {
         const message = getSupabaseErrorMessage(err);
         if (/email not confirmed|confirm/i.test(message)) {
@@ -110,6 +107,9 @@ export default function Page() {
           goToProfile(supabaseProfile);
           return;
         }
+        setError("Parent accounts require secure database sign-in. Check Supabase configuration and try again.");
+        setIsSubmitting(false);
+        return;
       } catch (err) {
         setError(getSupabaseErrorMessage(err));
         setNotice("");
@@ -166,10 +166,6 @@ export default function Page() {
         setIsSubmitting(false);
         return;
       }
-      setIsSubmitting(false);
-      setShowVerification(true);
-      setError("");
-      return;
     }
 
     try {
@@ -186,32 +182,12 @@ export default function Page() {
     }
   };
 
-  const handleVerify = () => {
-    if (verificationCode.trim() !== demoVerificationCode) {
-      setError("That verification code does not match.");
-      setIsSubmitting(false);
-      return;
-    }
-
-    try {
-      const profile = createProfile(parentName, password, true, parentEmail);
-      goToProfile(profile);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create account.");
-      setIsSubmitting(false);
-    }
-  };
-
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isSubmitting) {
       return;
     }
     setIsSubmitting(true);
-    if (showVerification) {
-      handleVerify();
-      return;
-    }
     if (authMode === "signIn") {
       void handleLogin();
     } else {
@@ -236,121 +212,97 @@ export default function Page() {
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>
-          {!showVerification ? (
-            <>
-              <div className="auth-toggle" role="tablist" aria-label="Account action">
-                <button
-                  type="button"
-                  className={authMode === "signIn" ? "selected" : "secondary"}
-                  onClick={() => {
-                    setAuthMode("signIn");
-                    resetMessages();
-                  }}
-                >
-                  Sign in
-                </button>
-                <button
-                  type="button"
-                  className={authMode === "create" ? "selected" : "secondary"}
-                  onClick={() => {
-                    setAuthMode("create");
-                    resetMessages();
-                  }}
-                >
-                  Create
-                </button>
-              </div>
+          <div className="auth-toggle" role="tablist" aria-label="Account action">
+            <button
+              type="button"
+              className={authMode === "signIn" ? "selected" : "secondary"}
+              onClick={() => {
+                setAuthMode("signIn");
+                resetMessages();
+              }}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              className={authMode === "create" ? "selected" : "secondary"}
+              onClick={() => {
+                setAuthMode("create");
+                resetMessages();
+              }}
+            >
+              Create
+            </button>
+          </div>
 
-              <div className="role-picker" aria-label="Account type">
-                <button
-                  type="button"
-                  className={userType === "child" ? "role-card child-role selected" : "role-card child-role"}
-                  onClick={() => {
-                    setUserType("child");
-                    resetMessages();
-                  }}
-                >
-                  <strong>Child reader</strong>
-                  <span>Quizzes, books, points, badges, and prizes.</span>
-                </button>
-                <button
-                  type="button"
-                  className={userType === "parent" ? "role-card parent-role selected" : "role-card parent-role"}
-                  onClick={() => {
-                    setUserType("parent");
-                    resetMessages();
-                  }}
-                >
-                  <strong>Parent account</strong>
-                  <span>Family controls, review queue, reports, and prize approval.</span>
-                </button>
-              </div>
+          <div className="role-picker" aria-label="Account type">
+            <button
+              type="button"
+              className={userType === "child" ? "role-card child-role selected" : "role-card child-role"}
+              onClick={() => {
+                setUserType("child");
+                resetMessages();
+              }}
+            >
+              <strong>Child reader</strong>
+              <span>Quizzes, books, points, badges, and prizes.</span>
+            </button>
+            <button
+              type="button"
+              className={userType === "parent" ? "role-card parent-role selected" : "role-card parent-role"}
+              onClick={() => {
+                setUserType("parent");
+                resetMessages();
+              }}
+            >
+              <strong>Parent account</strong>
+              <span>Family controls, review queue, reports, and prize approval.</span>
+            </button>
+          </div>
 
-              {authMode === "create" && userType === "parent" ? (
-                <div className="field">
-                  <label htmlFor="parentName">Grown-up real name</label>
-                  <input
-                    id="parentName"
-                    autoComplete="name"
-                    value={parentName}
-                    onChange={(event) => setParentName(event.target.value)}
-                    placeholder="Your name"
-                  />
-                </div>
-              ) : null}
-
-              <div className="field">
-                <label htmlFor="identifier">{accountLabel}</label>
-                <input
-                  id="identifier"
-                  type={userType === "parent" ? "email" : "text"}
-                  inputMode={userType === "parent" ? "email" : "text"}
-                  autoCapitalize={userType === "parent" ? "none" : "words"}
-                  autoComplete={userType === "parent" ? "email" : "username"}
-                  value={userType === "parent" ? parentEmail : screenName}
-                  onChange={(event) => userType === "parent" ? setParentEmail(event.target.value) : setScreenName(event.target.value)}
-                  placeholder={userType === "parent" ? "you@example.com" : "Reader name"}
-                />
-              </div>
-
-              <div className="field">
-                <label htmlFor="password">Password</label>
-                <div className="password-field">
-                  <input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete={authMode === "signIn" ? "current-password" : "new-password"}
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder={authMode === "create" ? "At least 6 characters" : "Your password"}
-                  />
-                  <button type="button" className="secondary" onClick={() => setShowPassword((current) => !current)}>
-                    {showPassword ? "Hide" : "Show"}
-                  </button>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="verification-panel">
-              <div>
-                <div className="kicker">Parent Verification</div>
-                <h2>Check your email</h2>
-                <p>Enter the code sent to {parentEmail}. Demo code: <strong>{demoVerificationCode}</strong></p>
-              </div>
-              <div className="field">
-                <label htmlFor="code">Verification code</label>
-                <input
-                  id="code"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={verificationCode}
-                  onChange={(event) => setVerificationCode(event.target.value)}
-                  placeholder="123456"
-                />
-              </div>
+          {authMode === "create" && userType === "parent" ? (
+            <div className="field">
+              <label htmlFor="parentName">Grown-up real name</label>
+              <input
+                id="parentName"
+                autoComplete="name"
+                value={parentName}
+                onChange={(event) => setParentName(event.target.value)}
+                placeholder="Your name"
+              />
             </div>
-          )}
+          ) : null}
+
+          <div className="field">
+            <label htmlFor="identifier">{accountLabel}</label>
+            <input
+              id="identifier"
+              type={userType === "parent" ? "email" : "text"}
+              inputMode={userType === "parent" ? "email" : "text"}
+              autoCapitalize={userType === "parent" ? "none" : "words"}
+              autoComplete={userType === "parent" ? "email" : "username"}
+              value={userType === "parent" ? parentEmail : screenName}
+              onChange={(event) => userType === "parent" ? setParentEmail(event.target.value) : setScreenName(event.target.value)}
+              placeholder={userType === "parent" ? "you@example.com" : "Reader name"}
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="password">Password</label>
+            <div className="password-field">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                autoComplete={authMode === "signIn" ? "current-password" : "new-password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder={authMode === "create" ? "At least 6 characters" : "Your password"}
+              />
+              <button type="button" className="secondary" onClick={() => setShowPassword((current) => !current)}>
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
+          </div>
 
           {error ? (
             <div className="error-box" role="alert">
@@ -365,14 +317,9 @@ export default function Page() {
           ) : null}
 
           <div className="auth-actions">
-            <button type="submit" disabled={isSubmitting || (!showVerification && !canSubmit)}>
-              {isSubmitting ? "Working..." : showVerification ? "Verify and continue" : authMode === "signIn" ? "Continue" : "Create account"}
+            <button type="submit" disabled={isSubmitting || !canSubmit}>
+              {isSubmitting ? "Working..." : authMode === "signIn" ? "Continue" : "Create account"}
             </button>
-            {showVerification ? (
-              <button type="button" className="secondary" onClick={() => setShowVerification(false)}>
-                Back
-              </button>
-            ) : null}
           </div>
         </form>
 

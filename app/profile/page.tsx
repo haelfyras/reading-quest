@@ -31,7 +31,6 @@ export default function ProfilePage() {
   const [friendPhone, setFriendPhone] = useState("");
   const [friendMessage, setFriendMessage] = useState("");
   const [childName, setChildName] = useState("");
-  const [childFirstName, setChildFirstName] = useState("");
   const [requestMessage, setRequestMessage] = useState("");
   const [requests, setRequests] = useState<ParentVerificationRequest[]>([]);
   const [codes, setCodes] = useState<Record<string, string>>({});
@@ -100,9 +99,8 @@ export default function ProfilePage() {
   const requestChildVerification = () => {
     if (!user) return;
     try {
-      createParentVerificationRequest(user, { childScreenName: childName, childFirstName });
+      createParentVerificationRequest(user, { childScreenName: childName });
       setChildName("");
-      setChildFirstName("");
       setRequestMessage("Verification request sent to your child.");
       refresh();
     } catch (err) {
@@ -178,17 +176,12 @@ export default function ProfilePage() {
             <input id="realName" value={realName} onChange={(event) => setRealName(event.target.value)} />
           </div>
         ) : null}
-        <div className="field">
-          <label htmlFor="phone">Phone number</label>
-          <input
-            id="phone"
-            value={phone}
-            disabled={!betaConfig.phoneCollectionEnabled}
-            onChange={(event) => setPhone(event.target.value)}
-            placeholder={betaConfig.phoneCollectionEnabled ? "" : "Paused during private beta"}
-          />
-          {!betaConfig.phoneCollectionEnabled ? <p className="setting-description">Phone number collection is visible but paused during private beta.</p> : null}
-        </div>
+        {user.isParent && betaConfig.phoneCollectionEnabled ? (
+          <div className="field">
+            <label htmlFor="phone">Phone number</label>
+            <input id="phone" value={phone} onChange={(event) => setPhone(event.target.value)} />
+          </div>
+        ) : null}
         <div className="field">
           <label htmlFor="avatarStyle">Reader identity</label>
           <select id="avatarStyle" value={avatarStyle} onChange={(event) => setAvatarStyle(event.target.value)}>
@@ -212,7 +205,7 @@ export default function ProfilePage() {
       <section className="home-section" aria-labelledby="friends-heading">
         <h2 id="friends-heading">Friends</h2>
         {!betaConfig.friendCodeSharingEnabled ? (
-          <div className="warning-box">Friend adding by name, email, phone, or code is visible but paused during private beta.</div>
+          <div className="warning-box">Friend adding is visible but paused during private beta.</div>
         ) : canManageFriends ? (
           <>
             <div className="field">
@@ -249,10 +242,6 @@ export default function ProfilePage() {
             <label htmlFor="childName">Child screen name</label>
             <input id="childName" value={childName} onChange={(event) => setChildName(event.target.value)} />
           </div>
-          <div className="field">
-            <label htmlFor="childFirstName">Child real first name</label>
-            <input id="childFirstName" value={childFirstName} onChange={(event) => setChildFirstName(event.target.value)} />
-          </div>
           <button type="button" onClick={requestChildVerification}>Request Verification</button>
 
           {linkedChildren.length > 0 ? (
@@ -286,7 +275,6 @@ export default function ProfilePage() {
                 <p>{request.parentName} has requested to add you as their parent. Is this your parent?</p>
                 {confirmingRequestId === request.id ? (
                   <>
-                    <p>Is your name {request.childFirstName}?</p>
                     <div className="button-row">
                       <button type="button" onClick={() => confirmParent(request)}>Yes</button>
                       <button type="button" className="secondary" onClick={() => rejectParent(request.id)}>No</button>
@@ -304,7 +292,7 @@ export default function ProfilePage() {
             {request.status === "code_pending" ? (
               <>
                 {user.isParent ? (
-                  <div className="notice">Demo email code sent to {request.parentEmail || user.email || "your email"}: <strong>{request.code}</strong></div>
+                  <div className="notice">Verification code for {request.parentEmail || user.email || "your email"}: <strong>{request.code}</strong></div>
                 ) : null}
                 <div className="field">
                   <label htmlFor={`code-${request.id}`}>Verification code</label>

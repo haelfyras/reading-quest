@@ -23,7 +23,9 @@ import {
   Profile,
 } from "../../lib/user";
 import { getBookRecommendations } from "../../lib/recommendations";
-import type { BookLookupResult, BookMatch } from "../../lib/books";
+import type { BookMatch } from "../../lib/books";
+import { detectBookLevel as detectBookLevelFromApi, lookupBook as lookupBookFromApi } from "../../lib/bookClient";
+import { getEncouragementMessage } from "../../lib/quizFeedback";
 import {
   getBasePoints,
   getAllowedDifficulties,
@@ -71,46 +73,6 @@ function getProfileTestingGoal(profile: Profile | null, approvedQuiz?: ParentApp
   }
 
   return profile.learningGoal || "basic_recollection";
-}
-
-const encouragementMessages = {
-  low: [
-    "You started the quest. That's what matters!",
-    "You showed up and gave this book a try. That counts.",
-    "Every reader starts somewhere. This quest is officially begun.",
-  ],
-  growing: [
-    "Nice effort. Try looking back through the book and retaking it for a higher score!",
-    "Good work. A quick look back at the story could help you climb higher next time.",
-    "You're building understanding. Revisit the book and try again when you're ready.",
-  ],
-  nearPerfect: [
-    "Great job! You only missed one question!",
-    "So close to perfect. Just one question got away!",
-    "Excellent work. One more correct answer would have made it perfect.",
-  ],
-  mastered: [
-    "Excellent! You've mastered this book!",
-    "Outstanding. This book is mastered!",
-    "Brilliant work. You clearly know this book.",
-  ],
-};
-
-function getEncouragementMessage(score: number, maxScore: number, bookTitle: string) {
-  const missed = Math.max(0, maxScore - score);
-  const accuracy = maxScore > 0 ? score / maxScore : 0;
-  const category =
-    score === maxScore
-      ? "mastered"
-      : missed === 1
-        ? "nearPerfect"
-        : accuracy < 0.5
-          ? "low"
-          : "growing";
-  const options = encouragementMessages[category];
-  const seed = `${bookTitle}-${score}-${maxScore}-${new Date().toDateString()}`;
-  const index = Array.from(seed).reduce((total, character) => total + character.charCodeAt(0), 0) % options.length;
-  return options[index];
 }
 
 function QuizPageContent() {
@@ -304,23 +266,7 @@ function QuizPageContent() {
     setIsDetectingLevel(true);
 
     try {
-      const response = await fetch("/api/book-level", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookTitle: book.title,
-          author: book.author,
-          year: book.year,
-          isbn: book.isbn,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to determine book level.");
-      }
-
-      const data = await response.json();
-      const level = isBookLevel(String(data.level)) ? String(data.level) as BookLevel : "intermediate";
+      const level = await detectBookLevelFromApi(book);
       setBookLevel(level);
       if (!isDifficultyAllowedForBookLevel(difficulty, level)) {
         setDifficulty(getAllowedDifficulties(level)[0]);
@@ -351,17 +297,7 @@ function QuizPageContent() {
     setBookLookupMessage("");
 
     try {
-      const response = await fetch("/api/book-lookup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-
-      const data = (await response.json()) as BookLookupResult;
+      const data = await lookupBookFromApi(payload);
       const firstBook = data.books[0];
       if ((data.status === "exact" || data.status === "options") && data.books.length > 0) {
         setConfirmedBook(null);

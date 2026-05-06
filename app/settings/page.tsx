@@ -242,7 +242,7 @@ export default function SettingsPage() {
         <div className="settings-section">
           <h2>Privacy and Safety</h2>
           <p className="setting-description">
-            Reading Quest stores profile progress, quiz history, reading logs, prize claims, friends, and family verification status on this device for this demo.
+            Reading Quest stores profile progress, quiz history, reading logs, prize claims, friends, and family verification status for the private beta experience.
             Friends can see the name you add for them. Verified parents can see linked child quiz history, reading logs, prize requests, and quiz reports.
           </p>
           <label className="setting-label">
