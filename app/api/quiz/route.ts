@@ -33,6 +33,16 @@ const goalMap: Record<string, string> = {
   literary_analysis: "Full Understanding: focus on the bigger picture of the work, including themes, lessons, symbolism, character growth, social context, and how events or choices support the meaning of the book.",
 };
 
+const answerChoiceContract = `Answer choice consistency rules:
+- Each question must have exactly one defensible correct answer.
+- The three wrong choices must be clearly false for the question being asked.
+- Wrong choices may be plausible, but they cannot be partially correct, technically correct, broader categories, narrower examples, synonyms, restatements, or "also true" answers.
+- All four choices must be the same kind of answer: all characters, all places, all causes, all themes, all events, or all short claims.
+- Do not mix a specific answer with a broad category that could include it.
+- Do not use "all of the above", "none of the above", joke answers, obviously unrelated answers, or vague answers like "a person", "a thing", "a number", "something bad", or "because of choices".
+- If more than one choice could be defended by a reasonable reader, replace the question or the choices.
+- Hard questions should be thoughtful for upper elementary, middle school, and high school readers, not graduate-level, obscure, or ambiguous.`;
+
 const prompt = (
   book: BookDetails,
   difficulty: string,
@@ -48,7 +58,7 @@ const prompt = (
     ? `\n\nThis is section ${section.number} of ${section.total}. Create exactly ${questionCount} new questions for this section only. Do not repeat these earlier questions: ${section.previousQuestions.length ? section.previousQuestions.map((question) => `"${question}"`).join("; ") : "none"}.`
     : "";
 
-  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. The questions array must contain exactly ${questionCount} complete question objects. Do not return fewer than ${questionCount}. Each question must have: question, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation.\n\nCanonical book to quiz: ${bookIdentity}. Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}.${qualityNotes ? `\n\nCritical book guardrails:\n${qualityNotes}` : ""}\n\nRules:\n- Use only the exact book above, not films, soundtracks, games, adaptations, sequels, prequels, or other series installments.\n- If a fact may come from another book in the series or a movie adaptation, do not use it.\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the exact book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Avoid "what potion/item/spell" questions unless the exact book clearly names it.\n- Easy = simple title/character/obvious-event questions.\n- Medium = details, roles, setting, conflict, motivation, cause/effect.\n- Hard = inference, theme, symbolism, context, subtle motivation, relationships, consequences, or comparisons.\n- Choices must be plausible and fit the exact book, but only one can be correct.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the exact book.\n- Use child-friendly language for ages 7-12.\n- Silently count the questions before returning JSON and make sure there are exactly ${questionCount}.${sectionInstruction}`;
+  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. The questions array must contain exactly ${questionCount} complete question objects. Do not return fewer than ${questionCount}. Each question must have: question, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation.\n\nCanonical book to quiz: ${bookIdentity}. Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}.${qualityNotes ? `\n\nCritical book guardrails:\n${qualityNotes}` : ""}\n\n${answerChoiceContract}\n\nRules:\n- Use only the exact book above, not films, soundtracks, games, adaptations, sequels, prequels, or other series installments.\n- If a fact may come from another book in the series or a movie adaptation, do not use it.\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the exact book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Avoid "what potion/item/spell" questions unless the exact book clearly names it.\n- Easy = simple title/character/obvious-event questions.\n- Medium = details, roles, setting, conflict, motivation, cause/effect.\n- Hard = inference, theme, symbolism, context, subtle motivation, relationships, consequences, or comparisons, written for children through high school.\n- Choices must be plausible and fit the exact book, but only one can be correct.\n- Before returning, privately test each wrong choice by asking: "Could this also be correct?" If yes, replace it.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the exact book.\n- Use child-friendly language for ages 7-18.\n- Silently count the questions before returning JSON and make sure there are exactly ${questionCount}.${sectionInstruction}`;
 };
 
 function describeBook(book: BookDetails) {
@@ -101,18 +111,20 @@ Question plan:
 Rules:
 - The questions array must contain exactly 20 complete objects.
 - Do not return fewer than 20 questions.
+- ${answerChoiceContract.replace(/\n/g, "\n- ")}
 - Use only the exact book named above, not films, soundtracks, adaptations, sequels, prequels, or other books in a series.
 - If a fact may come from another series installment or movie adaptation, do not use it.
 - Do not repeat the same question idea, event, character focus, or theme focus.
 - Do not ask simple recall, obscure trivia, trick questions, or impossible questions.
 - Avoid "what potion/item/spell" questions unless the exact book clearly names it.
 - Each answer must be clearly correct from the book.
-- Each wrong answer must fit the exact book's world and style, but only one answer may be correct.
+- Each wrong answer must fit the exact book's world and style, but must be clearly false for this exact question.
+- Before returning, privately test each wrong choice by asking: "Could this also be correct?" If yes, replace it.
 - Keep each question under 18 words.
 - Keep each answer choice under 7 words.
 - Keep each explanation under 14 words.
 - answerIndex must point to answerText exactly.
-- Use child-friendly language for ages 7-12.
+- Use child-friendly language for ages 7-18.
 - Count the questions before returning. Return JSON only.`;
 };
 
@@ -145,6 +157,7 @@ ${qualityNotes ? `\nCritical book guardrails:\n- ${qualityNotes}\n` : ""}
 Each question object must have: question, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation.
 Rules:
 - The questions array must contain exactly ${section.count} complete objects.
+- ${answerChoiceContract.replace(/\n/g, "\n- ")}
 - Use only the exact book named above, not films, soundtracks, adaptations, sequels, prequels, or other books in a series.
 - If a fact may come from another series installment or movie adaptation, do not use it.
 - Keep each question under 18 words.
@@ -154,9 +167,10 @@ Rules:
 - Do not ask simple recall, obscure trivia, trick questions, or impossible questions.
 - Avoid "what potion/item/spell" questions unless the exact book clearly names it.
 - Each answer must be clearly correct from the book.
-- Each wrong answer must fit the exact book's world and style, but only one answer may be correct.
+- Each wrong answer must fit the exact book's world and style, but must be clearly false for this exact question.
+- Before returning, privately test each wrong choice by asking: "Could this also be correct?" If yes, replace it.
 - answerIndex must point to answerText exactly.
-- Use child-friendly language for ages 7-12.
+- Use child-friendly language for ages 7-18.
 - Return JSON only.`;
 };
 
@@ -192,7 +206,23 @@ const colorWords = [
 ];
 
 function normalizeText(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
+  return value.trim().toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ");
+}
+
+function hasOverlappingChoices(choices: string[]) {
+  const normalized = choices.map(normalizeText).filter(Boolean);
+  if (new Set(normalized).size !== normalized.length) {
+    return true;
+  }
+
+  return normalized.some((choice, index) =>
+    normalized.some((other, otherIndex) =>
+      index !== otherIndex &&
+      choice.length >= 4 &&
+      other.length >= 4 &&
+      (choice.includes(other) || other.includes(choice)),
+    ),
+  );
 }
 
 function countColorsInTitle(bookTitle: string) {
@@ -306,11 +336,11 @@ async function reviewQuizWithModel(
       {
         role: "system",
         content:
-          "You are a strict quiz quality reviewer. Return only a valid JSON object, with no markdown and no commentary. Fix wrong answers, impossible questions, weak distractors, answerIndex mismatches, and difficulty mismatches. If a question cannot be verified, replace it with a safer question.",
+          "You are a strict quiz quality reviewer for children's reading quizzes. Return only a valid JSON object, with no markdown and no commentary. Fix wrong answers, impossible questions, weak distractors, answerIndex mismatches, difficulty mismatches, and any question with more than one defensible correct answer. If a question cannot be verified, replace it with a safer question.",
       },
       {
         role: "user",
-        content: `Review this quiz for the exact book ${describeBook(details.book)}. Difficulty: ${details.difficulty}. Reading level: ${details.bookLevel}. Testing level: ${details.learningGoal}.${details.qualityNotes ? `\n\nCritical book guardrails:\n- ${details.qualityNotes}` : ""}\n\nIt must have exactly ${details.questionCount} questions, 4 choices per question, a correct answerIndex, answerText matching choices[answerIndex], and a short explanation. Remove or replace any question that uses a movie/adaptation fact, another book in a series, a later-book fact, an impossible premise, or an unverified answer. Distractors must fit the exact book's world and style, but only one answer may be correct. Return only the corrected JSON object.\n\n${JSON.stringify(quizData)}`,
+        content: `Review this quiz for the exact book ${describeBook(details.book)}. Difficulty: ${details.difficulty}. Reading level: ${details.bookLevel}. Testing level: ${details.learningGoal}.${details.qualityNotes ? `\n\nCritical book guardrails:\n- ${details.qualityNotes}` : ""}\n\nIt must have exactly ${details.questionCount} questions, 4 choices per question, a correct answerIndex, answerText matching choices[answerIndex], and a short explanation.\n\n${answerChoiceContract}\n\nFor every question, audit all four choices. If any wrong choice is technically true, partially true, a broader category containing the correct answer, a narrower example of the correct answer, a synonym, a restatement, or otherwise defensible, replace that choice or replace the entire question. Remove or replace any question that uses a movie/adaptation fact, another book in a series, a later-book fact, an impossible premise, or an unverified answer. Return only the corrected JSON object.\n\n${JSON.stringify(quizData)}`,
       },
     ],
   });
@@ -334,6 +364,7 @@ function isValidQuiz(quizData: ReturnType<typeof normalizeQuiz>, questionCount: 
         Array.isArray(question.choices) &&
         question.choices.length === 4 &&
         question.choices.every((choice) => typeof choice === "string" && choice.trim().length > 0) &&
+        !hasOverlappingChoices(question.choices) &&
         Number.isInteger(answerIndex) &&
         answerIndex >= 0 &&
         answerIndex < 4
