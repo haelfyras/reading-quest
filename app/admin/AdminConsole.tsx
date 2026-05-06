@@ -70,6 +70,7 @@ const tabs: Array<{ id: AdminTab; label: string }> = [
 ];
 
 const pageUsageColors = ["#22d3ee", "#facc15", "#2f6f4e", "#c084fc", "#f97316", "#9b2c2c", "#60a5fa", "#34d399"];
+const ADMIN_FEEDBACK_SEEN_KEY = "readingQuestAdminFeedbackSeenAt";
 
 const pageLabels: Record<string, string> = {
   "/": "Login",
@@ -121,6 +122,7 @@ export default function AdminConsole() {
   const [databaseParentRequests, setDatabaseParentRequests] = useState<ParentVerificationRequest[]>([]);
   const [databaseChallenges, setDatabaseChallenges] = useState<ReadingChallenge[]>([]);
   const [dataSource, setDataSource] = useState<"browser" | "database">("browser");
+  const [feedbackSeenAt, setFeedbackSeenAt] = useState("");
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
 
@@ -162,6 +164,7 @@ export default function AdminConsole() {
   };
 
   useEffect(() => {
+    setFeedbackSeenAt(typeof window !== "undefined" ? window.localStorage.getItem(ADMIN_FEEDBACK_SEEN_KEY) ?? "" : "");
     void refresh();
   }, []);
 
@@ -266,6 +269,23 @@ export default function AdminConsole() {
     setMessage("Error log cleared for this browser.");
   };
 
+  const latestFeedbackDate = useMemo(() => {
+    const latest = Math.max(0, ...feedbackEntries.map((entry) => new Date(entry.date).getTime()));
+    return latest ? new Date(latest).toISOString() : "";
+  }, [feedbackEntries]);
+
+  const hasNewFeedback = Boolean(
+    latestFeedbackDate &&
+    (!feedbackSeenAt || new Date(latestFeedbackDate).getTime() > new Date(feedbackSeenAt).getTime()),
+  );
+
+  const markFeedbackSeen = () => {
+    const seenAt = latestFeedbackDate || new Date().toISOString();
+    window.localStorage.setItem(ADMIN_FEEDBACK_SEEN_KEY, seenAt);
+    setFeedbackSeenAt(seenAt);
+    setMessage("Feedback notification marked as seen.");
+  };
+
   const latestQuizzes = metrics.quizzes
     .slice()
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -319,6 +339,16 @@ export default function AdminConsole() {
       </nav>
 
       {message ? <div className="success-box">{message}</div> : null}
+      {hasNewFeedback ? (
+        <div className="warning-box admin-feedback-alert">
+          <strong>New Feedback received.</strong>
+          <span>Review the latest beta feedback notes from families.</span>
+          <div className="button-row">
+            <button type="button" onClick={() => setActiveTab("overview")}>View Feedback</button>
+            <button type="button" className="secondary" onClick={markFeedbackSeen}>Mark Seen</button>
+          </div>
+        </div>
+      ) : null}
 
       {activeTab === "overview" ? (
         <>

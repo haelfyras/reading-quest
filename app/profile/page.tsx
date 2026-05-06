@@ -15,6 +15,7 @@ import {
   ParentVerificationRequest,
   Profile,
   rejectParentVerificationRequest,
+  retryParentVerificationRequest,
   updateProfile,
 } from "../../lib/user";
 import { betaConfig } from "../../lib/beta";
@@ -37,16 +38,30 @@ export default function ProfilePage() {
   const [confirmingRequestId, setConfirmingRequestId] = useState("");
   const [linkedChildren, setLinkedChildren] = useState<Profile[]>([]);
 
-  const refresh = () => {
+  const loadDatabaseRequests = async (profile: Profile) => {
+    const response = await fetch(`/api/family-verification?profileId=${encodeURIComponent(profile.id)}`);
+    if (!response.ok) {
+      throw new Error("Unable to load database verification requests.");
+    }
+    const data = await response.json() as { requests?: ParentVerificationRequest[] };
+    return data.requests ?? [];
+  };
+
+  const refresh = async () => {
     const profile = getCurrentProfile();
     if (!profile) return;
     setUser(profile);
     setRealName(profile.realName || "");
     setPhone(profile.phone || "");
     setAvatarStyle(profile.avatarStyle || "Explorer");
-    setRequests(getParentVerificationRequests().filter((request) => (
-      profile.isParent ? request.parentId === profile.id : request.childId === profile.id
-    )));
+    try {
+      const databaseRequests = await loadDatabaseRequests(profile);
+      setRequests(databaseRequests);
+    } catch {
+      setRequests(getParentVerificationRequests().filter((request) => (
+        profile.isParent ? request.parentId === profile.id : request.childId === profile.id
+      )));
+    }
     setLinkedChildren(getProfiles().filter((child) => profile.linkedChildren?.includes(child.id)));
   };
 
@@ -56,14 +71,7 @@ export default function ProfilePage() {
       router.push("/");
       return;
     }
-    setUser(profile);
-    setRealName(profile.realName || "");
-    setPhone(profile.phone || "");
-    setAvatarStyle(profile.avatarStyle || "Explorer");
-    setRequests(getParentVerificationRequests().filter((request) => (
-      profile.isParent ? request.parentId === profile.id : request.childId === profile.id
-    )));
-    setLinkedChildren(getProfiles().filter((child) => profile.linkedChildren?.includes(child.id)));
+    void refresh();
   }, [router]);
 
   const saveProfile = () => {
@@ -96,45 +104,156 @@ export default function ProfilePage() {
     }
   };
 
-  const requestChildVerification = () => {
+  const updateLocalParentLink = (childId: string) => {
+    if (!user?.isParent || !childId) return;
+    const updated = updateProfile({
+      ...user,
+      linkedChildren: Array.from(new Set([...(user.linkedChildren ?? []), childId])),
+    });
+    setUser(updated);
+  };
+
+  const requestChildVerification = async () => {
     if (!user) return;
     try {
-      createParentVerificationRequest(user, { childScreenName: childName });
+      const response = await fetch("/api/family-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          parentId: user.id,
+          childScreenName: childName,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: "" }));
+        throw new Error(data.error || "Unable to send request.");
+      }
       setChildName("");
-      setRequestMessage("Verification request sent to your child.");
-      refresh();
+      setRequestMessage("Verification request sent to your child. It expires in 10 minutes.");
+      await refresh();
     } catch (err) {
-      setRequestMessage(err instanceof Error ? err.message : "Unable to send request.");
+      try {
+        createParentVerificationRequest(user, { childScreenName: childName });
+        setChildName("");
+        setRequestMessage("Verification request sent to your child. It expires in 10 minutes.");
+        await refresh();
+      } catch (fallbackErr) {
+        setRequestMessage(fallbackErr instanceof Error ? fallbackErr.message : err instanceof Error ? err.message : "Unable to send request.");
+      }
     }
   };
 
-  const submitCode = (requestId: string) => {
+  const submitCode = async (requestId: string) => {
     if (!user) return;
     try {
-      enterParentVerificationCode(requestId, user.isParent ? "parent" : "child", codes[requestId] || "");
+      const response = await fetch("/api/family-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "enter_code",
+          requestId,
+          actor: user.isParent ? "parent" : "child",
+          code: codes[requestId] || "",
+        }),
+      });
+      const data = await response.json().catch(() => ({})) as { request?: ParentVerificationRequest; linkedChildId?: string; error?: string };
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to verify code.");
+      }
+      if (data.linkedChildId) {
+        updateLocalParentLink(data.linkedChildId);
+      }
       setCodes((current) => ({ ...current, [requestId]: "" }));
-      setRequestMessage("Code accepted.");
-      refresh();
+      setRequestMessage(data.request?.status === "verified" ? "Family link verified." : "Code accepted. The other account still needs to enter the code.");
+      await refresh();
     } catch (err) {
-      setRequestMessage(err instanceof Error ? err.message : "Unable to verify code.");
+      try {
+        const updatedRequest = enterParentVerificationCode(requestId, user.isParent ? "parent" : "child", codes[requestId] || "");
+        if (updatedRequest.status === "verified") {
+          updateLocalParentLink(updatedRequest.childId);
+        }
+        setCodes((current) => ({ ...current, [requestId]: "" }));
+        setRequestMessage(updatedRequest.status === "verified" ? "Family link verified." : "Code accepted. The other account still needs to enter the code.");
+        await refresh();
+      } catch (fallbackErr) {
+        setRequestMessage(fallbackErr instanceof Error ? fallbackErr.message : err instanceof Error ? err.message : "Unable to verify code.");
+      }
     }
   };
 
-  const confirmParent = (request: ParentVerificationRequest) => {
+  const confirmParent = async (request: ParentVerificationRequest) => {
     try {
-      childConfirmParentRequest(request.id);
+      const response = await fetch("/api/family-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "child_confirm", requestId: request.id }),
+      });
+      const data = await response.json().catch(() => ({ error: "" }));
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to confirm request.");
+      }
       setConfirmingRequestId("");
-      setRequestMessage("Parent confirmed. Enter the code within 5 minutes.");
-      refresh();
+      setRequestMessage("Parent confirmed. Enter the code within 10 minutes.");
+      await refresh();
     } catch (err) {
-      setRequestMessage(err instanceof Error ? err.message : "Unable to confirm request.");
+      try {
+        childConfirmParentRequest(request.id);
+        setConfirmingRequestId("");
+        setRequestMessage("Parent confirmed. Enter the code within 10 minutes.");
+        await refresh();
+      } catch (fallbackErr) {
+        setRequestMessage(fallbackErr instanceof Error ? fallbackErr.message : err instanceof Error ? err.message : "Unable to confirm request.");
+      }
     }
   };
 
-  const rejectParent = (requestId: string) => {
-    rejectParentVerificationRequest(requestId);
-    setRequestMessage("Request declined.");
-    refresh();
+  const rejectParent = async (requestId: string) => {
+    try {
+      const response = await fetch("/api/family-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reject", requestId }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: "" }));
+        throw new Error(data.error || "Unable to decline request.");
+      }
+      setRequestMessage("Request declined.");
+      await refresh();
+    } catch {
+      rejectParentVerificationRequest(requestId);
+      setRequestMessage("Request declined.");
+      await refresh();
+    }
+  };
+
+  const retryVerification = async (requestId: string) => {
+    try {
+      const response = await fetch("/api/family-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "retry", requestId }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: "" }));
+        throw new Error(data.error || "Unable to restart verification.");
+      }
+      setCodes((current) => ({ ...current, [requestId]: "" }));
+      setConfirmingRequestId("");
+      setRequestMessage("Verification restarted. You have 10 minutes.");
+      await refresh();
+    } catch (err) {
+      try {
+        retryParentVerificationRequest(requestId);
+        setCodes((current) => ({ ...current, [requestId]: "" }));
+        setConfirmingRequestId("");
+        setRequestMessage("Verification restarted. You have 10 minutes.");
+        await refresh();
+      } catch (fallbackErr) {
+        setRequestMessage(fallbackErr instanceof Error ? fallbackErr.message : err instanceof Error ? err.message : "Unable to restart verification.");
+      }
+    }
   };
 
   const toggleChildFriends = (child: Profile) => {
@@ -242,7 +361,7 @@ export default function ProfilePage() {
             <label htmlFor="childName">Child screen name</label>
             <input id="childName" value={childName} onChange={(event) => setChildName(event.target.value)} />
           </div>
-          <button type="button" onClick={requestChildVerification}>Request Verification</button>
+          <button type="button" onClick={() => void requestChildVerification()}>Request Verification</button>
 
           {linkedChildren.length > 0 ? (
             <div className="nested-section">
@@ -276,14 +395,14 @@ export default function ProfilePage() {
                 {confirmingRequestId === request.id ? (
                   <>
                     <div className="button-row">
-                      <button type="button" onClick={() => confirmParent(request)}>Yes</button>
-                      <button type="button" className="secondary" onClick={() => rejectParent(request.id)}>No</button>
+                      <button type="button" onClick={() => void confirmParent(request)}>Yes</button>
+                      <button type="button" className="secondary" onClick={() => void rejectParent(request.id)}>No</button>
                     </div>
                   </>
                 ) : (
                   <div className="button-row">
                     <button type="button" onClick={() => setConfirmingRequestId(request.id)}>Yes</button>
-                    <button type="button" className="secondary" onClick={() => rejectParent(request.id)}>No</button>
+                    <button type="button" className="secondary" onClick={() => void rejectParent(request.id)}>No</button>
                   </div>
                 )}
               </>
@@ -292,14 +411,20 @@ export default function ProfilePage() {
             {request.status === "code_pending" ? (
               <>
                 {user.isParent ? (
-                  <div className="notice">Verification code for {request.parentEmail || user.email || "your email"}: <strong>{request.code}</strong></div>
+                  <div className="notice">In-app verification code: <strong>{request.code}</strong>. Enter it on both accounts before it expires.</div>
                 ) : null}
                 <div className="field">
                   <label htmlFor={`code-${request.id}`}>Verification code</label>
                   <input id={`code-${request.id}`} value={codes[request.id] || ""} onChange={(event) => setCodes((current) => ({ ...current, [request.id]: event.target.value }))} />
                 </div>
-                <button type="button" onClick={() => submitCode(request.id)}>Submit Code</button>
+                <button type="button" onClick={() => void submitCode(request.id)}>Submit Code</button>
               </>
+            ) : null}
+
+            {request.status !== "verified" ? (
+              <div className="button-row">
+                <button type="button" className="secondary" onClick={() => void retryVerification(request.id)}>Try Again</button>
+              </div>
             ) : null}
           </div>
         )) : <p>No active requests.</p>}

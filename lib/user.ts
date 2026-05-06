@@ -540,7 +540,7 @@ export function getParentVerificationRequests(): ParentVerificationRequest[] {
   const requests = readStorage<ParentVerificationRequest[]>(PARENT_REQUESTS_KEY) ?? [];
   let changed = false;
   const next = requests.map((request) => {
-    if (request.status === "code_pending" && isExpired(request)) {
+    if ((request.status === "child_pending" || request.status === "code_pending") && isExpired(request)) {
       changed = true;
       return { ...request, status: "expired" as const };
     }
@@ -600,6 +600,7 @@ export function createParentVerificationRequest(
     childFirstName: details.childFirstName?.trim() || undefined,
     status: "child_pending",
     createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
   };
 
   saveParentVerificationRequests([...getParentVerificationRequests(), request]);
@@ -619,7 +620,7 @@ export function childConfirmParentRequest(requestId: string) {
     code: generateCode(),
     parentCodeEntered: false,
     childCodeEntered: false,
-    expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    expiresAt: request.expiresAt ?? new Date(Date.now() + 10 * 60 * 1000).toISOString(),
   };
 
   saveParentVerificationRequests(requests.map((item) => item.id === requestId ? updatedRequest : item));
@@ -633,6 +634,29 @@ export function rejectParentVerificationRequest(requestId: string) {
       request.id === requestId ? { ...request, status: "rejected" as const } : request,
     ),
   );
+}
+
+export function retryParentVerificationRequest(requestId: string) {
+  const requests = getParentVerificationRequests();
+  const request = requests.find((item) => item.id === requestId);
+  if (!request) {
+    throw new Error("That verification request was not found.");
+  }
+  if (request.status === "verified") {
+    throw new Error("This family link is already verified.");
+  }
+
+  const updatedRequest: ParentVerificationRequest = {
+    ...request,
+    status: "child_pending",
+    code: undefined,
+    parentCodeEntered: false,
+    childCodeEntered: false,
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+  };
+
+  saveParentVerificationRequests(requests.map((item) => item.id === requestId ? updatedRequest : item));
+  return updatedRequest;
 }
 
 export function enterParentVerificationCode(

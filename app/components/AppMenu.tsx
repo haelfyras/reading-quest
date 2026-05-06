@@ -3,7 +3,16 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { getCurrentProfile, Profile, setCurrentUserId } from "../../lib/user";
+import {
+  getCurrentProfile,
+  getPlanQuizAvailability,
+  getProfiles,
+  getQuizIssueReports,
+  ParentVerificationRequest,
+  Profile,
+  setCurrentUserId,
+} from "../../lib/user";
+import { readPrizeAddRequests, readPrizes } from "../../lib/prizeData";
 import { signOutSupabase } from "../../lib/supabase/auth";
 
 const sharedLinks = [
@@ -20,6 +29,9 @@ export default function AppMenu() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [notificationCount, setNotificationCount] = useState(0);
+  const [notificationText, setNotificationText] = useState("");
+  const [notificationHref, setNotificationHref] = useState("/profile");
 
   useEffect(() => {
     if (pathname.startsWith("/admin")) {
@@ -28,6 +40,75 @@ export default function AppMenu() {
     }
     setProfile(getCurrentProfile());
   }, [pathname]);
+
+  useEffect(() => {
+    if (!profile || pathname.startsWith("/admin")) {
+      setNotificationCount(0);
+      setNotificationText("");
+      setNotificationHref("/profile");
+      return;
+    }
+
+    let active = true;
+    const loadNotifications = async () => {
+      const notifications: Array<{ text: string; href: string }> = [];
+      try {
+        const response = await fetch(`/api/family-verification?profileId=${encodeURIComponent(profile.id)}`);
+        if (response.ok) {
+          const data = await response.json() as { requests?: ParentVerificationRequest[] };
+          const requests = data.requests ?? [];
+          const needsChildApproval = !profile.isParent && requests.some((request) => request.status === "child_pending");
+          const needsParentCode = profile.isParent && requests.some((request) => request.status === "code_pending" && !request.parentCodeEntered);
+          const needsChildCode = !profile.isParent && requests.some((request) => request.status === "code_pending" && !request.childCodeEntered);
+          if (needsChildApproval) notifications.push({ text: "Parent verification waiting", href: "/profile" });
+          if (needsParentCode || needsChildCode) notifications.push({ text: "Verification code needed", href: "/profile" });
+        }
+      } catch {
+        // Notifications are helpful, but should never block navigation.
+      }
+
+      if (profile.isParent) {
+        const reportCount = getQuizIssueReports().filter((report) => report.status !== "dismissed" && !report.correctionPointsAwarded).length;
+        if (reportCount > 0) {
+          notifications.push({ text: `${reportCount} quiz review ${reportCount === 1 ? "item" : "items"}`, href: "/parent" });
+        }
+
+        const linkedChildIds = new Set(profile.linkedChildren ?? []);
+        const pendingPrizeIdeas = readPrizeAddRequests().filter((request) =>
+          linkedChildIds.has(request.childId) && request.status === "pending",
+        ).length;
+        const pendingPrizeClaims = getProfiles()
+          .filter((child) => linkedChildIds.has(child.id))
+          .reduce((total, child) => total + readPrizes(child.id).filter((prize) => prize.claimed).length, 0);
+
+        if (pendingPrizeIdeas > 0) {
+          notifications.push({ text: `${pendingPrizeIdeas} prize ${pendingPrizeIdeas === 1 ? "idea" : "ideas"} waiting`, href: "/prizes" });
+        }
+        if (pendingPrizeClaims > 0) {
+          notifications.push({ text: `${pendingPrizeClaims} prize ${pendingPrizeClaims === 1 ? "claim" : "claims"} to complete`, href: "/prizes" });
+        }
+      }
+
+      const quizAvailability = getPlanQuizAvailability(profile);
+      const remainingQuizzes = Math.max(0, quizAvailability.limit - quizAvailability.used);
+      if (remainingQuizzes > 0 && remainingQuizzes <= 2) {
+        notifications.push({ text: `${remainingQuizzes} quiz ${remainingQuizzes === 1 ? "left" : "left"} today`, href: "/quiz" });
+      }
+
+      if (active) {
+        setNotificationCount(notifications.length);
+        setNotificationText(notifications.map((item) => item.text).join(" - "));
+        setNotificationHref(notifications[0]?.href ?? (profile.isParent ? "/parent" : "/profile"));
+      }
+    };
+
+    void loadNotifications();
+    const interval = window.setInterval(() => void loadNotifications(), 30000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [pathname, profile]);
 
   useEffect(() => {
     if (!open) return;
@@ -68,7 +149,7 @@ export default function AppMenu() {
     <>
       <button
         type="button"
-        className="app-drawer-toggle"
+        className={`app-drawer-toggle ${notificationCount > 0 ? "has-notifications" : ""}`}
         aria-label={open ? "Close menu" : "Open menu"}
         aria-expanded={open}
         aria-controls="app-navigation-drawer"
@@ -77,6 +158,7 @@ export default function AppMenu() {
         <span />
         <span />
         <span />
+        {notificationCount > 0 ? <strong className="notification-dot">{notificationCount}</strong> : null}
       </button>
 
       <Link href="/quiz" className="fixed-quiz-action" onClick={() => setOpen(false)}>
@@ -95,6 +177,13 @@ export default function AppMenu() {
             Close
           </button>
         </div>
+
+        {notificationCount > 0 ? (
+          <Link href={notificationHref} className="drawer-notification" onClick={() => setOpen(false)}>
+            <strong>Needs attention</strong>
+            <span>{notificationText}</span>
+          </Link>
+        ) : null}
 
         <nav className="app-drawer-nav" aria-label="Main navigation">
           {links.map((link) => (
