@@ -19,8 +19,10 @@ import {
   getSpendablePoints,
   getSpentPoints,
   normalizeSubscriptionTier,
+  ParentVerificationRequest,
   Profile,
   QuizIssueReport,
+  ReadingChallenge,
   subscriptionPlans,
   updateQuizIssueReport,
 } from "../../lib/user";
@@ -112,23 +114,55 @@ function getLastActivity(profile: Profile) {
 export default function AdminConsole() {
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [reports, setReports] = useState<QuizIssueReport[]>([]);
+  const [reports, setReports] = useState<Array<QuizIssueReport & { source?: "supabase" | "local" }>>([]);
   const [telemetry, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [prizeAddRequests, setPrizeAddRequests] = useState<PrizeAddRequest[]>([]);
   const [feedbackEntries, setFeedbackEntries] = useState<FeedbackEntry[]>([]);
+  const [databaseParentRequests, setDatabaseParentRequests] = useState<ParentVerificationRequest[]>([]);
+  const [databaseChallenges, setDatabaseChallenges] = useState<ReadingChallenge[]>([]);
+  const [dataSource, setDataSource] = useState<"browser" | "database">("browser");
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
 
-  const refresh = () => {
+  const refresh = async () => {
     setProfiles(getProfiles());
-    setReports(getQuizIssueReports());
+    setReports(getQuizIssueReports().map((report) => ({ ...report, source: "local" as const })));
     setTelemetry(readLocalStorage<TelemetryEvent[]>("readingQuestTelemetryEvents", []));
     setPrizeAddRequests(readLocalStorage<PrizeAddRequest[]>("readingQuestPrizeAddRequests", []));
     setFeedbackEntries(readLocalStorage<FeedbackEntry[]>(BETA_FEEDBACK_KEY, []));
+
+    try {
+      const response = await fetch("/api/admin/data");
+      if (!response.ok) {
+        setDataSource("browser");
+        return;
+      }
+
+      const data = await response.json() as {
+        profiles?: Profile[];
+        reports?: Array<QuizIssueReport & { source?: "supabase" }>;
+        telemetry?: TelemetryEvent[];
+        feedbackEntries?: FeedbackEntry[];
+        parentRequests?: ParentVerificationRequest[];
+        prizeAddRequests?: PrizeAddRequest[];
+        challenges?: ReadingChallenge[];
+      };
+
+      setProfiles(data.profiles ?? []);
+      setReports(data.reports ?? []);
+      setTelemetry(data.telemetry ?? []);
+      setFeedbackEntries(data.feedbackEntries ?? []);
+      setDatabaseParentRequests(data.parentRequests ?? []);
+      setPrizeAddRequests(data.prizeAddRequests ?? []);
+      setDatabaseChallenges(data.challenges ?? []);
+      setDataSource("database");
+    } catch {
+      setDataSource("browser");
+    }
   };
 
   useEffect(() => {
-    refresh();
+    void refresh();
   }, []);
 
   const signOut = async () => {
@@ -136,8 +170,14 @@ export default function AdminConsole() {
     window.location.reload();
   };
 
-  const parentRequests = useMemo(() => getParentVerificationRequests(), [profiles, reports]);
-  const challenges = useMemo(() => getReadingChallenges(), [profiles, reports]);
+  const parentRequests = useMemo(
+    () => databaseParentRequests.length > 0 ? databaseParentRequests : getParentVerificationRequests(),
+    [databaseParentRequests, profiles, reports],
+  );
+  const challenges = useMemo(
+    () => databaseChallenges.length > 0 ? databaseChallenges : getReadingChallenges(),
+    [databaseChallenges, profiles, reports],
+  );
   const now = Date.now();
   const dayAgo = now - 24 * 60 * 60 * 1000;
   const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
@@ -194,13 +234,30 @@ export default function AdminConsole() {
     }, {});
   }, [profiles]);
 
-  const resolveReport = (reportId: string, status: "accepted" | "dismissed") => {
-    updateQuizIssueReport(reportId, {
-      status,
-      parentNote: status === "accepted" ? "Admin marked this as needing correction or review." : "Admin dismissed this report.",
-    });
+  const resolveReport = async (reportId: string, status: "accepted" | "dismissed") => {
+    const report = reports.find((item) => item.id === reportId);
+    const parentNote = status === "accepted"
+      ? "Admin marked this as needing correction or review."
+      : "Admin dismissed this report.";
+
+    if (report?.source === "supabase") {
+      const response = await fetch("/api/admin/quiz-report", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportId, status, parentNote }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: "Unable to update report." }));
+        setMessage(data.error ?? "Unable to update report.");
+        return;
+      }
+    } else {
+      updateQuizIssueReport(reportId, { status, parentNote });
+    }
+
     setMessage(status === "accepted" ? "Report marked for correction." : "Report dismissed.");
-    refresh();
+    await refresh();
   };
 
   const clearTelemetry = () => {
@@ -271,8 +328,11 @@ export default function AdminConsole() {
                 <h2 id="admin-health-heading">Beta Health</h2>
                 <p>Fast signals for whether the app is being used safely and whether API usage is under control.</p>
               </div>
-              <button type="button" className="secondary" onClick={refresh}>Refresh</button>
+              <button type="button" className="secondary" onClick={() => void refresh()}>Refresh</button>
             </div>
+            <p className="auth-footer-note">
+              Data source: {dataSource === "database" ? "Supabase database, with browser fallback" : "this browser only"}.
+            </p>
             <div className="admin-metric-grid">
               <div className="stat-tile"><span>Total accounts</span><strong>{profiles.length}</strong></div>
               <div className="stat-tile"><span>Children</span><strong>{metrics.children.length}</strong></div>
@@ -457,8 +517,8 @@ export default function AdminConsole() {
                   ))}
                 </div>
                 <div className="button-row">
-                  <button type="button" className="secondary" onClick={() => resolveReport(report.id, "accepted")}>Mark needs correction</button>
-                  <button type="button" className="secondary" onClick={() => resolveReport(report.id, "dismissed")}>Dismiss report</button>
+                  <button type="button" className="secondary" onClick={() => void resolveReport(report.id, "accepted")}>Mark needs correction</button>
+                  <button type="button" className="secondary" onClick={() => void resolveReport(report.id, "dismissed")}>Dismiss report</button>
                 </div>
               </article>
             )) : <p>No quiz reports yet.</p>}

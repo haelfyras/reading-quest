@@ -27,7 +27,9 @@ import {
   updateQuizIssueReport,
 } from "../../lib/user";
 import { betaConfig } from "../../lib/beta";
+import { hasSavedPrizes } from "../../lib/prizeData";
 import BetaDisclaimer from "../components/BetaDisclaimer";
+import SetupGuide, { type SetupStep } from "../components/SetupGuide";
 
 const testingLevelOptions = [
   {
@@ -80,6 +82,51 @@ export default function ParentPage() {
 
   const currentRank = currentUser ? adultLeaderboard.findIndex((profile) => profile.id === currentUser.id) + 1 : 0;
   const pointsProgressData = useMemo(() => currentUser ? getPointTimeline(currentUser) : [], [currentUser]);
+  const childQuizCount = children.reduce((total, child) => total + child.quizzes.length, 0);
+  const hasChildPrizes = children.some((child) => hasSavedPrizes(child.id));
+  const hasAdjustedChildSettings = children.some((child) => Boolean(child.parentControls));
+  const parentSetupSteps: SetupStep[] = [
+    {
+      id: "account",
+      title: "Create and confirm your parent account",
+      description: "Use your email and password, confirm the email, then sign in for the first time.",
+      href: "/profile",
+      actionLabel: "View Profile",
+      complete: Boolean(currentUser?.verified || currentUser?.email),
+    },
+    {
+      id: "link-child",
+      title: "Connect your child",
+      description: "If your child already has an account, add them from Profile and follow the child approval and code steps.",
+      href: "/profile",
+      actionLabel: "Add Child",
+      complete: children.length > 0,
+    },
+    {
+      id: "review-quizzes",
+      title: "Review child quiz history",
+      description: "See what quizzes your child has taken, what they missed, and whether anything needs parent review.",
+      href: "/parent",
+      actionLabel: "Review Quizzes",
+      complete: children.length > 0 && childQuizCount > 0,
+    },
+    {
+      id: "prizes-settings",
+      title: "Set prizes or child settings",
+      description: "Set up prizes now, or update testing level, retakes, and review controls first and do prizes later.",
+      href: hasChildPrizes ? "/settings" : "/prizes",
+      actionLabel: hasChildPrizes ? "Update Settings" : "Set Prizes",
+      complete: children.length > 0 && (hasChildPrizes || hasAdjustedChildSettings),
+    },
+    {
+      id: "parent-reader",
+      title: "Join the reading challenge too",
+      description: "Parents can set goals, take quizzes, earn points, and model reading alongside their child.",
+      href: currentUser?.quizzes.length ? "/settings" : "/quiz",
+      actionLabel: currentUser?.quizzes.length ? "Set Goals" : "Take a Quiz",
+      complete: (currentUser?.quizzes.length ?? 0) > 0,
+    },
+  ];
 
   const refreshParentData = () => {
     if (!currentUser) return;
@@ -136,6 +183,12 @@ export default function ParentPage() {
       </div>
 
       <BetaDisclaimer />
+
+      <SetupGuide
+        title="Set Up Your Family Reading Hub"
+        description="These steps help parents move from account setup to child safety, quiz review, prizes, and reading alongside the family."
+        steps={parentSetupSteps}
+      />
 
       <section className="home-section summary-section" aria-labelledby="parent-summary-heading">
         <h2 id="parent-summary-heading">Today</h2>

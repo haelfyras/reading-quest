@@ -7,6 +7,7 @@ import {
   type Difficulty,
   type ParentControls,
   type ParentVerificationRequest,
+  type PrizeRedemption,
   type Profile,
   type QuizHistory,
   type QuizIssueReport,
@@ -195,6 +196,24 @@ export function getProfiles(): Profile[] {
 
 export function saveProfiles(profiles: Profile[]) {
   writeStorage(STORAGE_KEY, profiles);
+}
+
+function syncBetaData(kind: string, payload: unknown) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.fetch("/api/beta-sync", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, payload }),
+  }).catch(() => {
+    // Beta sync should never interrupt reading, quizzes, or parent controls.
+  });
+}
+
+function syncProfile(profile: Profile) {
+  syncBetaData("profile", profile);
 }
 
 export function getCurrentUserId(): string | null {
@@ -980,6 +999,7 @@ export function updateProfile(updated: Profile): Profile {
   const profiles = getProfiles();
   const next = profiles.map((profile) => (profile.id === updated.id ? updated : profile));
   saveProfiles(next);
+  syncProfile(updated);
   return updated;
 }
 
@@ -1020,7 +1040,12 @@ export function addQuizResult(
   };
   updated.badges = getBadges(updated);
 
-  return updateProfile(updated);
+  const saved = updateProfile(updated);
+  syncBetaData("quiz_result", {
+    profileId: saved.id,
+    ...quizEntry,
+  });
+  return saved;
 }
 
 export function saveReadingNow(profile: Profile, books: string[]) {
@@ -1081,7 +1106,12 @@ export function addReadingLog(details: {
   };
   updated.badges = getBadges(updated);
 
-  return updateProfile(updated);
+  const saved = updateProfile(updated);
+  syncBetaData("reading_log", {
+    profileId: saved.id,
+    ...log,
+  });
+  return saved;
 }
 
 export function redeemPrize(details: {
@@ -1099,23 +1129,30 @@ export function redeemPrize(details: {
     throw new Error("Not enough points available for that prize.");
   }
 
+  const redemption: PrizeRedemption = {
+    id: generateId(),
+    prizeId: details.prizeId,
+    prizeName: details.prizeName,
+    pointsSpent: details.pointsSpent,
+    date: new Date().toISOString(),
+  };
+
   const updated: Profile = {
     ...current,
     points: spendablePoints - details.pointsSpent,
     lifetimePoints: getLifetimePoints(current),
     prizeRedemptions: [
       ...(current.prizeRedemptions ?? []),
-      {
-        id: generateId(),
-        prizeId: details.prizeId,
-        prizeName: details.prizeName,
-        pointsSpent: details.pointsSpent,
-        date: new Date().toISOString(),
-      },
+      redemption,
     ],
   };
 
-  return updateProfile(updated);
+  const saved = updateProfile(updated);
+  syncBetaData("prize_redemption", {
+    profileId: saved.id,
+    ...redemption,
+  });
+  return saved;
 }
 
 export function getReviews(): Review[] {
@@ -1130,6 +1167,7 @@ export function addReview(review: Omit<Review, "id" | "date">): Review {
     date: new Date().toISOString(),
   };
   writeStorage("readingQuestReviews", [...reviews, next]);
+  syncBetaData("review", next);
   return next;
 }
 
@@ -1157,6 +1195,7 @@ export function addQuizIssueReport(report: Omit<QuizIssueReport, "id" | "date">)
     date: new Date().toISOString(),
   };
   writeStorage("readingQuestQuizIssueReports", [...reports, next]);
+  syncBetaData("quiz_issue_report", next);
   return next;
 }
 
@@ -1171,7 +1210,11 @@ export function updateQuizIssueReport(
       : report,
   );
   writeStorage("readingQuestQuizIssueReports", next);
-  return next.find((report) => report.id === reportId) ?? null;
+  const updated = next.find((report) => report.id === reportId) ?? null;
+  if (updated) {
+    syncBetaData("quiz_issue_report_update", updated);
+  }
+  return updated;
 }
 
 export function awardQuizIssueReportPoints(reportId: string) {
@@ -1228,6 +1271,7 @@ export function awardQuizIssueReportPoints(reportId: string) {
   };
 
   saveProfiles(profiles.map((item) => (item.id === profile.id ? updatedProfile : item)));
+  syncProfile(updatedProfile);
 
   const nextReports = reports.map((item) =>
     item.id === reportId
@@ -1241,6 +1285,10 @@ export function awardQuizIssueReportPoints(reportId: string) {
       : item,
   );
   writeStorage("readingQuestQuizIssueReports", nextReports);
+  const updatedReport = nextReports.find((item) => item.id === reportId);
+  if (updatedReport) {
+    syncBetaData("quiz_issue_report_update", updatedReport);
+  }
   return updatedProfile;
 }
 

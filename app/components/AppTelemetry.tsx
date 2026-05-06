@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
+import { getCurrentProfile } from "../../lib/user";
 
 type TelemetryEvent = {
   id: string;
@@ -24,17 +25,32 @@ function createId() {
 
 function saveTelemetry(event: Omit<TelemetryEvent, "id" | "date">) {
   try {
+    const profile = getCurrentProfile();
     const stored = window.localStorage.getItem(TELEMETRY_KEY);
     const current = stored ? (JSON.parse(stored) as TelemetryEvent[]) : [];
+    const nextEvent = {
+      ...event,
+      id: createId(),
+      date: new Date().toISOString(),
+    };
     const next = [
-      {
-        ...event,
-        id: createId(),
-        date: new Date().toISOString(),
-      },
+      nextEvent,
       ...current,
     ].slice(0, MAX_EVENTS);
     window.localStorage.setItem(TELEMETRY_KEY, JSON.stringify(next));
+    window.fetch("/api/beta-sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "telemetry",
+        payload: {
+          ...nextEvent,
+          profileId: profile?.id,
+        },
+      }),
+    }).catch(() => {
+      // Telemetry should never interrupt the reading experience.
+    });
   } catch {
     // Telemetry should never interrupt the reading experience.
   }

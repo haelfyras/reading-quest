@@ -25,6 +25,7 @@ import {
 } from "../../lib/user";
 import { getBookRecommendations as buildRecommendations } from "../../lib/recommendations";
 import BetaDisclaimer from "../components/BetaDisclaimer";
+import SetupGuide, { type SetupStep } from "../components/SetupGuide";
 
 function recentTitle(profile: Profile | null) {
   if (!profile || profile.quizzes.length === 0) return "";
@@ -99,6 +100,44 @@ export default function HomePage() {
   const reachedPrizeCount = sortedPrizeGoals.filter((goal) => currentPoints >= goal.pointsRequired).length;
   const recommendationData = useMemo(() => buildRecommendations({ profile: currentUser, limit: 1 }), [currentUser]);
   const currentlyReading = currentUser?.readingNow?.[0] ?? recentTitle(currentUser);
+  const hasReadingInterests = Boolean(
+    currentUser?.favoriteBooks?.filter(Boolean).length ||
+    Object.values(currentUser?.readingPreferences ?? {}).some((value) => value.trim().length > 0),
+  );
+  const childSetupSteps: SetupStep[] = [
+    {
+      id: "account",
+      title: "Create your reader account",
+      description: "Use a unique screen name and password. Ask a parent for permission or help if you need it.",
+      href: "/profile",
+      actionLabel: "View profile",
+      complete: true,
+    },
+    {
+      id: "books",
+      title: "Tell us what you like",
+      description: "Add favorite books, or take the short interest quiz if you are still finding what you enjoy.",
+      href: "/my-books",
+      actionLabel: "Set up My Books",
+      complete: hasReadingInterests,
+    },
+    {
+      id: "quiz",
+      title: "Read, then take a quiz",
+      description: "Try a quiz on a book you have read, or use your suggestions to pick what to read next.",
+      href: currentUser?.quizzes.length ? "/my-books" : "/quiz",
+      actionLabel: "Take a Quiz",
+      complete: (currentUser?.quizzes.length ?? 0) > 0,
+    },
+    {
+      id: "prizes",
+      title: "Check the prize path",
+      description: "See what your points can earn. Ask a parent to sign up so they can update your prizes.",
+      href: "/prizes",
+      actionLabel: "See Prizes",
+      complete: (currentUser?.quizzes.length ?? 0) > 0 && currentPoints > 0,
+    },
+  ];
 
   const childLeaderboard = useMemo(() => {
     return getProfiles()
@@ -129,6 +168,12 @@ export default function HomePage() {
       </div>
 
       <BetaDisclaimer />
+
+      <SetupGuide
+        title="Set Up Your Reading Quest"
+        description="Follow these steps in order for the smoothest start, or jump around whenever you already know what you want to do."
+        steps={childSetupSteps}
+      />
 
       <section className="home-section summary-section" aria-labelledby="summary-heading">
         <h2 id="summary-heading">Today</h2>

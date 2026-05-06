@@ -61,6 +61,13 @@ export default function FeedbackButton() {
     };
 
     window.localStorage.setItem(BETA_FEEDBACK_KEY, JSON.stringify([nextEntry, ...readFeedback()].slice(0, 120)));
+    window.fetch("/api/beta-sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "feedback", payload: nextEntry }),
+    }).catch(() => {
+      // Keep feedback available locally even if beta sync is unavailable.
+    });
     setMessage("");
     setStatus("Thank you. Feedback saved for beta review.");
   };

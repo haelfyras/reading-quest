@@ -719,6 +719,27 @@ button:disabled {
   font-size: 0.92rem;
 }
 
+.auth-onboarding-panel {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel));
+  padding: 14px;
+}
+
+.auth-onboarding-panel strong {
+  color: var(--text);
+}
+
+.auth-onboarding-panel ol {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1.55;
+}
+
 .admin-shell {
   width: min(1220px, calc(100% - 32px));
   max-width: 1220px;
@@ -939,6 +960,85 @@ button:disabled {
   background: var(--panel-strong);
   box-shadow: var(--shadow);
   padding: 20px;
+}
+
+.setup-guide {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 42%, var(--panel-strong)), var(--panel-strong));
+}
+
+.setup-checklist {
+  display: grid;
+  gap: 12px;
+}
+
+.setup-step {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 90%, white);
+  padding: 14px;
+}
+
+.setup-step.complete {
+  border-color: color-mix(in srgb, var(--success) 58%, var(--border));
+  background: color-mix(in srgb, var(--success) 10%, var(--panel));
+}
+
+.setup-step.next {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border));
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.setup-step-marker {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-strong);
+  color: var(--text);
+  font-weight: 900;
+}
+
+.setup-step.complete .setup-step-marker {
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 16%, var(--panel));
+  color: var(--success);
+}
+
+.setup-step strong,
+.setup-step p {
+  display: block;
+}
+
+.setup-step p {
+  margin: 4px 0 10px;
+}
+
+.setup-next-note {
+  margin: 14px 0 0;
+  font-weight: 800;
+}
+
+.suggested-action {
+  animation: setup-suggested-pulse 1.15s ease-in-out 2;
+}
+
+@keyframes setup-suggested-pulse {
+  0%,
+  100% {
+    filter: brightness(1);
+    transform: translateY(0);
+  }
+
+  50% {
+    filter: brightness(1.16);
+    transform: translateY(-1px) scale(1.018);
+    box-shadow: 0 12px 28px color-mix(in srgb, var(--accent) 34%, transparent);
+  }
 }
 
 .hero-stats {

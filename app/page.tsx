@@ -211,6 +211,27 @@ export default function Page() {
           <span className="version-pill">{PRODUCT_VERSION}</span>
         </div>
 
+        <div className="auth-onboarding-panel">
+          <strong>{userType === "parent" ? "Parent setup path" : "Child setup path"}</strong>
+          {userType === "parent" ? (
+            <ol>
+              <li>Create with email and password.</li>
+              <li>Confirm your email, then sign in.</li>
+              <li>Add your child and follow the verification prompts.</li>
+              <li>Review quizzes, set prizes, and choose child settings.</li>
+              <li>Take quizzes yourself to model the reading habit.</li>
+            </ol>
+          ) : (
+            <ol>
+              <li>Ask a parent for permission or help.</li>
+              <li>Create a unique screen name and password.</li>
+              <li>Add favorite books or take the interest quiz.</li>
+              <li>Take a quiz on something you have read.</li>
+              <li>Check prizes and ask a parent to set them up.</li>
+            </ol>
+          )}
+        </div>
+
         <form className="auth-form" onSubmit={handleSubmit}>
           <div className="auth-toggle" role="tablist" aria-label="Account action">
             <button
