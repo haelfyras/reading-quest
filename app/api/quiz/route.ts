@@ -65,18 +65,14 @@ function normalizeBookText(value: string) {
 
 function getBookQualityNotes(book: BookDetails) {
   const title = normalizeBookText(book.title);
-  const author = normalizeBookText(book.author ?? "");
   const notes: string[] = [];
 
-  if (/\bharry potter\b/.test(title)) {
-    notes.push("This is one specific Harry Potter book. Do not borrow facts from later or earlier Harry Potter books.");
+  if (book.author || book.year || book.isbn) {
+    notes.push("Treat the provided title, author, year, and ISBN as the canonical book identity.");
   }
 
-  if (/\bchamber of secrets\b/.test(title) && /\browling\b/.test(author)) {
-    notes.push("Harry Potter and the Chamber of Secrets is the second Harry Potter book by J.K. Rowling, first published in 1998.");
-    notes.push("Do not mention Gillyweed, the Triwizard Tournament, the Black Lake task, Mad-Eye Moody, or other Goblet of Fire material.");
-    notes.push("Do not ask what potion helps Harry breathe in the Chamber; that is not a valid Chamber of Secrets question.");
-    notes.push("Do not use John Williams as the author; he is associated with film music, not this book.");
+  if (/\b(book|volume|part|chapter)\b|\b[ivx]{2,}\b|\b\d+\b|:/.test(title)) {
+    notes.push("This may be one installment, edition, or adaptation title. Do not borrow facts from similarly named works.");
   }
 
   return notes.join("\n- ");
@@ -204,38 +200,6 @@ function countColorsInTitle(bookTitle: string) {
   return words.filter((word) => colorWords.includes(word)).length;
 }
 
-function hasKnownBadQuestion(question: GeneratedQuestion, book: BookDetails) {
-  const title = normalizeBookText(book.title);
-  const text = normalizeBookText([
-    question.question,
-    ...(Array.isArray(question.choices) ? question.choices : []),
-    question.answerText,
-    question.explanation,
-  ].map((value) => (typeof value === "string" ? value : "")).join(" "));
-
-  if (/\bchamber of secrets\b/.test(title)) {
-    return /\bgillyweed\b|\btriwizard\b|\bblack lake\b|\bmad eye\b|\bmoody\b/.test(text);
-  }
-
-  return false;
-}
-
-function getKnownReplacementQuestion(book: BookDetails): GeneratedQuestion | null {
-  const title = normalizeBookText(book.title);
-
-  if (/\bchamber of secrets\b/.test(title)) {
-    return {
-      question: "What creature lives in the Chamber of Secrets?",
-      choices: ["Basilisk", "Dragon", "Hippogriff", "Troll"],
-      answerIndex: 0,
-      answerText: "Basilisk",
-      explanation: "The Chamber hides a basilisk.",
-    };
-  }
-
-  return null;
-}
-
 function normalizeQuiz(rawQuiz: GeneratedQuiz, book: BookDetails, questionCount: number) {
   const questions = Array.isArray(rawQuiz.questions) ? rawQuiz.questions : [];
 
@@ -289,7 +253,7 @@ function normalizeQuiz(rawQuiz: GeneratedQuiz, book: BookDetails, questionCount:
       answerIndex = 0;
     }
 
-    const normalizedQuestion = {
+    return {
       question,
       choices,
       answerIndex,
@@ -298,10 +262,6 @@ function normalizeQuiz(rawQuiz: GeneratedQuiz, book: BookDetails, questionCount:
         ? String(generatedQuestion.explanation).trim()
         : "",
     };
-
-    return hasKnownBadQuestion(normalizedQuestion, book)
-      ? getKnownReplacementQuestion(book) ?? normalizedQuestion
-      : normalizedQuestion;
   });
 
   return {
