@@ -104,6 +104,34 @@ async function ensureParentProfile(accessToken: string, realName?: string) {
   return data.profile;
 }
 
+async function accessChildProfile(action: "create" | "signIn", screenName: string, password: string) {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  const response = await fetch("/api/auth/child-profile", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, screenName, password }),
+  });
+
+  const data = await response.json().catch(() => ({})) as { profile?: DbProfile; error?: string };
+
+  if (!response.ok || !data.profile) {
+    throw new Error(data.error || "Unable to access that child account.");
+  }
+
+  return saveLocalMirror(mapDbProfileToLocalProfile(data.profile));
+}
+
+export async function signInChildWithSupabase(screenName: string, password: string) {
+  return accessChildProfile("signIn", screenName, password);
+}
+
+export async function createChildWithSupabase(screenName: string, password: string) {
+  return accessChildProfile("create", screenName, password);
+}
+
 export async function signInParentWithSupabase(email: string, password: string) {
   if (!isSupabaseConfigured()) {
     return null;

@@ -19,6 +19,7 @@ export type Database = {
           real_name: string | null;
           email: string | null;
           phone: string | null;
+          child_password_hash: string | null;
           profile_code: string | null;
           can_add_friends: boolean;
           points: number;

@@ -71,7 +71,7 @@ export default function ProfilePage() {
     if (!user) return;
     const updated = updateProfile({
       ...user,
-      realName: realName.trim(),
+      realName: user.isParent ? realName.trim() : user.realName,
       phone: betaConfig.phoneCollectionEnabled ? phone.trim() : user.phone,
       avatarStyle,
     });
@@ -172,10 +172,12 @@ export default function ProfilePage() {
         <h2 id="account-heading">Account</h2>
         <p><strong>Screen name:</strong> {user.name}</p>
         {user.email ? <p><strong>Email:</strong> {user.email}</p> : null}
-        <div className="field">
-          <label htmlFor="realName">Real name</label>
-          <input id="realName" value={realName} onChange={(event) => setRealName(event.target.value)} />
-        </div>
+        {user.isParent ? (
+          <div className="field">
+            <label htmlFor="realName">Real name</label>
+            <input id="realName" value={realName} onChange={(event) => setRealName(event.target.value)} />
+          </div>
+        ) : null}
         <div className="field">
           <label htmlFor="phone">Phone number</label>
           <input
@@ -199,7 +201,11 @@ export default function ProfilePage() {
 
       <section className="home-section" aria-labelledby="privacy-heading">
         <h2 id="privacy-heading">Privacy</h2>
-        <p>Reading Quest uses your screen name for app progress and leaderboards. Your real name, email, friends, and family links are only for account and safety features. Phone numbers are not being collected during private beta.</p>
+        <p>
+          Reading Quest uses {user.isParent ? "your account details" : "your screen name"} for app progress and safety features.
+          {user.isParent ? " Your real name, email, friends, and family links are only for account and safety features." : " Child accounts do not need a real name or email address."}
+          {" "}Phone numbers are not being collected during private beta.
+        </p>
         <p>Verified parents can see linked child quiz history, reading logs, prize requests, and reported quiz questions. Friend adding for child accounts stays locked until a verified parent allows it.</p>
       </section>
 

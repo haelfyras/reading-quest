@@ -55,6 +55,43 @@ export async function POST(request: Request) {
     const screenName = realName || metadataName || email.split("@")[0] || "Parent";
     const safeScreenName = screenName.trim() || "Parent";
 
+    if (email) {
+      const { data: existingByEmail, error: emailLookupError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("account_type", "parent")
+        .ilike("email", email)
+        .maybeSingle();
+
+      if (emailLookupError) {
+        return NextResponse.json({ error: emailLookupError.message }, { status: 500 });
+      }
+
+      if (existingByEmail) {
+        const { data: reclaimed, error: reclaimError } = await supabase
+          .from("profiles")
+          .update({
+            auth_user_id: user.id,
+            real_name: realName || existingByEmail.real_name || safeScreenName,
+            screen_name: existingByEmail.screen_name || safeScreenName,
+            can_add_friends: true,
+            verified: Boolean(user.email_confirmed_at),
+          })
+          .eq("id", existingByEmail.id)
+          .select("*")
+          .single();
+
+        if (reclaimError || !reclaimed) {
+          return NextResponse.json(
+            { error: reclaimError?.message || "Unable to reconnect your parent profile." },
+            { status: 500 },
+          );
+        }
+
+        return NextResponse.json({ profile: reclaimed });
+      }
+    }
+
     const { data: created, error: createError } = await supabase
       .from("profiles")
       .insert({

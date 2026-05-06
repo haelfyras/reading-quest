@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION } from "../lib/product";
 import { createProfile, getCurrentProfile, Profile, setCurrentUserId, verifyProfile } from "../lib/user";
 import {
+  createChildWithSupabase,
   createParentWithSupabase,
   EmailConfirmationRequiredError,
   getSupabaseErrorMessage,
+  signInChildWithSupabase,
   signInParentWithSupabase,
 } from "../lib/supabase/auth";
 
@@ -100,6 +102,22 @@ export default function Page() {
       }
     }
 
+    if (userType === "child") {
+      try {
+        setIsSubmitting(true);
+        const supabaseProfile = await signInChildWithSupabase(screenName, password);
+        if (supabaseProfile) {
+          goToProfile(supabaseProfile);
+          return;
+        }
+      } catch (err) {
+        setError(getSupabaseErrorMessage(err));
+        setNotice("");
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     const profile = verifyProfile(identifier, password);
     if (!profile) {
       setError("That account information did not match. Check the spelling and try again.");
@@ -155,6 +173,11 @@ export default function Page() {
     }
 
     try {
+      const supabaseProfile = await createChildWithSupabase(screenName, password);
+      if (supabaseProfile) {
+        goToProfile(supabaseProfile);
+        return;
+      }
       const profile = createProfile(screenName, password, false);
       goToProfile(profile);
     } catch (err) {
