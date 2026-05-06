@@ -5,6 +5,8 @@ export type BookMatch = {
   year?: number;
   coverUrl?: string;
   isbn?: string;
+  source?: string;
+  confidence?: number;
 };
 
 export type BookLookupResult = {

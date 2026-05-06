@@ -9,8 +9,9 @@ function normalizeTitle(value: string) {
   return value.trim().toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ");
 }
 
-function getKnownBookLevel(bookTitle: string) {
+function getKnownBookLevel(bookTitle: string, author = "") {
   const title = normalizeTitle(bookTitle);
+  const normalizedAuthor = normalizeTitle(author);
   const beginnerPatterns = [
     /\bthe lion king\b/,
     /\bone fish two fish\b/,
@@ -28,18 +29,24 @@ function getKnownBookLevel(bookTitle: string) {
     return "beginner";
   }
 
+  if (/\bharry potter\b/.test(title) && /\browling\b/.test(normalizedAuthor)) {
+    return "intermediate";
+  }
+
   return null;
 }
 
 export async function POST(request: Request) {
   const body = await request.json();
   const bookTitle = String(body.bookTitle || "").trim();
+  const author = String(body.author || "").trim();
+  const year = body.year ? String(body.year).trim() : "";
 
   if (!bookTitle) {
     return new NextResponse("Book title is required.", { status: 400 });
   }
 
-  const knownLevel = getKnownBookLevel(bookTitle);
+  const knownLevel = getKnownBookLevel(bookTitle, author);
   if (knownLevel) {
     return NextResponse.json({ level: knownLevel });
   }
@@ -55,7 +62,7 @@ export async function POST(request: Request) {
         },
         {
           role: "user",
-          content: `Classify the book reading level for "${bookTitle}". If this is a picture book, Disney/storybook adaptation, early reader, or simple children's story, choose beginner. Respond with only: beginner, intermediate, or advanced.`,
+          content: `Classify the exact book reading level for "${bookTitle}"${author ? ` by ${author}` : ""}${year ? `, first published around ${year}` : ""}. Ignore movies, soundtracks, games, adaptations, and other books in the same series. If this is a picture book, Disney/storybook adaptation, early reader, or simple children's story, choose beginner. Respond with only: beginner, intermediate, or advanced.`,
         },
       ],
     });

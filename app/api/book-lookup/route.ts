@@ -16,6 +16,27 @@ type BookMatch = {
   year?: number;
   coverUrl?: string;
   isbn?: string;
+  source?: string;
+  confidence?: number;
+};
+
+type GoogleBookVolume = {
+  id?: string;
+  volumeInfo?: {
+    title?: string;
+    subtitle?: string;
+    authors?: string[];
+    publishedDate?: string;
+    imageLinks?: {
+      thumbnail?: string;
+      smallThumbnail?: string;
+    };
+    industryIdentifiers?: Array<{
+      type?: string;
+      identifier?: string;
+    }>;
+    printType?: string;
+  };
 };
 
 const normalizeTitle = (title: string) =>
@@ -26,6 +47,20 @@ const normalizeTitle = (title: string) =>
     .replace(/\s+/g, " ");
 
 const comparableTitle = (title: string) => normalizeTitle(title).replace(/^the\s+/, "");
+
+const titleWords = (title: string) =>
+  new Set(comparableTitle(title).split(" ").filter((word) => word.length > 1));
+
+const titleOverlap = (a: string, b: string) => {
+  const aWords = titleWords(a);
+  const bWords = titleWords(b);
+  if (aWords.size === 0 || bWords.size === 0) return 0;
+  let shared = 0;
+  aWords.forEach((word) => {
+    if (bWords.has(word)) shared += 1;
+  });
+  return shared / Math.max(aWords.size, bWords.size);
+};
 
 const hasSharedAuthor = (a: BookMatch, b: BookMatch) =>
   a.author !== "Unknown author" && b.author !== "Unknown author" && a.author === b.author;
@@ -45,6 +80,100 @@ const isLikelySeriesQuery = (title: string) =>
 const coverUrl = (coverId?: number) =>
   coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : undefined;
 
+const canonicalBooks: BookMatch[] = [
+  {
+    id: "known-hp-chamber-of-secrets",
+    title: "Harry Potter and the Chamber of Secrets",
+    author: "J.K. Rowling",
+    year: 1998,
+    isbn: "9780439064873",
+    coverUrl: "https://covers.openlibrary.org/isbn/9780439064873-M.jpg",
+    source: "Reading Quest verified book record",
+    confidence: 1,
+  },
+  {
+    id: "known-hp-sorcerers-stone",
+    title: "Harry Potter and the Sorcerer's Stone",
+    author: "J.K. Rowling",
+    year: 1997,
+    isbn: "9780590353427",
+    coverUrl: "https://covers.openlibrary.org/isbn/9780590353427-M.jpg",
+    source: "Reading Quest verified book record",
+    confidence: 1,
+  },
+  {
+    id: "known-hp-philosophers-stone",
+    title: "Harry Potter and the Philosopher's Stone",
+    author: "J.K. Rowling",
+    year: 1997,
+    isbn: "9780747532699",
+    coverUrl: "https://covers.openlibrary.org/isbn/9780747532699-M.jpg",
+    source: "Reading Quest verified book record",
+    confidence: 1,
+  },
+  {
+    id: "known-hp-prisoner-of-azkaban",
+    title: "Harry Potter and the Prisoner of Azkaban",
+    author: "J.K. Rowling",
+    year: 1999,
+    isbn: "9780439136358",
+    coverUrl: "https://covers.openlibrary.org/isbn/9780439136358-M.jpg",
+    source: "Reading Quest verified book record",
+    confidence: 1,
+  },
+  {
+    id: "known-hp-goblet-of-fire",
+    title: "Harry Potter and the Goblet of Fire",
+    author: "J.K. Rowling",
+    year: 2000,
+    isbn: "9780439139601",
+    coverUrl: "https://covers.openlibrary.org/isbn/9780439139601-M.jpg",
+    source: "Reading Quest verified book record",
+    confidence: 1,
+  },
+  {
+    id: "known-hp-order-of-the-phoenix",
+    title: "Harry Potter and the Order of the Phoenix",
+    author: "J.K. Rowling",
+    year: 2003,
+    isbn: "9780439358071",
+    coverUrl: "https://covers.openlibrary.org/isbn/9780439358071-M.jpg",
+    source: "Reading Quest verified book record",
+    confidence: 1,
+  },
+  {
+    id: "known-hp-half-blood-prince",
+    title: "Harry Potter and the Half-Blood Prince",
+    author: "J.K. Rowling",
+    year: 2005,
+    isbn: "9780439785969",
+    coverUrl: "https://covers.openlibrary.org/isbn/9780439785969-M.jpg",
+    source: "Reading Quest verified book record",
+    confidence: 1,
+  },
+  {
+    id: "known-hp-deathly-hallows",
+    title: "Harry Potter and the Deathly Hallows",
+    author: "J.K. Rowling",
+    year: 2007,
+    isbn: "9780545010221",
+    coverUrl: "https://covers.openlibrary.org/isbn/9780545010221-M.jpg",
+    source: "Reading Quest verified book record",
+    confidence: 1,
+  },
+];
+
+function getCanonicalMatches(bookTitle: string) {
+  const requested = comparableTitle(bookTitle);
+  return canonicalBooks
+    .map((book) => ({
+      ...book,
+      confidence: comparableTitle(book.title) === requested ? 1 : titleOverlap(bookTitle, book.title),
+    }))
+    .filter((book) => (book.confidence ?? 0) >= 0.55)
+    .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+}
+
 const toBookMatch = (doc: OpenLibraryDoc, index: number): BookMatch | null => {
   if (!doc.title) return null;
 
@@ -55,12 +184,46 @@ const toBookMatch = (doc: OpenLibraryDoc, index: number): BookMatch | null => {
     year: doc.first_publish_year,
     coverUrl: coverUrl(doc.cover_i),
     isbn: doc.isbn?.[0],
+    source: "Open Library",
   };
 };
 
+const toGoogleBookMatch = (volume: GoogleBookVolume, index: number): BookMatch | null => {
+  const info = volume.volumeInfo;
+  if (!info?.title) return null;
+  if (info.printType && info.printType.toUpperCase() !== "BOOK") return null;
+
+  const isbn13 = info.industryIdentifiers?.find((item) => item.type === "ISBN_13")?.identifier;
+  const isbn10 = info.industryIdentifiers?.find((item) => item.type === "ISBN_10")?.identifier;
+  const yearMatch = info.publishedDate?.match(/\d{4}/)?.[0];
+  const title = info.subtitle ? `${info.title}: ${info.subtitle}` : info.title;
+
+  return {
+    id: volume.id ?? `${title}-${index}`,
+    title,
+    author: info.authors?.slice(0, 2).join(", ") || "Unknown author",
+    year: yearMatch ? Number(yearMatch) : undefined,
+    coverUrl: info.imageLinks?.thumbnail || info.imageLinks?.smallThumbnail,
+    isbn: isbn13 || isbn10,
+    source: "Google Books",
+  };
+};
+
+function scoreBook(book: BookMatch, requestedTitle: string) {
+  let score = titleOverlap(requestedTitle, book.title) * 100;
+  if (comparableTitle(book.title) === comparableTitle(requestedTitle)) score += 80;
+  if (book.isbn) score += 12;
+  if (book.coverUrl) score += 8;
+  if (book.year && book.year >= 1450 && book.year <= new Date().getFullYear()) score += 6;
+  if (/composer|soundtrack|score|music|film|movie/i.test(book.author)) score -= 60;
+  if (/soundtrack|score|movie|film|screenplay/i.test(book.title)) score -= 60;
+  if (book.author === "Unknown author") score -= 15;
+  return score + (book.confidence ?? 0) * 100;
+}
+
 async function lookupByTitle(bookTitle: string) {
   const fields = "key,title,author_name,first_publish_year,cover_i,isbn";
-  const [titleResponse, broadResponse] = await Promise.all([
+  const [titleResponse, broadResponse, googleResponse] = await Promise.all([
     fetch(
       `https://openlibrary.org/search.json?title=${encodeURIComponent(bookTitle)}&limit=8&fields=${fields}`,
       { next: { revalidate: 86400 } },
@@ -69,6 +232,10 @@ async function lookupByTitle(bookTitle: string) {
       `https://openlibrary.org/search.json?q=${encodeURIComponent(bookTitle)}&limit=12&fields=${fields}`,
       { next: { revalidate: 86400 } },
     ),
+    fetch(
+      `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(`intitle:${bookTitle}`)}&maxResults=10&printType=books`,
+      { next: { revalidate: 86400 } },
+    ).catch(() => null),
   ]);
 
   if (!titleResponse.ok || !broadResponse.ok) {
@@ -77,14 +244,17 @@ async function lookupByTitle(bookTitle: string) {
 
   const titleData = await titleResponse.json();
   const broadData = await broadResponse.json();
+  const googleData = googleResponse?.ok ? await googleResponse.json() : { items: [] };
   const mergedDocs = [
+    ...getCanonicalMatches(bookTitle),
+    ...(((googleData.items ?? []) as GoogleBookVolume[]).map(toGoogleBookMatch).filter(Boolean) as BookMatch[]),
     ...((broadData.docs ?? []) as OpenLibraryDoc[]),
     ...((titleData.docs ?? []) as OpenLibraryDoc[]),
   ];
 
   const seen = new Set<string>();
   const matchedBooks = mergedDocs
-    .map(toBookMatch)
+    .map((entry, index) => ("author_name" in entry ? toBookMatch(entry as OpenLibraryDoc, index) : entry as BookMatch))
     .filter(Boolean)
     .filter((book): book is BookMatch => Boolean(book));
   const books = matchedBooks
@@ -94,6 +264,8 @@ async function lookupByTitle(bookTitle: string) {
       seen.add(key);
       return true;
     })
+    .filter((book) => titleOverlap(bookTitle, book.title) >= 0.45 || comparableTitle(book.title).includes(comparableTitle(bookTitle)))
+    .sort((a, b) => scoreBook(b, bookTitle) - scoreBook(a, bookTitle))
     .slice(0, 10);
 
   const requestedTitle = comparableTitle(bookTitle);
@@ -138,6 +310,8 @@ async function lookupByIsbn(isbn: string) {
     year: typeof data.publish_date === "string" ? Number(data.publish_date.match(/\d{4}/)?.[0]) : undefined,
     coverUrl: coverUrl(coverId),
     isbn: cleaned,
+    source: "Open Library ISBN",
+    confidence: 1,
   };
 
   return NextResponse.json({ status: "exact", books: [book] });

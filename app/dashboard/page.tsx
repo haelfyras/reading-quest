@@ -59,7 +59,12 @@ export default function Home() {
       const response = await fetch("/api/book-level", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookTitle: book.title }),
+        body: JSON.stringify({
+          bookTitle: book.title,
+          author: book.author,
+          year: book.year,
+          isbn: book.isbn,
+        }),
       });
 
       if (!response.ok) {
@@ -174,7 +179,15 @@ export default function Home() {
       const response = await fetch("/api/quiz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookTitle: book.title, difficulty, bookLevel: resolvedBookLevel, learningGoal }),
+        body: JSON.stringify({
+          bookTitle: book.title,
+          bookAuthor: book.author,
+          bookYear: book.year,
+          bookIsbn: book.isbn,
+          difficulty,
+          bookLevel: resolvedBookLevel,
+          learningGoal,
+        }),
       });
 
       if (!response.ok) {
