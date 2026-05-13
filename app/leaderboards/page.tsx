@@ -8,6 +8,7 @@ import {
   getProfiles,
   Profile,
 } from "../../lib/user";
+import { loadSiteLeaderboardProfiles } from "../../lib/leaderboards";
 
 type LeaderboardKind = "children" | "adults" | "all";
 
@@ -18,10 +19,11 @@ export default function LeaderboardsPage() {
     all: [],
   });
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
+  const [dataSource, setDataSource] = useState<"database" | "browser">("browser");
+  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const profiles = getProfiles();
-    const publicProfiles = profiles.filter((profile) => !profile.leaderboardPrivate || profile.id === getCurrentProfile()?.id);
+  const buildLeaderboards = (profiles: Profile[], currentProfile: Profile | null) => {
+    const publicProfiles = profiles.filter((profile) => !profile.leaderboardPrivate || profile.id === currentProfile?.id);
     const byLifetimePoints = (a: Profile, b: Profile) => getLifetimePoints(b) - getLifetimePoints(a);
 
     setLeaderboards({
@@ -29,7 +31,26 @@ export default function LeaderboardsPage() {
       adults: publicProfiles.filter((profile) => profile.isParent).slice().sort(byLifetimePoints),
       all: publicProfiles.slice().sort(byLifetimePoints),
     });
-    setCurrentUser(getCurrentProfile());
+  };
+
+  useEffect(() => {
+    const loadLeaderboards = async () => {
+      const profile = getCurrentProfile();
+      setCurrentUser(profile);
+
+      try {
+        const profiles = await loadSiteLeaderboardProfiles(profile?.id);
+        buildLeaderboards(profiles, profile);
+        setDataSource("database");
+      } catch {
+        buildLeaderboards(getProfiles(), profile);
+        setDataSource("browser");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void loadLeaderboards();
   }, []);
 
   const getRankIcon = (rank: number) => {
@@ -117,6 +138,12 @@ export default function LeaderboardsPage() {
           </button>
         </Link>
       </div>
+
+      <p className="auth-footer-note">
+        Leaderboard source: {dataSource === "database" ? "all public beta accounts" : "this browser only"}.
+      </p>
+
+      {isLoading ? <div className="leaderboard-section"><p>Loading leaderboards...</p></div> : null}
 
       {renderLeaderboard(
         "children",

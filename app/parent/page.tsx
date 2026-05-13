@@ -26,6 +26,7 @@ import {
   updateProfile,
   updateQuizIssueReport,
 } from "../../lib/user";
+import { loadSiteLeaderboardProfiles } from "../../lib/leaderboards";
 import { betaConfig } from "../../lib/beta";
 import { hasSavedPrizes } from "../../lib/prizeData";
 import BetaDisclaimer from "../components/BetaDisclaimer";
@@ -60,6 +61,7 @@ export default function ParentPage() {
   const [children, setChildren] = useState<Profile[]>([]);
   const [reports, setReports] = useState<QuizIssueReport[]>([]);
   const [parentMessage, setParentMessage] = useState("");
+  const [adultLeaderboard, setAdultLeaderboard] = useState<Profile[]>([]);
 
   useEffect(() => {
     const profile = getCurrentProfile();
@@ -71,14 +73,24 @@ export default function ParentPage() {
     setCurrentUser(profile);
     setChildren(getProfiles().filter((child) => profile.linkedChildren?.includes(child.id)));
     setReports(getQuizIssueReports().filter((report) => report.status !== "dismissed"));
+    loadSiteLeaderboardProfiles(profile.id)
+      .then((profiles) => {
+        setAdultLeaderboard(
+          profiles
+            .filter((item) => item.isParent)
+            .slice()
+            .sort((a, b) => getLifetimePoints(b) - getLifetimePoints(a)),
+        );
+      })
+      .catch(() => {
+        setAdultLeaderboard(
+          getProfiles()
+            .filter((item) => item.isParent)
+            .slice()
+            .sort((a, b) => getLifetimePoints(b) - getLifetimePoints(a)),
+        );
+      });
   }, [router]);
-
-  const adultLeaderboard = useMemo(() => {
-    return getProfiles()
-      .filter((profile) => profile.isParent)
-      .slice()
-      .sort((a, b) => getLifetimePoints(b) - getLifetimePoints(a));
-  }, [currentUser]);
 
   const currentRank = currentUser ? adultLeaderboard.findIndex((profile) => profile.id === currentUser.id) + 1 : 0;
   const pointsProgressData = useMemo(() => currentUser ? getPointTimeline(currentUser) : [], [currentUser]);

@@ -23,6 +23,7 @@ import {
   getSpendablePoints,
   Profile,
 } from "../../lib/user";
+import { loadSiteLeaderboardProfiles } from "../../lib/leaderboards";
 import { getBookRecommendations as buildRecommendations } from "../../lib/recommendations";
 import BetaDisclaimer from "../components/BetaDisclaimer";
 import SetupGuide, { type SetupStep } from "../components/SetupGuide";
@@ -49,6 +50,7 @@ const defaultPrizeGoals: PrizeGoal[] = [
 export default function HomePage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
+  const [childLeaderboard, setChildLeaderboard] = useState<Profile[]>([]);
 
   useEffect(() => {
     const profile = getCurrentProfile();
@@ -64,6 +66,23 @@ export default function HomePage() {
     }
 
     setCurrentUser(profile);
+    loadSiteLeaderboardProfiles(profile.id)
+      .then((profiles) => {
+        setChildLeaderboard(
+          profiles
+            .filter((item) => !item.isParent)
+            .slice()
+            .sort((a, b) => getLifetimePoints(b) - getLifetimePoints(a)),
+        );
+      })
+      .catch(() => {
+        setChildLeaderboard(
+          getProfiles()
+            .filter((item) => !item.isParent)
+            .slice()
+            .sort((a, b) => getLifetimePoints(b) - getLifetimePoints(a)),
+        );
+      });
   }, [router]);
 
   const prizeGoals = useMemo(() => {
@@ -138,13 +157,6 @@ export default function HomePage() {
       complete: (currentUser?.quizzes.length ?? 0) > 0 && currentPoints > 0,
     },
   ];
-
-  const childLeaderboard = useMemo(() => {
-    return getProfiles()
-      .filter((profile) => !profile.isParent)
-      .slice()
-      .sort((a, b) => getLifetimePoints(b) - getLifetimePoints(a));
-  }, [currentUser]);
 
   const currentRank = currentUser ? childLeaderboard.findIndex((profile) => profile.id === currentUser.id) + 1 : 0;
   const pointsProgressData = useMemo(() => currentUser ? getPointTimeline(currentUser) : [], [currentUser]);
