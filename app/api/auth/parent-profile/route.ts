@@ -12,6 +12,23 @@ function getBearerToken(request: Request) {
   return scheme?.toLowerCase() === "bearer" ? token : "";
 }
 
+async function syncParentDisplayName(supabase: ReturnType<typeof createServiceSupabaseClient>, userId: string, currentMetadata: Record<string, any>, realName: string) {
+  const displayName = realName.trim();
+  if (!displayName) {
+    return;
+  }
+
+  await supabase.auth.admin.updateUserById(userId, {
+    user_metadata: {
+      ...currentMetadata,
+      real_name: displayName,
+      display_name: displayName,
+      full_name: displayName,
+      name: displayName,
+    },
+  });
+}
+
 export async function POST(request: Request) {
   const accessToken = getBearerToken(request);
   if (!accessToken) {
@@ -33,6 +50,22 @@ export async function POST(request: Request) {
     }
 
     const user = userData.user;
+    const email = user.email ?? "";
+    const metadataName = typeof user.user_metadata?.real_name === "string"
+      ? user.user_metadata.real_name
+      : typeof user.user_metadata?.display_name === "string"
+        ? user.user_metadata.display_name
+        : typeof user.user_metadata?.full_name === "string"
+          ? user.user_metadata.full_name
+          : typeof user.user_metadata?.name === "string"
+            ? user.user_metadata.name
+            : "";
+    const screenName = realName || metadataName || email.split("@")[0] || "Parent";
+    const safeScreenName = screenName.trim() || "Parent";
+    const displayName = realName || metadataName || safeScreenName;
+
+    await syncParentDisplayName(supabase, user.id, user.user_metadata ?? {}, displayName);
+
     const { data: existing, error: existingError } = await supabase
       .from("profiles")
       .select("*")
@@ -45,15 +78,30 @@ export async function POST(request: Request) {
     }
 
     if (existing) {
-      return NextResponse.json({ profile: existing });
-    }
+      if (!realName && existing.real_name) {
+        return NextResponse.json({ profile: existing });
+      }
 
-    const email = user.email ?? "";
-    const metadataName = typeof user.user_metadata?.real_name === "string"
-      ? user.user_metadata.real_name
-      : "";
-    const screenName = realName || metadataName || email.split("@")[0] || "Parent";
-    const safeScreenName = screenName.trim() || "Parent";
+      const { data: updated, error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          real_name: displayName || existing.real_name,
+          screen_name: existing.screen_name || displayName || safeScreenName,
+          verified: Boolean(user.email_confirmed_at),
+        })
+        .eq("id", existing.id)
+        .select("*")
+        .single();
+
+      if (updateError || !updated) {
+        return NextResponse.json(
+          { error: updateError?.message || "Unable to update your parent display name." },
+          { status: 500 },
+        );
+      }
+
+      return NextResponse.json({ profile: updated });
+    }
 
     if (email) {
       const { data: existingByEmail, error: emailLookupError } = await supabase
@@ -72,8 +120,8 @@ export async function POST(request: Request) {
           .from("profiles")
           .update({
             auth_user_id: user.id,
-            real_name: realName || existingByEmail.real_name || safeScreenName,
-            screen_name: existingByEmail.screen_name || safeScreenName,
+            real_name: displayName || existingByEmail.real_name || safeScreenName,
+            screen_name: existingByEmail.screen_name || displayName || safeScreenName,
             can_add_friends: true,
             verified: Boolean(user.email_confirmed_at),
           })
@@ -98,7 +146,7 @@ export async function POST(request: Request) {
         auth_user_id: user.id,
         account_type: "parent",
         screen_name: safeScreenName,
-        real_name: realName || safeScreenName,
+        real_name: displayName || safeScreenName,
         email,
         profile_code: generateProfileCode(safeScreenName),
         can_add_friends: true,

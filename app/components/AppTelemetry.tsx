@@ -56,6 +56,14 @@ function saveTelemetry(event: Omit<TelemetryEvent, "id" | "date">) {
   }
 }
 
+function isExpectedApiResponse(url: string, status: number) {
+  if (url.includes("/api/auth/child-profile") && [400, 401, 409].includes(status)) {
+    return true;
+  }
+
+  return false;
+}
+
 export default function AppTelemetry() {
   const pathname = usePathname();
 
@@ -93,7 +101,7 @@ export default function AppTelemetry() {
       try {
         const response = await originalFetch(input, init);
         const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
-        if (!response.ok && url.includes("/api/")) {
+        if (!response.ok && url.includes("/api/") && !isExpectedApiResponse(url, response.status)) {
           saveTelemetry({
             type: "api_failure",
             message: `${init?.method ?? "GET"} ${url}`,

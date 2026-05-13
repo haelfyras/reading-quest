@@ -183,6 +183,9 @@ export async function createParentWithSupabase(details: {
       emailRedirectTo: redirectTo,
       data: {
         real_name: details.realName.trim(),
+        display_name: details.realName.trim(),
+        full_name: details.realName.trim(),
+        name: details.realName.trim(),
       },
     },
   });

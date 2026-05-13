@@ -57,6 +57,7 @@ type FeedbackEntry = {
   category: string;
   message: string;
   page: string;
+  adminStatus?: "still_problem" | "in_process" | "resolved";
   date: string;
 };
 
@@ -71,6 +72,12 @@ const tabs: Array<{ id: AdminTab; label: string }> = [
 
 const pageUsageColors = ["#22d3ee", "#facc15", "#2f6f4e", "#c084fc", "#f97316", "#9b2c2c", "#60a5fa", "#34d399"];
 const ADMIN_FEEDBACK_SEEN_KEY = "readingQuestAdminFeedbackSeenAt";
+
+const feedbackStatusLabels: Record<NonNullable<FeedbackEntry["adminStatus"]>, string> = {
+  still_problem: "Still a problem",
+  in_process: "In process",
+  resolved: "Fixed/resolved",
+};
 
 const pageLabels: Record<string, string> = {
   "/": "Login",
@@ -110,6 +117,18 @@ function getLastActivity(profile: Profile) {
 
   const latest = Math.max(0, ...dates);
   return latest ? new Date(latest).toISOString() : "";
+}
+
+function isExpectedTelemetry(event: TelemetryEvent) {
+  if (event.type === "page_view") {
+    return true;
+  }
+
+  if (event.type === "api_failure" && event.source?.includes("/api/auth/child-profile") && [400, 401, 409].includes(event.status ?? 0)) {
+    return true;
+  }
+
+  return false;
 }
 
 export default function AdminConsole() {
@@ -286,6 +305,32 @@ export default function AdminConsole() {
     setMessage("Feedback notification marked as seen.");
   };
 
+  const updateFeedbackStatus = async (feedbackId: string, adminStatus: NonNullable<FeedbackEntry["adminStatus"]>) => {
+    const nextEntries = feedbackEntries.map((entry) =>
+      entry.id === feedbackId ? { ...entry, adminStatus } : entry,
+    );
+    setFeedbackEntries(nextEntries);
+
+    if (dataSource === "database") {
+      const response = await fetch("/api/admin/data", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feedbackId, adminStatus }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: "Unable to update feedback status." }));
+        setMessage(data.error ?? "Unable to update feedback status.");
+        await refresh();
+        return;
+      }
+    } else {
+      window.localStorage.setItem(BETA_FEEDBACK_KEY, JSON.stringify(nextEntries));
+    }
+
+    setMessage(`Feedback marked: ${feedbackStatusLabels[adminStatus]}.`);
+  };
+
   const latestQuizzes = metrics.quizzes
     .slice()
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -314,6 +359,11 @@ export default function AdminConsole() {
       .sort((a, b) => b.value - a.value);
   }, [telemetry]);
 
+  const actionableTelemetry = useMemo(
+    () => telemetry.filter((event) => !isExpectedTelemetry(event)),
+    [telemetry],
+  );
+
   return (
     <main className="admin-shell">
       <section className="admin-hero" aria-labelledby="admin-title">
@@ -340,12 +390,13 @@ export default function AdminConsole() {
 
       {message ? <div className="success-box">{message}</div> : null}
       {hasNewFeedback ? (
-        <div className="warning-box admin-feedback-alert">
-          <strong>New Feedback received.</strong>
-          <span>Review the latest beta feedback notes from families.</span>
+        <div className="warning-box admin-feedback-notice">
+          <div>
+            <strong>New feedback received.</strong>
+            <span> Review the latest notes in Beta Feedback below.</span>
+          </div>
           <div className="button-row">
-            <button type="button" onClick={() => setActiveTab("overview")}>View Feedback</button>
-            <button type="button" className="secondary" onClick={markFeedbackSeen}>Mark Seen</button>
+            <button type="button" className="secondary" onClick={markFeedbackSeen}>Mark as read</button>
           </div>
         </div>
       ) : null}
@@ -372,7 +423,7 @@ export default function AdminConsole() {
               <div className="stat-tile"><span>Beta quiz usage</span><strong>{metrics.betaLimitUsed} / {metrics.betaLimitMax}</strong></div>
               <div className="stat-tile"><span>Open quiz reports</span><strong>{metrics.reportsOpen.length}</strong></div>
               <div className="stat-tile"><span>Beta feedback</span><strong>{feedbackEntries.length}</strong></div>
-              <div className="stat-tile"><span>Client errors</span><strong>{telemetry.length}</strong></div>
+              <div className="stat-tile"><span>Client errors</span><strong>{actionableTelemetry.length}</strong></div>
             </div>
           </section>
 
@@ -386,18 +437,47 @@ export default function AdminConsole() {
             </div>
             {feedbackEntries.length > 0 ? (
               <div className="admin-card-list">
-                {feedbackEntries.slice(0, 6).map((entry) => (
-                  <article key={entry.id} className="nested-section">
+                {feedbackEntries.map((entry) => {
+                  const status = entry.adminStatus ?? "still_problem";
+                  return (
+                  <article key={entry.id} className={`nested-section feedback-review-card feedback-status-${status}`}>
                     <div className="section-header-row">
                       <div>
                         <strong>{entry.category}</strong>
                         <p>{entry.message}</p>
                         <small>{entry.profileName || "Unknown profile"} on {entry.page}</small>
                       </div>
-                      <span className="badge-pill">{formatDate(entry.date)}</span>
+                      <div className="feedback-review-meta">
+                        <span className={`feedback-status-pill feedback-status-${status}`}>{feedbackStatusLabels[status]}</span>
+                        <span className="badge-pill">{formatDate(entry.date)}</span>
+                      </div>
+                    </div>
+                    <div className="feedback-status-controls" aria-label={`Status for ${entry.category}`}>
+                      <button
+                        type="button"
+                        className={status === "still_problem" ? "selected feedback-status-button red" : "secondary feedback-status-button red"}
+                        onClick={() => void updateFeedbackStatus(entry.id, "still_problem")}
+                      >
+                        Still a problem
+                      </button>
+                      <button
+                        type="button"
+                        className={status === "in_process" ? "selected feedback-status-button yellow" : "secondary feedback-status-button yellow"}
+                        onClick={() => void updateFeedbackStatus(entry.id, "in_process")}
+                      >
+                        In process
+                      </button>
+                      <button
+                        type="button"
+                        className={status === "resolved" ? "selected feedback-status-button green" : "secondary feedback-status-button green"}
+                        onClick={() => void updateFeedbackStatus(entry.id, "resolved")}
+                      >
+                        Fixed/resolved
+                      </button>
                     </div>
                   </article>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <p>No beta feedback has been submitted yet.</p>
@@ -691,12 +771,12 @@ export default function AdminConsole() {
           <div className="section-header-row">
             <div>
               <h2 id="admin-errors-heading">Errors And API Health</h2>
-              <p>Client crashes, unhandled errors, failed fetches, and failed API responses captured in this browser.</p>
+              <p>Client crashes, unhandled errors, failed fetches, and unexpected API failures. Page views and normal failed sign-ins are filtered out.</p>
             </div>
             <button type="button" className="secondary" onClick={clearTelemetry}>Clear log</button>
           </div>
-          <div className="admin-card-list">
-            {telemetry.length > 0 ? telemetry.map((event) => (
+          <div className="admin-card-list admin-error-list" role="log" aria-label="Actionable admin errors">
+            {actionableTelemetry.length > 0 ? actionableTelemetry.map((event) => (
               <article key={event.id} className="nested-section">
                 <div className="section-header-row">
                   <div>

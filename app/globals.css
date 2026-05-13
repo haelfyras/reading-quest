@@ -904,6 +904,102 @@ button:disabled {
   gap: 12px;
 }
 
+.admin-error-list {
+  max-height: min(560px, 62vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 8px;
+  scrollbar-color: var(--accent) color-mix(in srgb, var(--panel) 76%, transparent);
+}
+
+.admin-feedback-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 0;
+}
+
+.admin-feedback-notice .button-row {
+  margin-left: auto;
+}
+
+.feedback-review-card {
+  border-left-width: 8px;
+}
+
+.feedback-review-card.feedback-status-still_problem {
+  border-left-color: #dc2626;
+}
+
+.feedback-review-card.feedback-status-in_process {
+  border-left-color: #facc15;
+}
+
+.feedback-review-card.feedback-status-resolved {
+  border-left-color: #16a34a;
+}
+
+.feedback-review-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.feedback-status-pill {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.feedback-status-pill.feedback-status-still_problem {
+  background: #fee2e2;
+  color: #7f1d1d;
+}
+
+.feedback-status-pill.feedback-status-in_process {
+  background: #fef3c7;
+  color: #713f12;
+}
+
+.feedback-status-pill.feedback-status-resolved {
+  background: #dcfce7;
+  color: #14532d;
+}
+
+.feedback-status-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.feedback-status-button.red.selected,
+.feedback-status-button.red:hover:not(:disabled) {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: white;
+}
+
+.feedback-status-button.yellow.selected,
+.feedback-status-button.yellow:hover:not(:disabled) {
+  border-color: #ca8a04;
+  background: #facc15;
+  color: #111827;
+}
+
+.feedback-status-button.green.selected,
+.feedback-status-button.green:hover:not(:disabled) {
+  border-color: #16a34a;
+  background: #16a34a;
+  color: white;
+}
+
 .admin-correct-answer {
   border-color: color-mix(in srgb, var(--success) 70%, var(--border));
   background: color-mix(in srgb, var(--success) 12%, var(--panel));

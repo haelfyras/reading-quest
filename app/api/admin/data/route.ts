@@ -208,6 +208,7 @@ export async function GET() {
         category: entry.category ?? "General feedback",
         message: entry.message,
         page: entry.page ?? "Unknown page",
+        adminStatus: entry.sentiment ?? "still_problem",
         date: entry.created_at,
       })),
       telemetry: (telemetryResult.data ?? []).map((event: any) => ({
@@ -263,6 +264,41 @@ export async function GET() {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to load admin data." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(request: Request) {
+  const token = cookies().get(ADMIN_COOKIE_NAME)?.value;
+  if (!verifyAdminSessionToken(token)) {
+    return NextResponse.json({ error: "Admin session required." }, { status: 401 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const feedbackId = typeof body.feedbackId === "string" ? body.feedbackId : "";
+  const adminStatus = typeof body.adminStatus === "string" ? body.adminStatus : "";
+  const allowedStatuses = new Set(["still_problem", "in_process", "resolved"]);
+
+  if (!feedbackId || !allowedStatuses.has(adminStatus)) {
+    return NextResponse.json({ error: "Feedback id and valid status are required." }, { status: 400 });
+  }
+
+  try {
+    const supabase = createServiceSupabaseClient();
+    const { error } = await supabase
+      .from("feedback_entries")
+      .update({ sentiment: adminStatus })
+      .eq("id", feedbackId);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unable to update feedback status." },
       { status: 500 },
     );
   }
