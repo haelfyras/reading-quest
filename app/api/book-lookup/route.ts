@@ -209,9 +209,29 @@ const toGoogleBookMatch = (volume: GoogleBookVolume, index: number): BookMatch |
   };
 };
 
-function scoreBook(book: BookMatch, requestedTitle: string) {
-  let score = titleOverlap(requestedTitle, book.title) * 100;
-  if (comparableTitle(book.title) === comparableTitle(requestedTitle)) score += 80;
+function authorOverlap(requestedAuthor: string, foundAuthor: string) {
+  const requested = normalizeTitle(requestedAuthor);
+  const found = normalizeTitle(foundAuthor);
+  if (!requested || !found || found === "unknown author") return 0;
+  if (found.includes(requested) || requested.includes(found)) return 1;
+  const requestedWords = new Set(requested.split(" ").filter((word) => word.length > 1));
+  const foundWords = new Set(found.split(" ").filter((word) => word.length > 1));
+  if (requestedWords.size === 0 || foundWords.size === 0) return 0;
+  let shared = 0;
+  requestedWords.forEach((word) => {
+    if (foundWords.has(word)) shared += 1;
+  });
+  return shared / Math.max(requestedWords.size, foundWords.size);
+}
+
+function scoreBook(book: BookMatch, requestedTitle: string, requestedAuthor = "") {
+  let score = requestedTitle ? titleOverlap(requestedTitle, book.title) * 100 : 35;
+  if (requestedTitle && comparableTitle(book.title) === comparableTitle(requestedTitle)) score += 80;
+  if (requestedAuthor) {
+    const authorScore = authorOverlap(requestedAuthor, book.author);
+    score += authorScore * 95;
+    if (authorScore === 0) score -= 25;
+  }
   if (book.isbn) score += 12;
   if (book.coverUrl) score += 8;
   if (book.year && book.year >= 1450 && book.year <= new Date().getFullYear()) score += 6;
@@ -221,19 +241,27 @@ function scoreBook(book: BookMatch, requestedTitle: string) {
   return score + (book.confidence ?? 0) * 100;
 }
 
-async function lookupByTitle(bookTitle: string) {
+async function lookupBySearch(bookTitle: string, author: string) {
   const fields = "key,title,author_name,first_publish_year,cover_i,isbn";
+  const openLibraryParams = new URLSearchParams({ limit: "12", fields });
+  if (bookTitle) openLibraryParams.set("title", bookTitle);
+  if (author) openLibraryParams.set("author", author);
+  const broadQuery = [bookTitle, author].filter(Boolean).join(" ");
+  const googleTerms = [
+    bookTitle ? `intitle:${bookTitle}` : "",
+    author ? `inauthor:${author}` : "",
+  ].filter(Boolean).join("+");
   const [titleResponse, broadResponse, googleResponse] = await Promise.all([
     fetch(
-      `https://openlibrary.org/search.json?title=${encodeURIComponent(bookTitle)}&limit=8&fields=${fields}`,
+      `https://openlibrary.org/search.json?${openLibraryParams.toString()}`,
       { next: { revalidate: 86400 } },
     ),
     fetch(
-      `https://openlibrary.org/search.json?q=${encodeURIComponent(bookTitle)}&limit=12&fields=${fields}`,
+      `https://openlibrary.org/search.json?q=${encodeURIComponent(broadQuery)}&limit=12&fields=${fields}`,
       { next: { revalidate: 86400 } },
     ),
     fetch(
-      `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(`intitle:${bookTitle}`)}&maxResults=10&printType=books`,
+      `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(googleTerms || broadQuery)}&maxResults=10&printType=books`,
       { next: { revalidate: 86400 } },
     ).catch(() => null),
   ]);
@@ -246,7 +274,7 @@ async function lookupByTitle(bookTitle: string) {
   const broadData = await broadResponse.json();
   const googleData = googleResponse?.ok ? await googleResponse.json() : { items: [] };
   const mergedDocs = [
-    ...getCanonicalMatches(bookTitle),
+    ...(bookTitle ? getCanonicalMatches(bookTitle) : []),
     ...(((googleData.items ?? []) as GoogleBookVolume[]).map(toGoogleBookMatch).filter(Boolean) as BookMatch[]),
     ...((broadData.docs ?? []) as OpenLibraryDoc[]),
     ...((titleData.docs ?? []) as OpenLibraryDoc[]),
@@ -264,12 +292,16 @@ async function lookupByTitle(bookTitle: string) {
       seen.add(key);
       return true;
     })
-    .filter((book) => titleOverlap(bookTitle, book.title) >= 0.45 || comparableTitle(book.title).includes(comparableTitle(bookTitle)))
-    .sort((a, b) => scoreBook(b, bookTitle) - scoreBook(a, bookTitle))
+    .filter((book) => {
+      const titleMatches = !bookTitle || titleOverlap(bookTitle, book.title) >= 0.35 || comparableTitle(book.title).includes(comparableTitle(bookTitle));
+      const authorMatches = !author || authorOverlap(author, book.author) >= 0.45;
+      return titleMatches && authorMatches;
+    })
+    .sort((a, b) => scoreBook(b, bookTitle, author) - scoreBook(a, bookTitle, author))
     .slice(0, 10);
 
   const requestedTitle = comparableTitle(bookTitle);
-  const exact = books.find((book) => comparableTitle(book.title) === requestedTitle);
+  const exact = bookTitle ? books.find((book) => comparableTitle(book.title) === requestedTitle && (!author || authorOverlap(author, book.author) >= 0.75)) : null;
   const relatedAlternatives = exact
     ? books.filter((book) => comparableTitle(book.title) !== requestedTitle && hasSharedAuthor(book, exact))
     : [];
@@ -321,17 +353,18 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const bookTitle = String(body.bookTitle || "").trim();
+    const author = String(body.author || "").trim();
     const isbn = String(body.isbn || "").trim();
 
     if (isbn) {
       return lookupByIsbn(isbn);
     }
 
-    if (!bookTitle) {
-      return new NextResponse("Book title is required.", { status: 400 });
+    if (!bookTitle && !author) {
+      return new NextResponse("Enter a title, author, or ISBN.", { status: 400 });
     }
 
-    return lookupByTitle(bookTitle);
+    return lookupBySearch(bookTitle, author);
   } catch {
     return new NextResponse("Failed to look up book.", { status: 500 });
   }

@@ -29,6 +29,15 @@ async function syncParentDisplayName(supabase: ReturnType<typeof createServiceSu
   });
 }
 
+function isAppDeleted(profile: Record<string, any> | null) {
+  return Boolean(
+    profile &&
+    typeof profile.parent_controls === "object" &&
+    profile.parent_controls &&
+    typeof profile.parent_controls.appDeletedAt === "string",
+  );
+}
+
 export async function POST(request: Request) {
   const accessToken = getBearerToken(request);
   if (!accessToken) {
@@ -78,6 +87,10 @@ export async function POST(request: Request) {
     }
 
     if (existing) {
+      if (isAppDeleted(existing)) {
+        return NextResponse.json({ error: "This account is no longer active in Reading Quest." }, { status: 403 });
+      }
+
       if (!realName && existing.real_name) {
         return NextResponse.json({ profile: existing });
       }
@@ -116,6 +129,10 @@ export async function POST(request: Request) {
       }
 
       if (existingByEmail) {
+        if (isAppDeleted(existingByEmail)) {
+          return NextResponse.json({ error: "This account is no longer active in Reading Quest." }, { status: 403 });
+        }
+
         const { data: reclaimed, error: reclaimError } = await supabase
           .from("profiles")
           .update({

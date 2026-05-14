@@ -24,7 +24,7 @@ import {
 } from "../../lib/user";
 import { getBookRecommendations } from "../../lib/recommendations";
 import type { BookMatch } from "../../lib/books";
-import { detectBookLevel as detectBookLevelFromApi, lookupBook as lookupBookFromApi } from "../../lib/bookClient";
+import { detectBookLevel as detectBookLevelFromApi, lookupBook as lookupBookFromApi, type BookLookupPayload } from "../../lib/bookClient";
 import { getEncouragementMessage } from "../../lib/quizFeedback";
 import {
   getBasePoints,
@@ -78,6 +78,7 @@ function getProfileTestingGoal(profile: Profile | null, approvedQuiz?: ParentApp
 function QuizPageContent() {
   const [user, setUser] = useState<Profile | null>(null);
   const [bookTitle, setBookTitle] = useState("");
+  const [bookAuthor, setBookAuthor] = useState("");
   const [confirmedBook, setConfirmedBook] = useState<BookMatch | null>(null);
   const [bookOptions, setBookOptions] = useState<BookMatch[]>([]);
   const [isbn, setIsbn] = useState("");
@@ -283,15 +284,36 @@ function QuizPageContent() {
   const applyConfirmedBook = (book: BookMatch) => {
     setConfirmedBook(book);
     setBookTitle(book.title);
+    setBookAuthor(book.author === "Unknown author" ? "" : book.author);
+    setIsbn(book.isbn ?? "");
     setBookLevel(null);
     setBookOptions([]);
     setBookLookupMessage("");
     setShowIsbnFallback(false);
-    setIsbn("");
     void detectReadingLevel(book);
   };
 
-  const lookupBook = async (payload: { bookTitle?: string; isbn?: string }) => {
+  const resetBookLookupState = () => {
+    setConfirmedBook(null);
+    setBookLevel(null);
+    setBookOptions([]);
+    setBookLookupMessage("");
+    setShowIsbnFallback(false);
+  };
+
+  const getBookLookupPayload = (): BookLookupPayload | null => {
+    const payload = {
+      bookTitle: bookTitle.trim(),
+      author: bookAuthor.trim(),
+      isbn: isbn.trim(),
+    };
+    if (!payload.bookTitle && !payload.author && !payload.isbn) {
+      return null;
+    }
+    return payload;
+  };
+
+  const lookupBook = async (payload: BookLookupPayload) => {
     setIsCheckingBook(true);
     setError("");
     setBookLookupMessage("");
@@ -313,7 +335,7 @@ function QuizPageContent() {
       setBookLookupMessage(
         payload.isbn
           ? "Sorry, we still could not find that book. Please try another book title."
-          : "We could not find that book by title. Try the ISBN, or enter a different book.",
+          : "We could not find that book. Try a title, author, ISBN, or another combination.",
       );
       return null;
     } catch (err) {
@@ -324,32 +346,26 @@ function QuizPageContent() {
     }
   };
 
-  const handleCheckBookTitle = () => {
-    if (!bookTitle.trim()) {
-      setError("Please enter a book title.");
+  const handleCheckBook = () => {
+    const payload = getBookLookupPayload();
+    if (!payload) {
+      setError("Enter a title, author, or ISBN.");
       return;
     }
-    lookupBook({ bookTitle });
-  };
-
-  const handleCheckIsbn = () => {
-    if (!isbn.trim()) {
-      setError("Please enter an ISBN.");
-      return;
-    }
-    lookupBook({ isbn });
+    lookupBook(payload);
   };
 
   const ensureBookConfirmed = async () => {
     if (confirmedBook && confirmedBook.title === bookTitle.trim()) {
       return confirmedBook;
     }
-    return lookupBook({ bookTitle });
+    const payload = getBookLookupPayload();
+    return payload ? lookupBook(payload) : null;
   };
 
   const handleGenerate = async () => {
-    if (!bookTitle.trim()) {
-      setError("Please enter a book title.");
+    if (!bookTitle.trim() && !bookAuthor.trim() && !isbn.trim()) {
+      setError("Enter a title, author, or ISBN.");
       return;
     }
 
@@ -659,7 +675,7 @@ function QuizPageContent() {
         <div className="quest-panel output">
           <h2>Build Your Quiz</h2>
           <p>
-            Enter a book title, choose the matching book, pick a difficulty, and start the challenge.
+            Search by title, author, ISBN, or any combination. Choose the matching book, pick a difficulty, and start the challenge.
           </p>
 
           <div className="field">
@@ -670,14 +686,58 @@ function QuizPageContent() {
               value={bookTitle}
               onChange={(event) => {
                 setBookTitle(event.target.value);
-                setConfirmedBook(null);
-                setBookLevel(null);
-                setBookOptions([]);
-                setBookLookupMessage("");
-                setShowIsbnFallback(false);
+                resetBookLookupState();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleCheckBook();
+                }
               }}
               placeholder="e.g. The Lion, the Witch and the Wardrobe"
             />
+          </div>
+
+          <div className="field">
+            <label htmlFor="bookAuthor">Author</label>
+            <input
+              id="bookAuthor"
+              type="text"
+              value={bookAuthor}
+              onChange={(event) => {
+                setBookAuthor(event.target.value);
+                resetBookLookupState();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleCheckBook();
+                }
+              }}
+              placeholder="e.g. C. S. Lewis"
+            />
+          </div>
+
+          <div className="field">
+            <label htmlFor="isbn">ISBN</label>
+            <input
+              id="isbn"
+              value={isbn}
+              onChange={(event) => {
+                setIsbn(event.target.value);
+                resetBookLookupState();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleCheckBook();
+                }
+              }}
+              placeholder="e.g. 9780064404990"
+            />
+            <p className="setting-description">
+              Optional. Look near the barcode on the back cover or inside the copyright page for a 10- or 13-digit ISBN.
+            </p>
           </div>
 
           <div className="book-check-panel">
@@ -685,8 +745,8 @@ function QuizPageContent() {
               <button
                 type="button"
                 className="secondary"
-                onClick={handleCheckBookTitle}
-                disabled={isCheckingBook || !bookTitle.trim()}
+                onClick={handleCheckBook}
+                disabled={isCheckingBook || !getBookLookupPayload()}
               >
                 {isCheckingBook ? "Checking book..." : "Check book"}
               </button>
@@ -726,21 +786,9 @@ function QuizPageContent() {
             ) : null}
 
             {showIsbnFallback ? (
-              <div className="field">
-                <label htmlFor="isbn">ISBN</label>
-                <input
-                  id="isbn"
-                  value={isbn}
-                  onChange={(event) => setIsbn(event.target.value)}
-                  placeholder="e.g. 9780064404990"
-                />
-                <p className="setting-description">
-                  Tip: Look near the barcode on the back cover or inside the copyright page for a 10- or 13-digit ISBN.
-                </p>
+              <div className="nested-section">
+                <p>ISBN is often the most accurate way to find an exact edition. Enter it above, then press Enter or Check book.</p>
                 <div className="button-row">
-                  <button type="button" onClick={handleCheckIsbn} disabled={isCheckingBook || !isbn.trim()}>
-                    Check ISBN
-                  </button>
                   <button
                     type="button"
                     className="secondary"

@@ -14,7 +14,9 @@ function mapProfile(
   quizzes: QuizHistory[],
   readingLogs: ReadingLog[],
   prizeRedemptions: PrizeRedemption[],
-): Profile {
+): Profile & { appDeletedAt?: string; appDeletedReason?: string } {
+  const parentControls = typeof row.parent_controls === "object" && row.parent_controls ? row.parent_controls : undefined;
+
   return {
     id: row.id,
     name: row.screen_name,
@@ -38,12 +40,14 @@ function mapProfile(
     bookAccess: typeof row.book_access === "object" && row.book_access ? row.book_access : {},
     avatarStyle: row.avatar_style ?? "Library Hero",
     badges: asStringArray(row.badges),
-    parentControls: typeof row.parent_controls === "object" && row.parent_controls ? row.parent_controls : undefined,
+    parentControls,
     leaderboardPrivate: Boolean(row.leaderboard_private),
     subscriptionTier: row.subscription_tier ?? "free",
     isParent: row.account_type === "parent",
     verified: Boolean(row.verified),
     linkedChildren,
+    appDeletedAt: typeof parentControls?.appDeletedAt === "string" ? parentControls.appDeletedAt : undefined,
+    appDeletedReason: typeof parentControls?.appDeletedReason === "string" ? parentControls.appDeletedReason : undefined,
   };
 }
 

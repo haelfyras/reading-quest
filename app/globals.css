@@ -904,6 +904,33 @@ button:disabled {
   gap: 12px;
 }
 
+.admin-account-actions {
+  display: grid;
+  gap: 8px;
+  min-width: 190px;
+}
+
+.admin-account-actions input {
+  min-width: 0;
+}
+
+.admin-deleted-account {
+  opacity: 0.72;
+}
+
+.danger-pill {
+  margin-top: 8px;
+  border-color: #dc2626;
+  background: #fee2e2;
+  color: #7f1d1d;
+}
+
+.danger-button:hover:not(:disabled) {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: white;
+}
+
 .admin-error-list {
   max-height: min(560px, 62vh);
   overflow-y: auto;

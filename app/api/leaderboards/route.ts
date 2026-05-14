@@ -42,6 +42,14 @@ function mapLeaderboardProfile(row: Record<string, any>, quizCount: number): Pro
   };
 }
 
+function isAppDeleted(profile: Record<string, any>) {
+  return Boolean(
+    typeof profile.parent_controls === "object" &&
+    profile.parent_controls &&
+    typeof profile.parent_controls.appDeletedAt === "string",
+  );
+}
+
 export async function GET(request: Request) {
   const currentProfileId = new URL(request.url).searchParams.get("currentProfileId") ?? "";
 
@@ -49,14 +57,15 @@ export async function GET(request: Request) {
     const supabase = createServiceSupabaseClient() as any;
     const { data: profiles, error: profilesError } = await supabase
       .from("profiles")
-      .select("id, account_type, screen_name, real_name, points, lifetime_points, avatar_style, badges, leaderboard_private, subscription_tier, verified, can_add_friends, created_at, updated_at")
+      .select("id, account_type, screen_name, real_name, points, lifetime_points, avatar_style, badges, leaderboard_private, subscription_tier, verified, can_add_friends, parent_controls, created_at, updated_at")
       .or(`leaderboard_private.eq.false,id.eq.${currentProfileId || "00000000-0000-0000-0000-000000000000"}`);
 
     if (profilesError) {
       return NextResponse.json({ error: profilesError.message }, { status: 500 });
     }
 
-    const profileIds = (profiles ?? []).map((profile: any) => profile.id);
+    const activeProfiles = (profiles ?? []).filter((profile: any) => !isAppDeleted(profile));
+    const profileIds = activeProfiles.map((profile: any) => profile.id);
     const { data: quizzes, error: quizzesError } = profileIds.length
       ? await supabase.from("quiz_results").select("profile_id").in("profile_id", profileIds)
       : { data: [], error: null };
@@ -70,7 +79,7 @@ export async function GET(request: Request) {
       quizCounts.set(quiz.profile_id, (quizCounts.get(quiz.profile_id) ?? 0) + 1);
     });
 
-    const leaderboardProfiles = (profiles ?? []).map((profile: any) =>
+    const leaderboardProfiles = activeProfiles.map((profile: any) =>
       mapLeaderboardProfile(profile, quizCounts.get(profile.id) ?? 0),
     );
 

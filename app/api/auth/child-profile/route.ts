@@ -41,6 +41,15 @@ function verifyPassword(password: string, storedHash: string | null) {
   return expectedBuffer.length === actualHash.length && crypto.timingSafeEqual(actualHash, expectedBuffer);
 }
 
+function isAppDeleted(profile: Record<string, any> | null) {
+  return Boolean(
+    profile &&
+    typeof profile.parent_controls === "object" &&
+    profile.parent_controls &&
+    typeof profile.parent_controls.appDeletedAt === "string",
+  );
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -98,6 +107,10 @@ export async function POST(request: Request) {
       }
 
       return NextResponse.json({ profile: createdProfile });
+    }
+
+    if (isAppDeleted(existingProfile)) {
+      return NextResponse.json({ error: "This account is no longer active in Reading Quest." }, { status: 403 });
     }
 
     if (!existingProfile || !verifyPassword(password, existingProfile.child_password_hash)) {

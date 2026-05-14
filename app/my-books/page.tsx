@@ -16,7 +16,7 @@ import {
 } from "../../lib/user";
 import { getBookRecommendations } from "../../lib/recommendations";
 import type { BookMatch } from "../../lib/books";
-import { lookupBook as lookupBookFromApi } from "../../lib/bookClient";
+import { lookupBook as lookupBookFromApi, type BookLookupPayload } from "../../lib/bookClient";
 import { betaConfig } from "../../lib/beta";
 import { emptyReadingPreferences, preferencePrompts, type PreferenceKey } from "../../lib/readingPreferences";
 
@@ -60,6 +60,7 @@ export default function MyBooksPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   const [favoriteBooks, setFavoriteBooks] = useState(["", "", ""]);
+  const [favoriteAuthors, setFavoriteAuthors] = useState(["", "", ""]);
   const [confirmedFavorites, setConfirmedFavorites] = useState<Array<BookMatch | null>>([null, null, null]);
   const [favoriteOptions, setFavoriteOptions] = useState<BookMatch[][]>([[], [], []]);
   const [favoriteIsbns, setFavoriteIsbns] = useState(["", "", ""]);
@@ -109,6 +110,20 @@ export default function MyBooksPage() {
 
   const handleFavoriteBookChange = (index: number, value: string) => {
     setFavoriteBooks((current) => current.map((title, idx) => idx === index ? value : title));
+    resetFavoriteLookup(index);
+  };
+
+  const handleFavoriteAuthorChange = (index: number, value: string) => {
+    setFavoriteAuthors((current) => current.map((author, idx) => idx === index ? value : author));
+    resetFavoriteLookup(index);
+  };
+
+  const handleFavoriteIsbnChange = (index: number, value: string) => {
+    setFavoriteIsbns((current) => current.map((isbn, idx) => idx === index ? value : isbn));
+    resetFavoriteLookup(index);
+  };
+
+  const resetFavoriteLookup = (index: number) => {
     setConfirmedFavorites((current) => current.map((book, idx) => idx === index ? null : book));
     setFavoriteOptions((current) => current.map((options, idx) => idx === index ? [] : options));
     setFavoriteLookupMessages((current) => current.map((message, idx) => idx === index ? "" : message));
@@ -116,16 +131,29 @@ export default function MyBooksPage() {
     setFavoriteSaveMessage("");
   };
 
+  const getFavoriteLookupPayload = (index: number): BookLookupPayload | null => {
+    const payload = {
+      bookTitle: favoriteBooks[index].trim(),
+      author: favoriteAuthors[index].trim(),
+      isbn: favoriteIsbns[index].trim(),
+    };
+    if (!payload.bookTitle && !payload.author && !payload.isbn) {
+      return null;
+    }
+    return payload;
+  };
+
   const applyFavoriteBook = (index: number, book: BookMatch) => {
     setFavoriteBooks((current) => current.map((title, idx) => idx === index ? book.title : title));
+    setFavoriteAuthors((current) => current.map((author, idx) => idx === index ? (book.author === "Unknown author" ? "" : book.author) : author));
     setConfirmedFavorites((current) => current.map((item, idx) => idx === index ? book : item));
     setFavoriteOptions((current) => current.map((options, idx) => idx === index ? [] : options));
     setFavoriteLookupMessages((current) => current.map((message, idx) => idx === index ? "" : message));
     setShowFavoriteIsbnFallback((current) => current.map((show, idx) => idx === index ? false : show));
-    setFavoriteIsbns((current) => current.map((value, idx) => idx === index ? "" : value));
+    setFavoriteIsbns((current) => current.map((value, idx) => idx === index ? book.isbn ?? "" : value));
   };
 
-  const lookupFavoriteBook = async (index: number, payload: { bookTitle?: string; isbn?: string }) => {
+  const lookupFavoriteBook = async (index: number, payload: BookLookupPayload) => {
     setCheckingFavoriteIndex(index);
     setFavoriteSaveMessage("");
 
@@ -149,7 +177,7 @@ export default function MyBooksPage() {
       setFavoriteLookupMessages((current) => current.map((message, idx) => idx === index
         ? payload.isbn
           ? "Sorry, we still could not find that book. Please try another book title."
-          : "We could not find that book by title. Try the ISBN, or enter a different book."
+          : "We could not find that book. Try a title, author, ISBN, or another combination."
         : message));
       return null;
     } catch (err) {
@@ -166,7 +194,8 @@ export default function MyBooksPage() {
     if (confirmed && confirmed.title === title) {
       return confirmed;
     }
-    return title ? lookupFavoriteBook(index, { bookTitle: title }) : null;
+    const payload = getFavoriteLookupPayload(index);
+    return payload ? lookupFavoriteBook(index, payload) : null;
   };
 
   const saveFavoriteBooks = async () => {
@@ -437,19 +466,58 @@ export default function MyBooksPage() {
             <p>Choose three favorite books so Reading Quest can recommend more. If you are still finding favorites, answer the quick reading taste quiz below instead.</p>
             {favoriteBooks.map((book, index) => (
               <div key={index} className="field">
-                <label htmlFor={`favoriteBook-${index}`}>Favorite book {index + 1}</label>
+                <label htmlFor={`favoriteBook-${index}`}>Favorite book {index + 1} title</label>
                 <input
                   id={`favoriteBook-${index}`}
                   value={book}
                   onChange={(event) => handleFavoriteBookChange(index, event.target.value)}
-                  placeholder={`Favorite book ${index + 1}`}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      const payload = getFavoriteLookupPayload(index);
+                      if (payload) void lookupFavoriteBook(index, payload);
+                    }
+                  }}
+                  placeholder="Book title"
                 />
+                <label htmlFor={`favoriteAuthor-${index}`}>Author</label>
+                <input
+                  id={`favoriteAuthor-${index}`}
+                  value={favoriteAuthors[index]}
+                  onChange={(event) => handleFavoriteAuthorChange(index, event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      const payload = getFavoriteLookupPayload(index);
+                      if (payload) void lookupFavoriteBook(index, payload);
+                    }
+                  }}
+                  placeholder="Author name"
+                />
+                <label htmlFor={`favoriteIsbn-${index}`}>ISBN</label>
+                <input
+                  id={`favoriteIsbn-${index}`}
+                  value={favoriteIsbns[index]}
+                  onChange={(event) => handleFavoriteIsbnChange(index, event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      const payload = getFavoriteLookupPayload(index);
+                      if (payload) void lookupFavoriteBook(index, payload);
+                    }
+                  }}
+                  placeholder="9780064404990"
+                />
+                <p className="setting-description">Fill in a title, author, ISBN, or any combination. Press Enter to search.</p>
                 <div className="button-row">
                   <button
                     type="button"
                     className="secondary"
-                    onClick={() => lookupFavoriteBook(index, { bookTitle: favoriteBooks[index] })}
-                    disabled={checkingFavoriteIndex !== null || !favoriteBooks[index].trim()}
+                    onClick={() => {
+                      const payload = getFavoriteLookupPayload(index);
+                      if (payload) void lookupFavoriteBook(index, payload);
+                    }}
+                    disabled={checkingFavoriteIndex !== null || !getFavoriteLookupPayload(index)}
                   >
                     {checkingFavoriteIndex === index ? "Checking..." : "Check book"}
                   </button>
@@ -483,18 +551,8 @@ export default function MyBooksPage() {
                 ) : null}
 
                 {showFavoriteIsbnFallback[index] ? (
-                  <div className="field">
-                    <label htmlFor={`favoriteIsbn-${index}`}>ISBN</label>
-                    <input
-                      id={`favoriteIsbn-${index}`}
-                      value={favoriteIsbns[index]}
-                      onChange={(event) => setFavoriteIsbns((current) => current.map((value, idx) => idx === index ? event.target.value : value))}
-                      placeholder="9780064404990"
-                    />
-                    <p className="setting-description">Tip: Look near the barcode or on the copyright page.</p>
-                    <button type="button" onClick={() => lookupFavoriteBook(index, { isbn: favoriteIsbns[index] })}>
-                      Check ISBN
-                    </button>
+                  <div className="nested-section">
+                    <p className="setting-description">Tip: ISBN is often the most accurate search. Look near the barcode or on the copyright page, then enter it above.</p>
                   </div>
                 ) : null}
               </div>

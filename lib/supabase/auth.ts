@@ -25,6 +25,11 @@ function getAuthRedirectUrl() {
   return origin ? `${origin.replace(/\/$/, "")}/` : undefined;
 }
 
+function getPasswordResetRedirectUrl() {
+  const baseUrl = getAuthRedirectUrl();
+  return baseUrl ? `${baseUrl.replace(/\/$/, "")}/reset-password` : undefined;
+}
+
 function mapDbProfileToLocalProfile(row: DbProfile): Profile {
   return {
     id: row.id,
@@ -200,6 +205,42 @@ export async function createParentWithSupabase(details: {
 
   const dbProfile = await ensureParentProfile(data.session.access_token, details.realName);
   return saveLocalMirror(mapDbProfileToLocalProfile(dbProfile));
+}
+
+export async function requestParentPasswordReset(email: string) {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Password reset is not configured yet.");
+  }
+
+  const trimmedEmail = email.trim();
+  if (!trimmedEmail) {
+    throw new Error("Enter the parent account email first.");
+  }
+
+  const supabase = createBrowserSupabaseClient();
+  const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+    redirectTo: getPasswordResetRedirectUrl(),
+  });
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function updateParentPassword(newPassword: string) {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Password reset is not configured yet.");
+  }
+
+  if (newPassword.trim().length < 6) {
+    throw new Error("Use at least 6 characters for the new password.");
+  }
+
+  const supabase = createBrowserSupabaseClient();
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) {
+    throw error;
+  }
 }
 
 export { getErrorMessage as getSupabaseErrorMessage };

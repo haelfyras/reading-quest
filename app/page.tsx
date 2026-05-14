@@ -9,6 +9,7 @@ import {
   createParentWithSupabase,
   EmailConfirmationRequiredError,
   getSupabaseErrorMessage,
+  requestParentPasswordReset,
   signInChildWithSupabase,
   signInParentWithSupabase,
 } from "../lib/supabase/auth";
@@ -195,6 +196,30 @@ export default function Page() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    resetMessages();
+
+    if (userType === "child") {
+      setNotice("Child accounts do not use email. Ask your verified parent to help reset your password. If no parent is connected yet, ask a parent to contact Reading Quest support from their account.");
+      return;
+    }
+
+    if (!parentEmail.trim()) {
+      setError("Enter the parent account email first, then choose Forgot password.");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await requestParentPasswordReset(parentEmail);
+      setNotice("Password reset sent. Check the parent email account for a secure reset link.");
+    } catch (err) {
+      setError(getSupabaseErrorMessage(err));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (isLoading) {
     return <main className="auth-shell"><p>Loading...</p></main>;
   }
@@ -341,6 +366,11 @@ export default function Page() {
             <button type="submit" disabled={isSubmitting || !canSubmit}>
               {isSubmitting ? "Working..." : authMode === "signIn" ? "Continue" : "Create account"}
             </button>
+            {authMode === "signIn" ? (
+              <button type="button" className="secondary" disabled={isSubmitting} onClick={() => void handleForgotPassword()}>
+                Forgot password?
+              </button>
+            ) : null}
           </div>
         </form>
 

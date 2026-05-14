@@ -61,6 +61,11 @@ type FeedbackEntry = {
   date: string;
 };
 
+type AdminProfile = Profile & {
+  appDeletedAt?: string;
+  appDeletedReason?: string;
+};
+
 const tabs: Array<{ id: AdminTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "accounts", label: "Accounts" },
@@ -133,7 +138,7 @@ function isExpectedTelemetry(event: TelemetryEvent) {
 
 export default function AdminConsole() {
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
-  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [profiles, setProfiles] = useState<AdminProfile[]>([]);
   const [reports, setReports] = useState<Array<QuizIssueReport & { source?: "supabase" | "local" }>>([]);
   const [telemetry, setTelemetry] = useState<TelemetryEvent[]>([]);
   const [prizeAddRequests, setPrizeAddRequests] = useState<PrizeAddRequest[]>([]);
@@ -144,6 +149,7 @@ export default function AdminConsole() {
   const [feedbackSeenAt, setFeedbackSeenAt] = useState("");
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
+  const [pointAdjustments, setPointAdjustments] = useState<Record<string, string>>({});
 
   const refresh = async () => {
     setProfiles(getProfiles());
@@ -160,7 +166,7 @@ export default function AdminConsole() {
       }
 
       const data = await response.json() as {
-        profiles?: Profile[];
+        profiles?: AdminProfile[];
         reports?: Array<QuizIssueReport & { source?: "supabase" }>;
         telemetry?: TelemetryEvent[];
         feedbackEntries?: FeedbackEntry[];
@@ -329,6 +335,52 @@ export default function AdminConsole() {
     }
 
     setMessage(`Feedback marked: ${feedbackStatusLabels[adminStatus]}.`);
+  };
+
+  const addManualPoints = async (profile: AdminProfile) => {
+    const points = Math.ceil(Number(pointAdjustments[profile.id] ?? 0));
+    if (!points || points < 1) {
+      setMessage("Enter at least 1 point to add.");
+      return;
+    }
+
+    const response = await fetch("/api/admin/account", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "add_points", profileId: profile.id, points }),
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({ error: "Unable to add points." }));
+      setMessage(data.error ?? "Unable to add points.");
+      return;
+    }
+
+    setPointAdjustments((current) => ({ ...current, [profile.id]: "" }));
+    setMessage(`Added ${points} points to ${profile.realName || profile.name}.`);
+    await refresh();
+  };
+
+  const softDeleteAccount = async (profile: AdminProfile) => {
+    const confirmed = window.confirm(`Remove ${profile.realName || profile.name} from the app? This keeps the Supabase record but blocks app sign-in and hides the account from leaderboards.`);
+    if (!confirmed) {
+      return;
+    }
+
+    const response = await fetch("/api/admin/account", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "soft_delete", profileId: profile.id }),
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({ error: "Unable to remove account." }));
+      setMessage(data.error ?? "Unable to remove account.");
+      return;
+    }
+
+    setMessage(`${profile.realName || profile.name} was removed from the app.`);
+    await refresh();
   };
 
   const latestQuizzes = metrics.quizzes
@@ -575,14 +627,16 @@ export default function AdminConsole() {
                   <th>Quizzes</th>
                   <th>Friends</th>
                   <th>Last activity</th>
+                  <th>Beta admin</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredProfiles.map((profile) => (
-                  <tr key={profile.id}>
+                  <tr key={profile.id} className={profile.appDeletedAt ? "admin-deleted-account" : ""}>
                     <td>
                       <strong>{profile.realName || profile.name}</strong>
                       <small className="block-note">{profile.email || profile.profileCode || profile.id}</small>
+                      {profile.appDeletedAt ? <span className="badge-pill danger-pill">Removed from app</span> : null}
                     </td>
                     <td>{profile.isParent ? "Parent" : "Child"}</td>
                     <td>{subscriptionPlans[getEffectiveSubscriptionTier(profile)].name}</td>
@@ -590,6 +644,23 @@ export default function AdminConsole() {
                     <td>{profile.quizzes.length}</td>
                     <td>{profile.friendProfileIds?.length ?? 0}</td>
                     <td>{getLastActivity(profile) ? formatDate(getLastActivity(profile)) : "No activity yet"}</td>
+                    <td>
+                      <div className="admin-account-actions">
+                        <input
+                          aria-label={`Points to add to ${profile.realName || profile.name}`}
+                          inputMode="numeric"
+                          min={1}
+                          type="number"
+                          value={pointAdjustments[profile.id] ?? ""}
+                          onChange={(event) => setPointAdjustments((current) => ({ ...current, [profile.id]: event.target.value }))}
+                          placeholder="+ points"
+                        />
+                        <button type="button" className="secondary" onClick={() => void addManualPoints(profile)}>Add</button>
+                        <button type="button" className="secondary danger-button" disabled={Boolean(profile.appDeletedAt)} onClick={() => void softDeleteAccount(profile)}>
+                          {profile.appDeletedAt ? "Removed" : "Delete"}
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

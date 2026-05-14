@@ -1,7 +1,13 @@
 import type { BookLookupResult, BookMatch } from "./books";
 import { isBookLevel, type BookLevel } from "./scoring";
 
-export async function lookupBook(payload: { bookTitle?: string; isbn?: string }) {
+export type BookLookupPayload = {
+  bookTitle?: string;
+  author?: string;
+  isbn?: string;
+};
+
+export async function lookupBook(payload: BookLookupPayload) {
   const response = await fetch("/api/book-lookup", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
