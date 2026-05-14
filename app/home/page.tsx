@@ -329,15 +329,17 @@ export default function HomePage() {
           </Link>
         </div>
         <div className="leaderboard-list compact-list">
-          {childLeaderboard.slice(0, 3).map((profile, index) => (
-            <div key={profile.id} className={`leaderboard-item ${profile.id === currentUser.id ? "current-user" : ""}`}>
-              <div className="rank">#{index + 1}</div>
-              <div className="user-info">
-                <div className="name">{profile.name}</div>
-                <div className="stats">{getLifetimePoints(profile)} lifetime points</div>
+          <div className="leaderboard-item current-user">
+            <div className="rank">{currentRank > 0 ? `#${currentRank}` : "--"}</div>
+            <div className="user-info">
+              <div className="name">{currentUser.name}</div>
+              <div className="stats">
+                {getLifetimePoints(currentUser)} lifetime points
+                {childLeaderboard.length > 0 ? ` - ${childLeaderboard.length} child readers ranked` : ""}
               </div>
             </div>
-          ))}
+            <div className="you-badge">YOU</div>
+          </div>
         </div>
       </section>
 

@@ -118,10 +118,22 @@ const categoryPatterns: Array<[RegExp, string]> = [
   [/\b(mystery|detective|secret|clue|spy|investigation|case|escape|spooky)\b/, "mystery"],
   [/\b(science fiction|sci[- ]?fi|space|robot|alien|future|planet|city of ember)\b/, "science fiction"],
   [/\b(adventure|quest|journey|explorer|treasure|pirate(?:s)?|island|mountain|ocean)\b/, "adventure"],
-  [/\b(animal|dog|cat|horse|mouse|cricket|swan|wolf|ivan|winn-dixie)\b/, "animals"],
+  [/\b(animal|lion|dog|cat|horse|mouse|cricket|swan|wolf|ivan|winn-dixie)\b/, "animals"],
   [/\b(funny|humor|silly|diary|wimpy|wayside|terrible|milk)\b/, "humor"],
   [/\b(sports?|soccer|basketball|baseball|football|games?|gaming)\b/, "sports and games"],
 ];
+
+const sourceWeights = {
+  favorite: 3,
+  quiz: 3,
+  preference: 1,
+};
+
+const sourceLabels = {
+  favorite: "favorite books",
+  quiz: "quiz history",
+  preference: "reading taste quiz",
+};
 
 function normalizeTitle(title: string) {
   return title.trim().toLowerCase().replace(/^the\s+/, "");
@@ -149,6 +161,46 @@ function uniqueTitles(titles: string[]) {
   });
 }
 
+function addCategorySignals(
+  scores: Map<string, number>,
+  sources: Map<string, Set<keyof typeof sourceLabels>>,
+  text: string,
+  source: keyof typeof sourceWeights,
+) {
+  const normalized = text.toLowerCase();
+  if (!normalized.trim()) return;
+
+  for (const [pattern, category] of categoryPatterns) {
+    if (pattern.test(normalized)) {
+      scores.set(category, (scores.get(category) ?? 0) + sourceWeights[source]);
+      const categorySources = sources.get(category) ?? new Set<keyof typeof sourceLabels>();
+      categorySources.add(source);
+      sources.set(category, categorySources);
+    }
+  }
+}
+
+function getSourceText(categoryList: string[], categorySources: Map<string, Set<keyof typeof sourceLabels>>) {
+  const strongestSources = new Set<keyof typeof sourceLabels>();
+  categoryList.forEach((category) => {
+    categorySources.get(category)?.forEach((source) => strongestSources.add(source));
+  });
+
+  const orderedSources = (["favorite", "quiz", "preference"] as Array<keyof typeof sourceLabels>)
+    .filter((source) => strongestSources.has(source))
+    .map((source) => sourceLabels[source]);
+
+  if (orderedSources.length === 0) {
+    return "popular books for young readers";
+  }
+
+  if (orderedSources.length === 1) {
+    return `your ${orderedSources[0]}`;
+  }
+
+  return `your ${orderedSources.slice(0, -1).join(", ")} and ${orderedSources[orderedSources.length - 1]}`;
+}
+
 export function getBookRecommendations({
   profile,
   favoriteBooks = [],
@@ -166,22 +218,24 @@ export function getBookRecommendations({
         profile.readingPreferences.topics,
       ].filter(Boolean)
     : [];
-  const combinedText = [...favorites, ...quizTitles, ...preferenceAnswers].join(" ").toLowerCase();
   const excludedTitles = new Set([...favorites, ...quizTitles].map(normalizeTitle));
 
-  const categories = new Set<string>();
-  for (const [pattern, category] of categoryPatterns) {
-    if (pattern.test(combinedText)) {
-      categories.add(category);
-    }
-  }
+  const categoryScores = new Map<string, number>();
+  const categorySources = new Map<string, Set<keyof typeof sourceLabels>>();
+  favorites.forEach((title) => addCategorySignals(categoryScores, categorySources, title, "favorite"));
+  quizTitles.forEach((title) => addCategorySignals(categoryScores, categorySources, title, "quiz"));
+  preferenceAnswers.forEach((answer) => addCategorySignals(categoryScores, categorySources, answer, "preference"));
 
-  if (categories.size === 0) {
-    categories.add(combinedText.trim() ? "great stories" : "children's books");
+  if (categoryScores.size === 0) {
+    const hasAnyTasteData = [...favorites, ...quizTitles, ...preferenceAnswers].join(" ").trim();
+    categoryScores.set(hasAnyTasteData ? "great stories" : "children's books", 1);
   }
 
   const seed = getDailySeed(rotationOffset);
-  const categoryList = rotate(Array.from(categories), seed).slice(0, 3);
+  const rankedCategories = Array.from(categoryScores.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([category]) => category);
+  const categoryList = rankedCategories.slice(0, 3);
   const candidateTitles = categoryList.flatMap((category, index) => {
     const pool = suggestionPools[category] ?? fallbackTitles;
     return rotate(pool, seed + index * 3);
@@ -192,18 +246,16 @@ export function getBookRecommendations({
     .slice(0, limit);
 
   const interestText = categoryList.slice(0, 2).join(" and ");
-  const sourceText = quizTitles.length
-    ? "your favorite books and quiz history"
-    : favorites.length
-      ? "your favorite books"
-      : preferenceAnswers.length
-        ? "your reading taste quiz"
-        : "popular books for young readers";
+  const sourceText = getSourceText(categoryList, categorySources);
   const reasons = Object.fromEntries(
-    suggestions.map((title, index) => [
-      title,
-      `Suggested because ${sourceText} point toward ${categoryList[index % categoryList.length] ?? "great stories"}.`,
-    ]),
+    suggestions.map((title, index) => {
+      const category = categoryList[index % categoryList.length] ?? "great stories";
+      const categorySourceText = getSourceText([category], categorySources);
+      return [
+        title,
+        `Suggested because ${categorySourceText} ${categorySourceText === "popular books for young readers" ? "include" : "point toward"} ${category}.`,
+      ];
+    }),
   );
 
   return {
