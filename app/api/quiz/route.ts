@@ -43,6 +43,14 @@ const answerChoiceContract = `Answer choice consistency rules:
 - If more than one choice could be defended by a reasonable reader, replace the question or the choices.
 - Hard questions should be thoughtful for upper elementary, middle school, and high school readers, not graduate-level, obscure, or ambiguous.`;
 
+const themeSymbolismContract = `Theme and symbolism rules:
+- If a question asks what something symbolizes, represents, suggests, reveals, means, or shows about a theme, the correct answer must be an abstract meaning, theme, trait, lesson, or idea.
+- Do not mark a literal plot result, direct consequence, physical outcome, or next event as correct for a symbolism/theme question.
+- Do not mix abstract thematic choices with literal event/result choices in the same question.
+- If the intended answer is a direct result of an action, ask a cause/effect question instead of a symbolism/theme question.
+- If the intended answer is symbolic, every choice must be the same kind of abstract answer and only one may be defensible.
+- Avoid "what does this symbolize" questions when the scene supports more than one reasonable interpretation; ask a clearer theme question instead.`;
+
 const prompt = (
   book: BookDetails,
   difficulty: string,
@@ -58,7 +66,7 @@ const prompt = (
     ? `\n\nThis is section ${section.number} of ${section.total}. Create exactly ${questionCount} new questions for this section only. Do not repeat these earlier questions: ${section.previousQuestions.length ? section.previousQuestions.map((question) => `"${question}"`).join("; ") : "none"}.`
     : "";
 
-  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. The questions array must contain exactly ${questionCount} complete question objects. Do not return fewer than ${questionCount}. Each question must have: question, questionKey, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation.\n\nCanonical book to quiz: ${bookIdentity}. Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}.${qualityNotes ? `\n\nCritical book guardrails:\n${qualityNotes}` : ""}\n\n${answerChoiceContract}\n\nRules:\n- questionKey must be a short lowercase semantic key for the question idea, like "frodo-sam-trust" or "rohan-aid-reason".\n- Use only the exact book above, not films, soundtracks, games, adaptations, sequels, prequels, or other series installments.\n- If a fact may come from another book in the series or a movie adaptation, do not use it.\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the exact book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Avoid "what potion/item/spell" questions unless the exact book clearly names it.\n- Easy = simple title/character/obvious-event questions.\n- Medium = details, roles, setting, conflict, motivation, cause/effect.\n- Hard = inference, theme, symbolism, context, subtle motivation, relationships, consequences, or comparisons, written for children through high school.\n- Choices must be plausible and fit the exact book, but only one can be correct.\n- Before returning, privately test each wrong choice by asking: "Could this also be correct?" If yes, replace it.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the exact book.\n- Use child-friendly language for ages 7-18.\n- Silently count the questions before returning JSON and make sure there are exactly ${questionCount}.${sectionInstruction}`;
+  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. The questions array must contain exactly ${questionCount} complete question objects. Do not return fewer than ${questionCount}. Each question must have: question, questionKey, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation.\n\nCanonical book to quiz: ${bookIdentity}. Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}.${qualityNotes ? `\n\nCritical book guardrails:\n${qualityNotes}` : ""}\n\n${answerChoiceContract}\n\n${themeSymbolismContract}\n\nRules:\n- questionKey must be a short lowercase semantic key for the question idea, like "frodo-sam-trust" or "rohan-aid-reason".\n- Use only the exact book above, not films, soundtracks, games, adaptations, sequels, prequels, or other series installments.\n- If a fact may come from another book in the series or a movie adaptation, do not use it.\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the exact book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Avoid "what potion/item/spell" questions unless the exact book clearly names it.\n- Easy = simple title/character/obvious-event questions.\n- Medium = details, roles, setting, conflict, motivation, cause/effect.\n- Hard = inference, theme, symbolism, context, subtle motivation, relationships, consequences, or comparisons, written for children through high school.\n- Choices must be plausible and fit the exact book, but only one can be correct.\n- Before returning, privately test each wrong choice by asking: "Could this also be correct?" If yes, replace it.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the exact book.\n- Use child-friendly language for ages 7-18.\n- Silently count the questions before returning JSON and make sure there are exactly ${questionCount}.${sectionInstruction}`;
 };
 
 function describeBook(book: BookDetails) {
@@ -113,6 +121,7 @@ Rules:
 - Do not return fewer than 20 questions.
 - questionKey must be a short lowercase semantic key for the question idea.
 - ${answerChoiceContract.replace(/\n/g, "\n- ")}
+- ${themeSymbolismContract.replace(/\n/g, "\n- ")}
 - Use only the exact book named above, not films, soundtracks, adaptations, sequels, prequels, or other books in a series.
 - If a fact may come from another series installment or movie adaptation, do not use it.
 - Do not repeat the same question idea, event, character focus, or theme focus.
@@ -160,6 +169,7 @@ Rules:
 - The questions array must contain exactly ${section.count} complete objects.
 - questionKey must be a short lowercase semantic key for the question idea.
 - ${answerChoiceContract.replace(/\n/g, "\n- ")}
+- ${themeSymbolismContract.replace(/\n/g, "\n- ")}
 - Use only the exact book named above, not films, soundtracks, adaptations, sequels, prequels, or other books in a series.
 - If a fact may come from another series installment or movie adaptation, do not use it.
 - Keep each question under 18 words.
@@ -397,11 +407,11 @@ async function reviewQuizWithModel(
       {
         role: "system",
         content:
-          "You are a strict quiz quality reviewer for children's reading quizzes. Return only a valid JSON object, with no markdown and no commentary. Fix wrong answers, impossible questions, weak distractors, answerIndex mismatches, difficulty mismatches, and any question with more than one defensible correct answer. If a question cannot be verified, replace it with a safer question.",
+          "You are a strict quiz quality reviewer for children's reading quizzes. Return only a valid JSON object, with no markdown and no commentary. Fix wrong answers, impossible questions, weak distractors, answerIndex mismatches, difficulty mismatches, and any question with more than one defensible correct answer. For theme or symbolism questions, reject literal plot results as correct answers unless the question is explicitly cause/effect. If a question cannot be verified, replace it with a safer question.",
       },
       {
         role: "user",
-        content: `Review this quiz for the exact book ${describeBook(details.book)}. Difficulty: ${details.difficulty}. Reading level: ${details.bookLevel}. Testing level: ${details.learningGoal}.${details.qualityNotes ? `\n\nCritical book guardrails:\n- ${details.qualityNotes}` : ""}\n\nIt must have exactly ${details.questionCount} questions, 4 choices per question, a correct answerIndex, answerText matching choices[answerIndex], and a short explanation.\n\n${answerChoiceContract}\n\nFor every question, audit all four choices. If any wrong choice is technically true, partially true, a broader category containing the correct answer, a narrower example of the correct answer, a synonym, a restatement, or otherwise defensible, replace that choice or replace the entire question. Remove or replace any question that uses a movie/adaptation fact, another book in a series, a later-book fact, an impossible premise, or an unverified answer. Return only the corrected JSON object.\n\n${JSON.stringify(quizData)}`,
+        content: `Review this quiz for the exact book ${describeBook(details.book)}. Difficulty: ${details.difficulty}. Reading level: ${details.bookLevel}. Testing level: ${details.learningGoal}.${details.qualityNotes ? `\n\nCritical book guardrails:\n- ${details.qualityNotes}` : ""}\n\nIt must have exactly ${details.questionCount} questions, 4 choices per question, a correct answerIndex, answerText matching choices[answerIndex], and a short explanation.\n\n${answerChoiceContract}\n\n${themeSymbolismContract}\n\nFor every question, audit all four choices. If any wrong choice is technically true, partially true, a broader category containing the correct answer, a narrower example of the correct answer, a synonym, a restatement, or otherwise defensible, replace that choice or replace the entire question. For theme/symbolism questions, verify that the correct answer is the symbolic or thematic meaning, not the literal result of the action; if the answer is literal, rewrite it as cause/effect or replace the question. Remove or replace any question that uses a movie/adaptation fact, another book in a series, a later-book fact, an impossible premise, or an unverified answer. Return only the corrected JSON object.\n\n${JSON.stringify(quizData)}`,
       },
     ],
   });
@@ -592,6 +602,7 @@ Rules:
 - questionKey must be a short lowercase semantic key for the question idea.
 - Do not reuse or rephrase any used question key, question idea, event focus, or wording.
 - ${answerChoiceContract.replace(/\n/g, "\n- ")}
+- ${themeSymbolismContract.replace(/\n/g, "\n- ")}
 - Use only the exact book named above, not films, soundtracks, games, adaptations, sequels, prequels, or other books in a series.
 - If a fact may come from another series installment or movie adaptation, do not use it.
 - Keep each question under 18 words.
