@@ -25,6 +25,7 @@ import {
 } from "../../lib/user";
 import { loadSiteLeaderboardProfiles } from "../../lib/leaderboards";
 import { getBookRecommendations as buildRecommendations } from "../../lib/recommendations";
+import { getAvatarJourneyLabel } from "../../lib/avatar";
 import BetaDisclaimer from "../components/BetaDisclaimer";
 import SetupGuide, { type SetupStep } from "../components/SetupGuide";
 
@@ -226,7 +227,7 @@ export default function HomePage() {
         <div className="section-header-row">
           <div>
             <h2 id="path-heading">Reading Path</h2>
-            <p>{currentUser.avatarStyle || "Explorer"} mode is active.</p>
+            <p>{getAvatarJourneyLabel(currentUser.avatarStyle)} is active.</p>
           </div>
           <Link href="/my-books">
             <button type="button" className="secondary">My Books</button>

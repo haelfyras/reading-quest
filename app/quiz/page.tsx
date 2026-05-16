@@ -39,6 +39,7 @@ import {
 
 type QuizQuestion = {
   question: string;
+  questionKey?: string;
   choices: string[];
   answerIndex: number;
   answerText?: string;
@@ -93,6 +94,11 @@ function QuizPageContent() {
   const [selectedAnswers, setSelectedAnswers] = useState<number[]>([]);
   const [score, setScore] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFillingQuiz, setIsFillingQuiz] = useState(false);
+  const [isWaitingForQuestion, setIsWaitingForQuestion] = useState(false);
+  const [quizTargetCount, setQuizTargetCount] = useState(0);
+  const [firstQuestionLoadMs, setFirstQuestionLoadMs] = useState<number | null>(null);
+  const [quizGenerationStatus, setQuizGenerationStatus] = useState("");
   const [isDetectingLevel, setIsDetectingLevel] = useState(false);
   const [error, setError] = useState("");
   const [completed, setCompleted] = useState(false);
@@ -152,6 +158,7 @@ function QuizPageContent() {
         quizDescription: challenge.quizDescription,
         questions: challenge.questions,
       });
+      setQuizTargetCount(challenge.questions.length);
       setSelectedAnswers(Array(challenge.questions.length).fill(-1));
       setCurrentQuestion(0);
       setSelectedChoice(null);
@@ -187,6 +194,7 @@ function QuizPageContent() {
           setBookLevel(approvedLevel);
           setDifficulty(isDifficultyAllowedForBookLevel(approvedDifficulty, approvedLevel) ? approvedDifficulty : getAllowedDifficulties(approvedLevel)[0]);
           setQuizData(approvedQuiz);
+          setQuizTargetCount(approvedQuiz.questions.length);
           setSelectedAnswers([]);
           setParentApprovedQuiz(approvedQuiz);
           setTimeLeft(30);
@@ -251,11 +259,23 @@ function QuizPageContent() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isWaitingForQuestion || !quizData) return;
+    if (currentQuestion + 1 < quizData.questions.length) {
+      setCurrentQuestion((prev) => prev + 1);
+      setSelectedChoice(null);
+      setTimeLeft(30);
+      setTimerActive(true);
+      setIsWaitingForQuestion(false);
+    }
+  }, [currentQuestion, isWaitingForQuestion, quizData]);
+
   const allowedDifficulties = getAllowedDifficulties(bookLevel);
   const nextAllowedDifficulty = getNextAllowedDifficulty(difficulty, bookLevel);
   const questionValue = getQuestionValue(difficulty);
   const basePoints = getBasePoints(difficulty);
   const maxScore = quizData ? getMaxScore(difficulty) : 0;
+  const quizDisplayTotal = quizData ? (quizTargetCount || quizData.questions.length) : 0;
   const timerClass = timeLeft > 10 ? "good" : timeLeft > 5 ? "warn" : "danger";
   const homeHref = user?.isParent ? "/parent" : "/home";
   const planQuizAvailability = user ? getPlanQuizAvailability(user) : null;
@@ -363,6 +383,129 @@ function QuizPageContent() {
     return payload ? lookupBook(payload) : null;
   };
 
+  const readQuizPayload = async (response: Response): Promise<QuizData> => {
+    if (!response.ok) {
+      const rawMessage = await response.text();
+      let message = rawMessage;
+      try {
+        const parsed = JSON.parse(rawMessage) as { error?: string };
+        message = parsed.error || rawMessage;
+      } catch {
+        message = rawMessage;
+      }
+      throw new Error(message || "Failed to generate quiz.");
+    }
+
+    const data = await response.json();
+    let payload: QuizData;
+
+    if (typeof data.quiz === "object" && data.quiz !== null) {
+      payload = data.quiz;
+    } else if (typeof data.quiz === "string") {
+      const rawQuiz = data.quiz.trim();
+
+      try {
+        payload = JSON.parse(rawQuiz);
+      } catch {
+        const jsonMatch = rawQuiz.match(/\{[\s\S]*\}$/);
+        if (!jsonMatch) {
+          throw new Error("Quiz format is invalid. Please try again.");
+        }
+        payload = JSON.parse(jsonMatch[0]);
+      }
+    } else {
+      throw new Error("Quiz format is invalid. Please try again.");
+    }
+
+    if (!Array.isArray(payload.questions) || payload.questions.length === 0) {
+      throw new Error("Quiz format is invalid. Please try again.");
+    }
+
+    return payload;
+  };
+
+  const fetchQuizBatch = async (details: {
+    book: BookMatch;
+    resolvedBookLevel: BookLevel;
+    learningGoal: string;
+    mode: "procedural_starter" | "procedural_next";
+    existingQuestions: QuizQuestion[];
+  }) => {
+    const response = await fetch("/api/quiz", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: details.mode,
+        bookTitle: details.book.title,
+        bookAuthor: details.book.author,
+        bookYear: details.book.year,
+        bookIsbn: details.book.isbn,
+        difficulty,
+        bookLevel: details.resolvedBookLevel,
+        learningGoal: details.learningGoal,
+        generatedCount: details.existingQuestions.length,
+        existingQuestionKeys: details.existingQuestions.map((question) => question.questionKey ?? question.question),
+        existingQuestions: details.existingQuestions.map((question) => question.question),
+      }),
+    });
+
+    return readQuizPayload(response);
+  };
+
+  const fillQuizInBackground = async (details: {
+    book: BookMatch;
+    resolvedBookLevel: BookLevel;
+    learningGoal: string;
+    initialQuiz: QuizData;
+    targetCount: number;
+  }) => {
+    setIsFillingQuiz(true);
+    setQuizGenerationStatus("Preparing the rest of the quiz...");
+    let collectedQuestions = details.initialQuiz.questions.slice();
+
+    try {
+      while (collectedQuestions.length < details.targetCount) {
+        const nextBatch = await fetchQuizBatch({
+          book: details.book,
+          resolvedBookLevel: details.resolvedBookLevel,
+          learningGoal: details.learningGoal,
+          mode: "procedural_next",
+          existingQuestions: collectedQuestions,
+        });
+
+        const seen = new Set(collectedQuestions.map((question) => question.questionKey ?? question.question));
+        const freshQuestions = nextBatch.questions.filter((question) => {
+          const key = question.questionKey ?? question.question;
+          if (seen.has(key)) {
+            return false;
+          }
+          seen.add(key);
+          return true;
+        });
+
+        if (freshQuestions.length === 0) {
+          throw new Error("The quiz generator repeated itself. Please try again.");
+        }
+
+        collectedQuestions = [...collectedQuestions, ...freshQuestions].slice(0, details.targetCount);
+        setQuizData((current) => current ? {
+          ...current,
+          questions: collectedQuestions,
+        } : {
+          ...details.initialQuiz,
+          questions: collectedQuestions,
+        });
+        setSelectedAnswers((current) => Array.from({ length: details.targetCount }, (_, index) => current[index] ?? -1));
+        setQuizGenerationStatus(`${collectedQuestions.length} of ${details.targetCount} questions ready.`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The rest of the quiz could not be prepared.");
+    } finally {
+      setIsFillingQuiz(false);
+      setQuizGenerationStatus("");
+    }
+  };
+
   const handleGenerate = async () => {
     if (!bookTitle.trim() && !bookAuthor.trim() && !isbn.trim()) {
       setError("Enter a title, author, or ISBN.");
@@ -431,14 +574,23 @@ function QuizPageContent() {
     setEarnedPoints(0);
     setReportedQuestions({});
     setAdUnlocked(false);
+    setIsFillingQuiz(false);
+    setIsWaitingForQuestion(false);
+    setQuizTargetCount(0);
+    setFirstQuestionLoadMs(null);
+    setQuizGenerationStatus("");
 
     const learningGoal = getProfileTestingGoal(user);
+    const targetQuestionCount = getMaxScore(difficulty);
+    const shouldUseProceduralQuiz = targetQuestionCount > 5;
+    const generationStartedAt = performance.now();
 
     try {
       const response = await fetch("/api/quiz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          mode: shouldUseProceduralQuiz ? "procedural_starter" : "full",
           bookTitle: book.title,
           bookAuthor: book.author,
           bookYear: book.year,
@@ -449,47 +601,24 @@ function QuizPageContent() {
         }),
       });
 
-      if (!response.ok) {
-        const rawMessage = await response.text();
-        let message = rawMessage;
-        try {
-          const parsed = JSON.parse(rawMessage) as { error?: string };
-          message = parsed.error || rawMessage;
-        } catch {
-          message = rawMessage;
-        }
-        throw new Error(message || "Failed to generate quiz.");
-      }
-
-      const data = await response.json();
-      let payload: QuizData;
-
-      if (typeof data.quiz === "object" && data.quiz !== null) {
-        payload = data.quiz;
-      } else if (typeof data.quiz === "string") {
-        const rawQuiz = data.quiz.trim();
-
-        try {
-          payload = JSON.parse(rawQuiz);
-        } catch {
-          const jsonMatch = rawQuiz.match(/\{[\s\S]*\}$/);
-          if (!jsonMatch) {
-            throw new Error("Quiz format is invalid. Please try again.");
-          }
-          payload = JSON.parse(jsonMatch[0]);
-        }
-      } else {
-        throw new Error("Quiz format is invalid. Please try again.");
-      }
-
-      if (!Array.isArray(payload.questions) || payload.questions.length === 0) {
-        throw new Error("Quiz format is invalid. Please try again.");
-      }
+      const payload = await readQuizPayload(response);
 
       setQuizData(payload);
-      setSelectedAnswers(Array(payload.questions.length).fill(-1));
+      setQuizTargetCount(targetQuestionCount);
+      setSelectedAnswers(Array(targetQuestionCount).fill(-1));
+      setFirstQuestionLoadMs(Math.round(performance.now() - generationStartedAt));
       setTimeLeft(30);
       setTimerActive(true);
+
+      if (shouldUseProceduralQuiz && payload.questions.length < targetQuestionCount) {
+        void fillQuizInBackground({
+          book,
+          resolvedBookLevel,
+          learningGoal,
+          initialQuiz: payload,
+          targetCount: targetQuestionCount,
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -565,7 +694,8 @@ function QuizPageContent() {
     }
     setSelectedChoice(choiceIndex);
     setSelectedAnswers((current) => {
-      const next = quizData.questions.map((_, index) => current[index] ?? -1);
+      const answerCount = quizTargetCount || quizData.questions.length;
+      const next = Array.from({ length: answerCount }, (_, index) => current[index] ?? -1);
       next[currentQuestion] = choiceIndex;
       return next;
     });
@@ -574,10 +704,17 @@ function QuizPageContent() {
 
   const handleNext = () => {
     if (!quizData) return;
+    const targetCount = quizTargetCount || quizData.questions.length;
 
-    if (currentQuestion + 1 >= quizData.questions.length) {
+    if (currentQuestion + 1 >= targetCount) {
       setCompleted(true);
       saveResult();
+      return;
+    }
+
+    if (currentQuestion + 1 >= quizData.questions.length) {
+      setIsWaitingForQuestion(true);
+      setTimerActive(false);
       return;
     }
 
@@ -882,9 +1019,15 @@ function QuizPageContent() {
           <h2>{quizData.quizTitle}</h2>
           <p>{quizData.quizDescription}</p>
           <div className="quiz-status">
-            <span>Question {currentQuestion + 1} of {quizData.questions.length}</span>
+            <span>Question {currentQuestion + 1} of {quizDisplayTotal}</span>
             <span>Correct answers: {score} / {maxScore}</span>
+            {firstQuestionLoadMs !== null ? <span>First question ready in {(firstQuestionLoadMs / 1000).toFixed(1)}s</span> : null}
           </div>
+          {isFillingQuiz || quizGenerationStatus ? (
+            <div className="notice" role="status" aria-live="polite">
+              {quizGenerationStatus || "Preparing the next questions..."}
+            </div>
+          ) : null}
 
           <div className="question-card">
             {focusLost && (
@@ -901,6 +1044,16 @@ function QuizPageContent() {
                 />
               </div>
             </div>
+            {isWaitingForQuestion || !quizData.questions[currentQuestion] ? (
+              <div className="quiz-loading-panel" role="status" aria-live="polite">
+                <div className="quiz-loading-spinner" aria-hidden="true" />
+                <div>
+                  <strong>Preparing the next question...</strong>
+                  <p>The quiz is checking that it has not repeated an idea.</p>
+                </div>
+              </div>
+            ) : (
+              <>
             <h3>{quizData.questions[currentQuestion].question}</h3>
             <div className="choice-grid">
               {quizData.questions[currentQuestion].choices.map((choice, index) => {
@@ -922,8 +1075,10 @@ function QuizPageContent() {
                 );
               })}
             </div>
+              </>
+            )}
 
-            {selectedChoice !== null ? (
+            {selectedChoice !== null && quizData.questions[currentQuestion] ? (
               <div className="answer-feedback">
                 {selectedChoice === quizData.questions[currentQuestion].answerIndex ? (
                   <p>Great job! That answer is correct.</p>
@@ -935,7 +1090,7 @@ function QuizPageContent() {
                   </p>
                 )}
                 <button type="button" onClick={handleNext}>
-                  {currentQuestion + 1 === quizData.questions.length ? "Finish quiz" : "Next question"}
+                  {currentQuestion + 1 === quizDisplayTotal ? "Finish quiz" : "Next question"}
                 </button>
               </div>
             ) : null}

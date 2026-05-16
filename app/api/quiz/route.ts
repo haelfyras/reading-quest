@@ -58,7 +58,7 @@ const prompt = (
     ? `\n\nThis is section ${section.number} of ${section.total}. Create exactly ${questionCount} new questions for this section only. Do not repeat these earlier questions: ${section.previousQuestions.length ? section.previousQuestions.map((question) => `"${question}"`).join("; ") : "none"}.`
     : "";
 
-  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. The questions array must contain exactly ${questionCount} complete question objects. Do not return fewer than ${questionCount}. Each question must have: question, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation.\n\nCanonical book to quiz: ${bookIdentity}. Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}.${qualityNotes ? `\n\nCritical book guardrails:\n${qualityNotes}` : ""}\n\n${answerChoiceContract}\n\nRules:\n- Use only the exact book above, not films, soundtracks, games, adaptations, sequels, prequels, or other series installments.\n- If a fact may come from another book in the series or a movie adaptation, do not use it.\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the exact book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Avoid "what potion/item/spell" questions unless the exact book clearly names it.\n- Easy = simple title/character/obvious-event questions.\n- Medium = details, roles, setting, conflict, motivation, cause/effect.\n- Hard = inference, theme, symbolism, context, subtle motivation, relationships, consequences, or comparisons, written for children through high school.\n- Choices must be plausible and fit the exact book, but only one can be correct.\n- Before returning, privately test each wrong choice by asking: "Could this also be correct?" If yes, replace it.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the exact book.\n- Use child-friendly language for ages 7-18.\n- Silently count the questions before returning JSON and make sure there are exactly ${questionCount}.${sectionInstruction}`;
+  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. The questions array must contain exactly ${questionCount} complete question objects. Do not return fewer than ${questionCount}. Each question must have: question, questionKey, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation.\n\nCanonical book to quiz: ${bookIdentity}. Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}.${qualityNotes ? `\n\nCritical book guardrails:\n${qualityNotes}` : ""}\n\n${answerChoiceContract}\n\nRules:\n- questionKey must be a short lowercase semantic key for the question idea, like "frodo-sam-trust" or "rohan-aid-reason".\n- Use only the exact book above, not films, soundtracks, games, adaptations, sequels, prequels, or other series installments.\n- If a fact may come from another book in the series or a movie adaptation, do not use it.\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the exact book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Avoid "what potion/item/spell" questions unless the exact book clearly names it.\n- Easy = simple title/character/obvious-event questions.\n- Medium = details, roles, setting, conflict, motivation, cause/effect.\n- Hard = inference, theme, symbolism, context, subtle motivation, relationships, consequences, or comparisons, written for children through high school.\n- Choices must be plausible and fit the exact book, but only one can be correct.\n- Before returning, privately test each wrong choice by asking: "Could this also be correct?" If yes, replace it.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the exact book.\n- Use child-friendly language for ages 7-18.\n- Silently count the questions before returning JSON and make sure there are exactly ${questionCount}.${sectionInstruction}`;
 };
 
 function describeBook(book: BookDetails) {
@@ -94,7 +94,7 @@ const hardPrompt = (book: BookDetails, bookLevel: string, learningGoal: string, 
 
   return `Return only valid compact JSON with this exact shape:
 {"quizTitle": string, "quizDescription": string, "questions": [
-{"question": string, "choices": [string, string, string, string], "answerIndex": number, "answerText": string, "explanation": string}
+{"question": string, "questionKey": string, "choices": [string, string, string, string], "answerIndex": number, "answerText": string, "explanation": string}
 ]}
 
 Create exactly 20 hard questions for this canonical book only: ${bookIdentity}. The book reading level is ${bookLevel}. Testing goal: ${goalDescription}.
@@ -111,6 +111,7 @@ Question plan:
 Rules:
 - The questions array must contain exactly 20 complete objects.
 - Do not return fewer than 20 questions.
+- questionKey must be a short lowercase semantic key for the question idea.
 - ${answerChoiceContract.replace(/\n/g, "\n- ")}
 - Use only the exact book named above, not films, soundtracks, adaptations, sequels, prequels, or other books in a series.
 - If a fact may come from another series installment or movie adaptation, do not use it.
@@ -154,9 +155,10 @@ Focus only on: ${section.focus}.
 Book level: ${bookLevel}. Testing goal: ${goalDescription}.
 ${qualityNotes ? `\nCritical book guardrails:\n- ${qualityNotes}\n` : ""}
 
-Each question object must have: question, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation.
+Each question object must have: question, questionKey, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation.
 Rules:
 - The questions array must contain exactly ${section.count} complete objects.
+- questionKey must be a short lowercase semantic key for the question idea.
 - ${answerChoiceContract.replace(/\n/g, "\n- ")}
 - Use only the exact book named above, not films, soundtracks, adaptations, sequels, prequels, or other books in a series.
 - If a fact may come from another series installment or movie adaptation, do not use it.
@@ -180,12 +182,22 @@ type GeneratedQuestion = {
   answerIndex?: unknown;
   answerText?: unknown;
   explanation?: unknown;
+  questionKey?: unknown;
 };
 
 type GeneratedQuiz = {
   quizTitle?: unknown;
   quizDescription?: unknown;
   questions?: unknown;
+};
+
+type ProceduralBatch = {
+  batchNumber: number;
+  batchSize: number;
+  focus: string;
+  totalQuestions: number;
+  existingQuestionKeys: string[];
+  existingQuestions: string[];
 };
 
 const colorWords = [
@@ -209,6 +221,26 @@ function normalizeText(value: string) {
   return value.trim().toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ");
 }
 
+function toQuestionKey(value: string) {
+  return normalizeText(value)
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 10)
+    .join("-");
+}
+
+function getQuestionIdeaKey(question: GeneratedQuestion) {
+  if (typeof question.questionKey === "string" && question.questionKey.trim()) {
+    return toQuestionKey(question.questionKey);
+  }
+
+  if (typeof question.question === "string") {
+    return toQuestionKey(question.question);
+  }
+
+  return "";
+}
+
 function hasOverlappingChoices(choices: string[]) {
   const normalized = choices.map(normalizeText).filter(Boolean);
   if (new Set(normalized).size !== normalized.length) {
@@ -223,6 +255,23 @@ function hasOverlappingChoices(choices: string[]) {
       (choice.includes(other) || other.includes(choice)),
     ),
   );
+}
+
+function hasDuplicateQuestionIdeas(questions: ReturnType<typeof normalizeQuiz>["questions"]) {
+  const seenKeys = new Set<string>();
+  const seenQuestions = new Set<string>();
+
+  for (const question of questions) {
+    const key = typeof question.questionKey === "string" ? toQuestionKey(question.questionKey) : "";
+    const normalizedQuestion = normalizeText(String(question.question ?? ""));
+    if (!key || seenKeys.has(key) || seenQuestions.has(normalizedQuestion)) {
+      return true;
+    }
+    seenKeys.add(key);
+    seenQuestions.add(normalizedQuestion);
+  }
+
+  return false;
 }
 
 function countColorsInTitle(bookTitle: string) {
@@ -285,6 +334,7 @@ function normalizeQuiz(rawQuiz: GeneratedQuiz, book: BookDetails, questionCount:
 
     return {
       question,
+      questionKey: getQuestionIdeaKey(generatedQuestion),
       choices,
       answerIndex,
       answerText: choices[answerIndex],
@@ -317,6 +367,17 @@ function parseJsonObject(text: string) {
     }
     return JSON.parse(jsonMatch[0]);
   }
+}
+
+function getSafeGenerationError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (/api key|unauthorized|authentication|401/i.test(message)) {
+    return "Quiz generation is not available because the API key is not authorized.";
+  }
+  if (/connection error|network|fetch failed/i.test(message)) {
+    return "Quiz generation could not connect to the AI service. Please try again.";
+  }
+  return message || "Quiz generation returned invalid JSON. Please try again.";
 }
 
 async function reviewQuizWithModel(
@@ -369,7 +430,8 @@ function isValidQuiz(quizData: ReturnType<typeof normalizeQuiz>, questionCount: 
         answerIndex >= 0 &&
         answerIndex < 4
       );
-    })
+    }) &&
+    !hasDuplicateQuestionIdeas(quizData.questions)
   );
 }
 
@@ -461,6 +523,170 @@ async function generateHardQuiz(details: {
   return quizData;
 }
 
+function getProceduralPlan(difficulty: string) {
+  if (difficulty === "hard") {
+    return [
+      { batchNumber: 1, batchSize: 4, focus: "character motivation and relationships" },
+      { batchNumber: 2, batchSize: 4, focus: "cause and effect from major events" },
+      { batchNumber: 3, batchSize: 4, focus: "themes, lessons, and symbols" },
+      { batchNumber: 4, batchSize: 4, focus: "conflict, consequences, and choices" },
+      { batchNumber: 5, batchSize: 4, focus: "bigger-picture meaning and comparisons" },
+    ];
+  }
+
+  if (difficulty === "medium") {
+    return [
+      { batchNumber: 1, batchSize: 3, focus: "important characters, places, and clear events" },
+      { batchNumber: 2, batchSize: 4, focus: "conflict, motivations, and cause and effect" },
+      { batchNumber: 3, batchSize: 3, focus: "story details and consequences" },
+    ];
+  }
+
+  return [
+    { batchNumber: 1, batchSize: 5, focus: "simple characters, settings, and obvious story events" },
+  ];
+}
+
+function getNextProceduralBatch(difficulty: string, generatedCount: number) {
+  let remaining = generatedCount;
+  return getProceduralPlan(difficulty).find((batch) => {
+    if (remaining < batch.batchSize) {
+      return true;
+    }
+    remaining -= batch.batchSize;
+    return false;
+  });
+}
+
+function proceduralPrompt(details: {
+  book: BookDetails;
+  difficulty: string;
+  bookLevel: string;
+  learningGoal: string;
+  qualityNotes: string;
+  batch: ProceduralBatch;
+}) {
+  const goalDescription = goalMap[details.learningGoal] || goalMap.basic_recollection;
+  const bookIdentity = describeBook(details.book);
+  const existingKeys = details.batch.existingQuestionKeys.length
+    ? details.batch.existingQuestionKeys.map((key) => `"${key}"`).join(", ")
+    : "none";
+  const existingQuestions = details.batch.existingQuestions.length
+    ? details.batch.existingQuestions.map((question) => `"${question}"`).join("; ")
+    : "none";
+
+  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}.
+Create exactly ${details.batch.batchSize} questions for this canonical book only: ${bookIdentity}.
+This is batch ${details.batch.batchNumber} for a ${details.batch.totalQuestions}-question ${details.difficulty} quiz.
+Batch focus: ${details.batch.focus}.
+Book level: ${details.bookLevel}. Testing goal: ${goalDescription}.
+${details.qualityNotes ? `\nCritical book guardrails:\n- ${details.qualityNotes}\n` : ""}
+
+Each question object must have: question, questionKey, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation.
+
+Already used question keys: ${existingKeys}.
+Already used question wording: ${existingQuestions}.
+
+Rules:
+- The questions array must contain exactly ${details.batch.batchSize} complete objects.
+- questionKey must be a short lowercase semantic key for the question idea.
+- Do not reuse or rephrase any used question key, question idea, event focus, or wording.
+- ${answerChoiceContract.replace(/\n/g, "\n- ")}
+- Use only the exact book named above, not films, soundtracks, games, adaptations, sequels, prequels, or other books in a series.
+- If a fact may come from another series installment or movie adaptation, do not use it.
+- Keep each question under 18 words.
+- Keep each choice under 7 words.
+- Keep each explanation under 14 words.
+- Avoid obscure trivia, trick questions, and impossible questions.
+- Avoid "what potion/item/spell" questions unless the exact book clearly names it.
+- Each answer must be clearly correct from the book.
+- Each wrong answer must fit the exact book's world and style, but must be clearly false for this exact question.
+- Before returning, privately test each wrong choice by asking: "Could this also be correct?" If yes, replace it.
+- answerIndex must point to answerText exactly.
+- Use child-friendly language for ages 7-18.
+- Return JSON only.`;
+}
+
+async function generateProceduralBatch(details: {
+  book: BookDetails;
+  difficulty: string;
+  bookLevel: string;
+  learningGoal: string;
+  questionCount: number;
+  qualityNotes: string;
+  generatedCount: number;
+  existingQuestionKeys: string[];
+  existingQuestions: string[];
+}) {
+  const planBatch = getNextProceduralBatch(details.difficulty, details.generatedCount);
+  if (!planBatch) {
+    throw new Error("Quiz is already complete.");
+  }
+
+  const remaining = Math.max(0, details.questionCount - details.generatedCount);
+  const batch: ProceduralBatch = {
+    ...planBatch,
+    batchSize: Math.min(planBatch.batchSize, remaining),
+    totalQuestions: details.questionCount,
+    existingQuestionKeys: details.existingQuestionKeys.map(toQuestionKey).filter(Boolean),
+    existingQuestions: details.existingQuestions.filter(Boolean),
+  };
+
+  const response = await openai.chat.completions.create({
+    model: quizModel,
+    max_tokens: Math.max(1300, batch.batchSize * 380),
+    messages: [
+      {
+        role: "system",
+        content: "You are a careful reading teacher. Create accurate quiz questions for the exact named book only. Return only valid JSON.",
+      },
+      {
+        role: "user",
+        content: proceduralPrompt({ ...details, batch }),
+      },
+    ],
+  });
+
+  const text = response.choices?.[0]?.message?.content ?? "";
+  const quiz = normalizeQuiz(parseJsonObject(text.trim()), details.book, batch.batchSize);
+  const reviewedQuiz = await reviewQuizWithModel(quiz, {
+    book: details.book,
+    difficulty: details.difficulty,
+    bookLevel: details.bookLevel,
+    learningGoal: details.learningGoal,
+    questionCount: batch.batchSize,
+    qualityNotes: details.qualityNotes,
+  });
+
+  const existingKeys = new Set(batch.existingQuestionKeys);
+  const existingQuestionText = new Set(batch.existingQuestions.map(normalizeText));
+  const filteredQuestions = reviewedQuiz.questions.filter((question) => {
+    const key = toQuestionKey(String(question.questionKey ?? ""));
+    const textKey = normalizeText(String(question.question ?? ""));
+    if (!key || existingKeys.has(key) || existingQuestionText.has(textKey)) {
+      return false;
+    }
+    existingKeys.add(key);
+    existingQuestionText.add(textKey);
+    return true;
+  });
+
+  const quizData = {
+    ...reviewedQuiz,
+    questions: filteredQuestions.slice(0, batch.batchSize),
+  };
+
+  if (!isValidQuiz(quizData, batch.batchSize)) {
+    throw new Error("Quiz generation returned an incomplete batch. Please try again.");
+  }
+
+  return {
+    quiz: quizData,
+    batch,
+    plan: getProceduralPlan(details.difficulty),
+  };
+}
+
 export async function POST(request: Request) {
   const body = await request.json();
   const bookTitle = String(body.bookTitle || "").trim();
@@ -472,6 +698,14 @@ export async function POST(request: Request) {
   const bookLevel = String(body.bookLevel || "intermediate");
   const learningGoal = String(body.learningGoal || "basic_recollection");
   const questionCount = getQuestionCount(difficulty);
+  const mode = String(body.mode || "full");
+  const generatedCount = Number(body.generatedCount || 0);
+  const existingQuestionKeys = Array.isArray(body.existingQuestionKeys)
+    ? body.existingQuestionKeys.map((key: unknown) => String(key))
+    : [];
+  const existingQuestions = Array.isArray(body.existingQuestions)
+    ? body.existingQuestions.map((question: unknown) => String(question))
+    : [];
 
   if (!bookTitle) {
     return new NextResponse("Book title is required.", { status: 400 });
@@ -495,6 +729,34 @@ export async function POST(request: Request) {
     );
   }
 
+  if (mode === "procedural_starter" || mode === "procedural_next") {
+    try {
+      const startedAt = Date.now();
+      const batchData = await generateProceduralBatch({
+        book,
+        difficulty,
+        bookLevel,
+        learningGoal,
+        questionCount,
+        qualityNotes,
+        generatedCount,
+        existingQuestionKeys,
+        existingQuestions,
+      });
+      return NextResponse.json({
+        ...batchData,
+        totalQuestions: questionCount,
+        complete: generatedCount + batchData.quiz.questions.length >= questionCount,
+        generationMs: Date.now() - startedAt,
+      });
+    } catch (error) {
+      return NextResponse.json(
+        { error: getSafeGenerationError(error) },
+        { status: 502 },
+      );
+    }
+  }
+
   let quizData: ReturnType<typeof normalizeQuiz>;
   try {
     quizData = questionCount > 10
@@ -502,7 +764,7 @@ export async function POST(request: Request) {
       : await generateQuizSection({ book, difficulty, bookLevel, learningGoal, questionCount, qualityNotes });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Quiz generation returned invalid JSON. Please try again." },
+      { error: getSafeGenerationError(error) },
       { status: 502 },
     );
   }

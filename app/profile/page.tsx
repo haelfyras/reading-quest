@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   addFriendContact,
-  avatarStyles,
   childConfirmParentRequest,
   createParentVerificationRequest,
   enterParentVerificationCode,
@@ -19,13 +18,25 @@ import {
   updateProfile,
 } from "../../lib/user";
 import { betaConfig } from "../../lib/beta";
+import {
+  clothingColorOptions,
+  hairColorOptions,
+  parseAvatarSelection,
+  serializeAvatarSelection,
+  skinToneOptions,
+  type AvatarColor,
+  type AvatarSkinTone,
+} from "../../lib/avatar";
+import AvatarCanvas from "../components/AvatarCanvas";
 
 export default function ProfilePage() {
   const router = useRouter();
   const [user, setUser] = useState<Profile | null>(null);
   const [realName, setRealName] = useState("");
   const [phone, setPhone] = useState("");
-  const [avatarStyle, setAvatarStyle] = useState("Explorer");
+  const [avatarSkinTone, setAvatarSkinTone] = useState<AvatarSkinTone>("default");
+  const [avatarHairColor, setAvatarHairColor] = useState<AvatarColor>("default");
+  const [avatarClothingColor, setAvatarClothingColor] = useState<AvatarColor>("default");
   const [profileMessage, setProfileMessage] = useState("");
   const [friendName, setFriendName] = useState("");
   const [friendEmail, setFriendEmail] = useState("");
@@ -53,7 +64,10 @@ export default function ProfilePage() {
     setUser(profile);
     setRealName(profile.realName || "");
     setPhone(profile.phone || "");
-    setAvatarStyle(profile.avatarStyle || "Explorer");
+    const avatar = parseAvatarSelection(profile.avatarStyle);
+    setAvatarSkinTone(avatar.skinTone);
+    setAvatarHairColor(avatar.hairColor);
+    setAvatarClothingColor(avatar.clothingColor);
     try {
       const databaseRequests = await loadDatabaseRequests(profile);
       setRequests(databaseRequests);
@@ -80,7 +94,12 @@ export default function ProfilePage() {
       ...user,
       realName: user.isParent ? realName.trim() : user.realName,
       phone: betaConfig.phoneCollectionEnabled ? phone.trim() : user.phone,
-      avatarStyle,
+      avatarStyle: serializeAvatarSelection({
+        characterId: "wizard",
+        skinTone: avatarSkinTone,
+        hairColor: avatarHairColor,
+        clothingColor: avatarClothingColor,
+      }),
     });
     setUser(updated);
     setProfileMessage("Profile saved.");
@@ -301,11 +320,87 @@ export default function ProfilePage() {
             <input id="phone" value={phone} onChange={(event) => setPhone(event.target.value)} />
           </div>
         ) : null}
-        <div className="field">
-          <label htmlFor="avatarStyle">Reader identity</label>
-          <select id="avatarStyle" value={avatarStyle} onChange={(event) => setAvatarStyle(event.target.value)}>
-            {avatarStyles.map((style) => <option key={style} value={style}>{style}</option>)}
-          </select>
+        <div className="avatar-picker" aria-labelledby="avatar-heading">
+          <div className="section-header-row">
+            <div>
+              <h3 id="avatar-heading">Avatar</h3>
+              <p>Choose a Wizard companion for your reading journey.</p>
+            </div>
+            <span className="badge-pill">Wizard</span>
+          </div>
+
+          <div className="avatar-preview-shell">
+            <AvatarCanvas
+              skinTone={avatarSkinTone}
+              hairColor={avatarHairColor}
+              clothingColor={avatarClothingColor}
+              className="avatar-preview-canvas"
+            />
+            <div>
+              <strong>Wizard</strong>
+              <p className="setting-description">
+                Skin, hair, and clothing colors update from the keyed sprite palette.
+              </p>
+            </div>
+          </div>
+
+          <div className="avatar-swatch-section">
+            <strong>Skin tone</strong>
+            <div className="avatar-swatch-row" role="group" aria-label="Skin tone">
+              {skinToneOptions.map((tone) => (
+                <button
+                  key={tone.id}
+                  type="button"
+                  className={avatarSkinTone === tone.id ? "avatar-swatch selected" : "avatar-swatch"}
+                  onClick={() => setAvatarSkinTone(tone.id)}
+                  aria-pressed={avatarSkinTone === tone.id}
+                >
+                  <span style={{ background: tone.color }} />
+                  {tone.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="avatar-swatch-section">
+            <strong>Hair color</strong>
+            <div className="avatar-swatch-row" role="group" aria-label="Hair color">
+              {hairColorOptions.map((color) => (
+                <button
+                  key={color.id}
+                  type="button"
+                  className={avatarHairColor === color.id ? "avatar-swatch selected" : "avatar-swatch"}
+                  onClick={() => setAvatarHairColor(color.id)}
+                  aria-pressed={avatarHairColor === color.id}
+                >
+                  <span style={{ background: color.color }} />
+                  {color.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="avatar-swatch-section">
+            <strong>Clothing color</strong>
+            <div className="avatar-swatch-row" role="group" aria-label="Clothing color">
+              {clothingColorOptions.map((color) => (
+                <button
+                  key={color.id}
+                  type="button"
+                  className={avatarClothingColor === color.id ? "avatar-swatch selected" : "avatar-swatch"}
+                  onClick={() => setAvatarClothingColor(color.id)}
+                  aria-pressed={avatarClothingColor === color.id}
+                >
+                  <span style={{ background: color.color }} />
+                  {color.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <p className="setting-description">
+            This is a test run for palette-swapped avatars and will stay local until we are ready to push it.
+          </p>
         </div>
         <button type="button" onClick={saveProfile}>Save Profile</button>
         {profileMessage ? <div className="success-box">{profileMessage}</div> : null}
