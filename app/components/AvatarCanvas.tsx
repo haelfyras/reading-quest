@@ -38,7 +38,11 @@ function clamp(value: number) {
 
 function makeShadePalette(baseHex: string, steps: number) {
   const base = hexToRgb(baseHex);
-  const factors = steps === 4 ? [1.42, 1, 0.68, 0.38] : [1.28, 1, 0.58];
+  const factors = steps >= 6
+    ? [1.55, 1.32, 1.1, 0.88, 0.62, 0.36]
+    : steps === 4
+      ? [1.34, 1.05, 0.76, 0.5]
+      : [1.28, 1, 0.58];
   return factors.map((factor) => ({
     r: clamp(base.r * factor),
     g: clamp(base.g * factor),

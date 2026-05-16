@@ -17,9 +17,9 @@ export type AvatarSwatch<T extends string> = {
 export const wizardTemplateImage = "/characters/wizard/wizard-1-template-keyed.png";
 
 export const sourceAvatarPalettes = {
-  hair: ["#7DE0D4", "#3CB8AE", "#1B6E68"],
-  skin: ["#FFD7B6", "#E8A87C", "#B46A42"],
-  clothing: ["#B499E6", "#7A4AC7", "#4A2D8F", "#221455"],
+  hair: ["#7DE0D4", "#3CB8AE", "#1B6E68", "#0F4542"],
+  skin: ["#FFD7B6", "#E8A87C", "#B46A42", "#7A4327"],
+  clothing: ["#C7B1F4", "#B499E6", "#956FE0", "#7A4AC7", "#4A2D8F", "#221455"],
 } as const;
 
 export const skinToneOptions: Array<AvatarSwatch<AvatarSkinTone>> = [

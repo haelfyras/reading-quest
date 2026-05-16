@@ -1905,7 +1905,7 @@ tr:hover {
 .avatar-preview-canvas {
   width: 100%;
   max-width: 220px;
-  aspect-ratio: 1086 / 1448;
+  aspect-ratio: 440 / 632;
   border-radius: 8px;
   object-fit: contain;
   image-rendering: pixelated;
