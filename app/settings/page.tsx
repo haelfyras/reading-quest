@@ -20,7 +20,7 @@ export default function SettingsPage() {
   const [darkMode, setDarkMode] = useState(false);
   const [fontSize, setFontSize] = useState(16);
   const [theme, setTheme] = useState("library");
-  const [panelOpacity, setPanelOpacity] = useState(90);
+  const [panelOpacity, setPanelOpacity] = useState(80);
   const [leaderboardPrivate, setLeaderboardPrivate] = useState(false);
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>("free");
   const [settingsMessage, setSettingsMessage] = useState("");
@@ -39,12 +39,12 @@ export default function SettingsPage() {
     const savedFontSize = parseInt(localStorage.getItem("readingQuestFontSize") || "16", 10);
     const savedTheme = normalizeTheme(localStorage.getItem("readingQuestTheme"));
     const savedPanelOpacity = parseInt(
-      localStorage.getItem("readingQuestPanelOpacity") || localStorage.getItem("readingQuestFantasyPanelOpacity") || "90",
+      localStorage.getItem("readingQuestPanelOpacity") || localStorage.getItem("readingQuestFantasyPanelOpacity") || "80",
       10
     );
     const safePanelOpacity = Number.isFinite(savedPanelOpacity)
-      ? Math.min(96, Math.max(84, savedPanelOpacity))
-      : 90;
+      ? Math.min(100, Math.max(20, savedPanelOpacity))
+      : 80;
 
     setDarkMode(savedDarkMode);
     setFontSize(savedFontSize);
@@ -82,7 +82,7 @@ export default function SettingsPage() {
   };
 
   const applyPanelOpacity = (opacity: number) => {
-    const safeOpacity = Number.isFinite(opacity) ? Math.min(96, Math.max(84, opacity)) : 90;
+    const safeOpacity = Number.isFinite(opacity) ? Math.min(100, Math.max(20, opacity)) : 80;
     document.documentElement.style.setProperty("--theme-panel-opacity", `${safeOpacity / 100}`);
     localStorage.setItem("readingQuestPanelOpacity", safeOpacity.toString());
   };
@@ -215,14 +215,14 @@ export default function SettingsPage() {
             <input
               id="panelOpacity"
               type="range"
-              min="84"
-              max="96"
+              min="20"
+              max="100"
               value={panelOpacity}
               onChange={handlePanelOpacityChange}
               className="font-size-slider"
             />
             <p className="setting-description">
-              Lower values reveal more of the theme artwork. The range is capped so buttons and text stay readable.
+              Lower values reveal more of the theme artwork. Increase opacity when you want a calmer, easier-to-read page.
             </p>
           </div>
         </div>

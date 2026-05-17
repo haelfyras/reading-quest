@@ -23,9 +23,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 const theme = ['fantasy', 'sci-fi', 'spooky', 'library'].includes(normalizedTheme || '') ? normalizedTheme : 'library';
                 const darkMode = localStorage.getItem('readingQuestDarkMode') === 'true';
                 const fontSize = localStorage.getItem('readingQuestFontSize') || '16';
-                const panelOpacity = localStorage.getItem('readingQuestPanelOpacity') || localStorage.getItem('readingQuestFantasyPanelOpacity') || '90';
+                const panelOpacity = localStorage.getItem('readingQuestPanelOpacity') || localStorage.getItem('readingQuestFantasyPanelOpacity') || '80';
                 const parsedPanelOpacity = Number(panelOpacity);
-                const safePanelOpacity = Number.isFinite(parsedPanelOpacity) ? Math.min(96, Math.max(84, parsedPanelOpacity)) : 90;
+                const safePanelOpacity = Number.isFinite(parsedPanelOpacity) ? Math.min(100, Math.max(20, parsedPanelOpacity)) : 80;
                 document.documentElement.setAttribute('data-theme-style', theme);
                 document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
                 document.documentElement.style.setProperty('--font-size-base', fontSize + 'px');

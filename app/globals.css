@@ -21,7 +21,7 @@
   --warning: #a35b00;
   --shadow: 0 22px 70px rgba(70, 38, 16, 0.18);
   --radius: 8px;
-  --theme-panel-opacity: 0.9;
+  --theme-panel-opacity: 0.8;
   background: var(--page-bg);
   color: var(--text);
 }
