@@ -174,68 +174,6 @@ body {
   color: var(--text);
 }
 
-[data-theme-style="fantasy"] body,
-[data-theme-style="sci-fi"] body,
-[data-theme-style="spooky"] body,
-[data-theme-style="horror"] body,
-[data-theme-style="library"] body {
-  background-color: var(--page-bg);
-  background-size: cover, cover;
-  background-position: center top, center top;
-  background-repeat: no-repeat, no-repeat;
-  background-attachment: fixed, fixed;
-}
-
-[data-theme-style="fantasy"] body {
-  background-image:
-    linear-gradient(rgba(55, 38, 16, 0.1), rgba(55, 38, 16, 0.34)),
-    url("/backgrounds/fantasy-back.png");
-}
-
-[data-theme="dark"][data-theme-style="fantasy"] body {
-  background-image:
-    linear-gradient(rgba(9, 7, 12, 0.38), rgba(9, 7, 12, 0.68)),
-    url("/backgrounds/fantasy-back.png");
-}
-
-[data-theme-style="sci-fi"] body {
-  background-image:
-    linear-gradient(rgba(4, 17, 38, 0.18), rgba(4, 17, 38, 0.48)),
-    url("/backgrounds/sci-fi-back.png");
-}
-
-[data-theme="dark"][data-theme-style="sci-fi"] body {
-  background-image:
-    linear-gradient(rgba(2, 7, 18, 0.34), rgba(2, 7, 18, 0.72)),
-    url("/backgrounds/sci-fi-back.png");
-}
-
-[data-theme-style="spooky"] body,
-[data-theme-style="horror"] body {
-  background-image:
-    linear-gradient(rgba(12, 7, 22, 0.2), rgba(12, 7, 22, 0.52)),
-    url("/backgrounds/spooky-back.png");
-}
-
-[data-theme="dark"][data-theme-style="spooky"] body,
-[data-theme="dark"][data-theme-style="horror"] body {
-  background-image:
-    linear-gradient(rgba(5, 2, 11, 0.36), rgba(5, 2, 11, 0.76)),
-    url("/backgrounds/spooky-back.png");
-}
-
-[data-theme-style="library"] body {
-  background-image:
-    linear-gradient(rgba(37, 24, 9, 0.16), rgba(37, 24, 9, 0.46)),
-    url("/backgrounds/library-back.png");
-}
-
-[data-theme="dark"][data-theme-style="library"] body {
-  background-image:
-    linear-gradient(rgba(5, 8, 6, 0.32), rgba(5, 8, 6, 0.76)),
-    url("/backgrounds/library-back.png");
-}
-
 .app-drawer-toggle {
   position: fixed;
   z-index: 1100;
@@ -640,7 +578,6 @@ button:disabled {
   box-shadow: 0 14px 36px rgba(0, 0, 0, 0.08);
 }
 
-[data-theme-style] main,
 [data-theme-style] .hero-panel,
 [data-theme-style] .quest-panel,
 [data-theme-style] .output,
@@ -656,7 +593,60 @@ button:disabled {
 }
 
 [data-theme-style] main {
-  background: var(--panel);
+  background-color: var(--page-bg);
+  background-size: 100% 100%, 100% auto;
+  background-position: center top, center top;
+  background-repeat: no-repeat, repeat-y;
+}
+
+[data-theme-style="fantasy"] main {
+  background-image:
+    linear-gradient(rgba(55, 38, 16, 0.1), rgba(55, 38, 16, 0.34)),
+    url("/backgrounds/fantasy-back.png");
+}
+
+[data-theme="dark"][data-theme-style="fantasy"] main {
+  background-image:
+    linear-gradient(rgba(9, 7, 12, 0.38), rgba(9, 7, 12, 0.68)),
+    url("/backgrounds/fantasy-back.png");
+}
+
+[data-theme-style="sci-fi"] main {
+  background-image:
+    linear-gradient(rgba(4, 17, 38, 0.18), rgba(4, 17, 38, 0.48)),
+    url("/backgrounds/sci-fi-back.png");
+}
+
+[data-theme="dark"][data-theme-style="sci-fi"] main {
+  background-image:
+    linear-gradient(rgba(2, 7, 18, 0.34), rgba(2, 7, 18, 0.72)),
+    url("/backgrounds/sci-fi-back.png");
+}
+
+[data-theme-style="spooky"] main,
+[data-theme-style="horror"] main {
+  background-image:
+    linear-gradient(rgba(12, 7, 22, 0.2), rgba(12, 7, 22, 0.52)),
+    url("/backgrounds/spooky-back.png");
+}
+
+[data-theme="dark"][data-theme-style="spooky"] main,
+[data-theme="dark"][data-theme-style="horror"] main {
+  background-image:
+    linear-gradient(rgba(5, 2, 11, 0.36), rgba(5, 2, 11, 0.76)),
+    url("/backgrounds/spooky-back.png");
+}
+
+[data-theme-style="library"] main {
+  background-image:
+    linear-gradient(rgba(37, 24, 9, 0.16), rgba(37, 24, 9, 0.46)),
+    url("/backgrounds/library-back.png");
+}
+
+[data-theme="dark"][data-theme-style="library"] main {
+  background-image:
+    linear-gradient(rgba(5, 8, 6, 0.32), rgba(5, 8, 6, 0.76)),
+    url("/backgrounds/library-back.png");
 }
 
 .output,
