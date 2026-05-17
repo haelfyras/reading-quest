@@ -136,6 +136,8 @@ export type ParentControls = {
 
 export type SubscriptionTier = "free" | "ad_free" | "plus";
 
+export type ReadingPath = "explorer" | "genre_adventurer" | "skill_builder";
+
 export type TestingLevel =
   | "habit_formation"
   | "basic_recollection"
@@ -159,6 +161,7 @@ export type Profile = {
   learningGoal?: string;
   favoriteBooks?: string[];
   readingPreferences?: ReadingPreferences;
+  readingPath?: ReadingPath;
   readingNow?: string[];
   readingLogs?: ReadingLog[];
   bookAccess?: Record<string, BookAccessType>;

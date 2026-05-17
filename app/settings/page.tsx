@@ -9,6 +9,7 @@ import {
   getSpentPoints,
   normalizeSubscriptionTier,
   Profile,
+  ReadingPath,
   setCurrentUserId,
   subscriptionPlans,
   SubscriptionTier,
@@ -21,6 +22,7 @@ export default function SettingsPage() {
   const [fontSize, setFontSize] = useState(16);
   const [theme, setTheme] = useState("library");
   const [panelOpacity, setPanelOpacity] = useState(80);
+  const [readingPath, setReadingPath] = useState<ReadingPath>("explorer");
   const [leaderboardPrivate, setLeaderboardPrivate] = useState(false);
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>("free");
   const [settingsMessage, setSettingsMessage] = useState("");
@@ -33,6 +35,7 @@ export default function SettingsPage() {
     if (profile) {
       setLeaderboardPrivate(Boolean(profile.leaderboardPrivate));
       setSubscriptionTier(normalizeSubscriptionTier(profile.subscriptionTier));
+      setReadingPath(profile.readingPath ?? "explorer");
     }
 
     const savedDarkMode = localStorage.getItem("readingQuestDarkMode") === "true";
@@ -109,6 +112,15 @@ export default function SettingsPage() {
     const opacity = parseInt(event.target.value, 10);
     setPanelOpacity(opacity);
     applyPanelOpacity(opacity);
+  };
+
+  const handleReadingPathChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    if (!user) return;
+    const nextPath = event.target.value as ReadingPath;
+    setReadingPath(nextPath);
+    const updated = updateProfile({ ...user, readingPath: nextPath });
+    setUser(updated);
+    setSettingsMessage("Reading path saved.");
   };
 
   const savePrivacyAndPlan = () => {
@@ -224,6 +236,31 @@ export default function SettingsPage() {
             <p className="setting-description">
               Lower values reveal more of the theme artwork. Increase opacity when you want a calmer, easier-to-read page.
             </p>
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <h2>Reading Path</h2>
+          <p className="setting-description">Choose how Reading Quest should shape your book suggestions. This does not change scoring.</p>
+          <div className="field">
+            <label htmlFor="readingPath">Recommendation style</label>
+            <select id="readingPath" value={readingPath} onChange={handleReadingPathChange}>
+              <option value="explorer">Explorer</option>
+              <option value="genre_adventurer">Genre Adventurer</option>
+              <option value="skill_builder">Skill Builder</option>
+            </select>
+          </div>
+          <div className="setting-item">
+            <strong>Explorer</strong>
+            <p className="setting-description">Keeps recommendations close to your favorites, quizzes, and taste quiz answers.</p>
+          </div>
+          <div className="setting-item">
+            <strong>Genre Adventurer</strong>
+            <p className="setting-description">Suggests books outside your usual patterns so you can try new kinds of stories.</p>
+          </div>
+          <div className="setting-item">
+            <strong>Skill Builder</strong>
+            <p className="setting-description">Recommends thoughtful books that teach ideas, build understanding, or invite discussion.</p>
           </div>
         </div>
 

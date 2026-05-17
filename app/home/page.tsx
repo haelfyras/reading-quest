@@ -40,12 +40,17 @@ type PrizeGoal = {
 };
 
 const defaultPrizeGoals: PrizeGoal[] = [
-  { id: "1", name: "Buy a New Book", pointsRequired: 100 },
-  { id: "2", name: "TV/Movie Time", pointsRequired: 250 },
-  { id: "3", name: "Buy a New Toy", pointsRequired: 500 },
-  { id: "4", name: "Library Trip", pointsRequired: 750 },
-  { id: "5", name: "Special Badge", pointsRequired: 1000 },
+  { id: "1", name: "Buy a New Book", pointsRequired: 50 },
+  { id: "2", name: "Extra Screen Time", pointsRequired: 200 },
+  { id: "3", name: "New Toy", pointsRequired: 500 },
+  { id: "4", name: "New Game", pointsRequired: 1000 },
 ];
+
+const readingPathLabels = {
+  explorer: "Explorer",
+  genre_adventurer: "Genre Adventurer",
+  skill_builder: "Skill Builder",
+};
 
 export default function HomePage() {
   const router = useRouter();
@@ -118,6 +123,7 @@ export default function HomePage() {
   const prizeProgressPercent = Math.min(100, (currentPoints / progressMax) * 100);
   const reachedPrizeCount = sortedPrizeGoals.filter((goal) => currentPoints >= goal.pointsRequired).length;
   const recommendationData = useMemo(() => buildRecommendations({ profile: currentUser, limit: 1 }), [currentUser]);
+  const readingPath = currentUser?.readingPath ?? "explorer";
   const currentlyReading = currentUser?.readingNow?.[0] ?? recentTitle(currentUser);
   const hasReadingInterests = Boolean(
     currentUser?.favoriteBooks?.filter(Boolean).length ||
@@ -226,7 +232,7 @@ export default function HomePage() {
         <div className="section-header-row">
           <div>
             <h2 id="path-heading">Reading Path</h2>
-            <p>Explorer mode is active.</p>
+            <p>{readingPathLabels[readingPath]} path is active.</p>
           </div>
           <Link href="/my-books">
             <button type="button" className="secondary">My Books</button>

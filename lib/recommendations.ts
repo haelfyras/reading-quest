@@ -15,6 +15,12 @@ type RecommendationResult = {
   updatedLabel: string;
 };
 
+const pathLabels = {
+  explorer: "Explorer",
+  genre_adventurer: "Genre Adventurer",
+  skill_builder: "Skill Builder",
+};
+
 const fallbackTitles = [
   "Matilda",
   "Charlotte's Web",
@@ -109,6 +115,36 @@ const suggestionPools: Record<string, string[]> = {
     "The Wild Soccer Bunch",
     "Jake Maddox: Soccer Shootout",
   ],
+  "thoughtful stories": [
+    "Wonder",
+    "The Giver",
+    "Number the Stars",
+    "A Long Walk to Water",
+    "Bridge to Terabithia",
+    "Esperanza Rising",
+    "The Watsons Go to Birmingham - 1963",
+    "Inside Out and Back Again",
+  ],
+  "knowledge builders": [
+    "Hidden Figures: Young Readers' Edition",
+    "The Boy Who Harnessed the Wind: Young Readers Edition",
+    "Who Was Marie Curie?",
+    "What If You Had Animal Teeth?",
+    "The Way Things Work Now",
+    "Tracking Trash",
+    "The Story of Ruby Bridges",
+    "Ada Twist, Scientist",
+  ],
+  "problem solvers": [
+    "The Mysterious Benedict Society",
+    "Escape from Mr. Lemoncello's Library",
+    "Chasing Vermeer",
+    "Frindle",
+    "The Westing Game",
+    "The Invention of Hugo Cabret",
+    "The Wild Robot",
+    "The City of Ember",
+  ],
   "great stories": fallbackTitles,
 };
 
@@ -201,6 +237,10 @@ function getSourceText(categoryList: string[], categorySources: Map<string, Set<
   return `your ${orderedSources.slice(0, -1).join(", ")} and ${orderedSources[orderedSources.length - 1]}`;
 }
 
+function getPath(profile?: Profile | null) {
+  return profile?.readingPath ?? "explorer";
+}
+
 export function getBookRecommendations({
   profile,
   favoriteBooks = [],
@@ -235,7 +275,23 @@ export function getBookRecommendations({
   const rankedCategories = Array.from(categoryScores.entries())
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([category]) => category);
-  const categoryList = rankedCategories.slice(0, 3);
+  const usualCategories = rankedCategories.slice(0, 3);
+  const readingPath = getPath(profile);
+  const categoryList = (() => {
+    if (readingPath === "genre_adventurer") {
+      const usual = new Set(usualCategories);
+      const outsideUsual = Object.keys(suggestionPools)
+        .filter((category) => category !== "great stories" && !category.startsWith("thoughtful") && !category.startsWith("knowledge") && !category.startsWith("problem"))
+        .filter((category) => !usual.has(category));
+      return rotate(outsideUsual.length ? outsideUsual : usualCategories, seed).slice(0, 3);
+    }
+
+    if (readingPath === "skill_builder") {
+      return ["thoughtful stories", "knowledge builders", "problem solvers"];
+    }
+
+    return usualCategories;
+  })();
   const candidateTitles = categoryList.flatMap((category, index) => {
     const pool = suggestionPools[category] ?? fallbackTitles;
     return rotate(pool, seed + index * 3);
@@ -251,15 +307,36 @@ export function getBookRecommendations({
     suggestions.map((title, index) => {
       const category = categoryList[index % categoryList.length] ?? "great stories";
       const categorySourceText = getSourceText([category], categorySources);
+      if (readingPath === "genre_adventurer") {
+        return [
+          title,
+          `Suggested by Genre Adventurer to help you try ${category} beyond your usual reading patterns.`,
+        ];
+      }
+      if (readingPath === "skill_builder") {
+        return [
+          title,
+          `Suggested by Skill Builder because it can stretch thinking, discussion, or real-world understanding.`,
+        ];
+      }
       return [
         title,
         `Suggested because ${categorySourceText} ${categorySourceText === "popular books for young readers" ? "include" : "point toward"} ${category}.`,
       ];
     }),
   );
+  const summary = (() => {
+    if (readingPath === "genre_adventurer") {
+      return `${pathLabels.genre_adventurer} picks branch into ${interestText || "new genres"} so reading does not get stuck in one lane.`;
+    }
+    if (readingPath === "skill_builder") {
+      return `${pathLabels.skill_builder} picks emphasize thoughtful stories, problem solving, and useful ideas.`;
+    }
+    return `Fresh picks based on ${sourceText}. Today's list leans toward ${interestText}.`;
+  })();
 
   return {
-    summary: `Fresh picks based on ${sourceText}. Today's list leans toward ${interestText}.`,
+    summary,
     suggestions,
     reasons,
     categories: categoryList,

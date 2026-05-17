@@ -265,7 +265,7 @@ body {
   grid-template-rows: auto 1fr auto;
   gap: 18px;
   border-right: 1px solid var(--border);
-  background: color-mix(in srgb, var(--panel-strong) 94%, var(--page-bg));
+  background: var(--page-bg);
   box-shadow: 18px 0 48px rgba(0, 0, 0, 0.28);
   padding: 20px;
   transform: translateX(-105%);
@@ -314,7 +314,7 @@ body {
   gap: 4px;
   border: 1px solid color-mix(in srgb, var(--warning) 72%, var(--border));
   border-radius: 10px;
-  background: color-mix(in srgb, var(--warning) 12%, var(--panel));
+  background: color-mix(in srgb, var(--warning) 12%, var(--page-bg));
   color: var(--text);
   padding: 12px;
 }
@@ -342,7 +342,7 @@ body {
 .app-drawer-nav a:hover,
 .app-drawer-nav a.active {
   border-color: var(--border);
-  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+  background: color-mix(in srgb, var(--accent) 14%, var(--page-bg));
   color: var(--text);
 }
 
@@ -1215,7 +1215,33 @@ button:disabled {
 }
 
 .setup-guide {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
   background: linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 42%, var(--panel-strong)), var(--panel-strong));
+}
+
+.setup-guide-toggle {
+  width: 100%;
+  justify-content: space-between;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  padding: 0;
+  text-align: left;
+}
+
+.setup-guide-toggle:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
+.setup-guide-body {
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
 }
 
 .setup-checklist {
@@ -1273,6 +1299,13 @@ button:disabled {
 .setup-next-note {
   margin: 14px 0 0;
   font-weight: 800;
+}
+
+.setup-guide-collapse {
+  width: 44px;
+  min-height: 36px;
+  justify-self: center;
+  padding: 6px 10px;
 }
 
 .suggested-action {
