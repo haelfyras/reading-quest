@@ -18,12 +18,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{
             __html: `
               try {
-                const theme = localStorage.getItem('readingQuestTheme') || 'fantasy';
+                const savedTheme = localStorage.getItem('readingQuestTheme');
+                const normalizedTheme = savedTheme === 'horror' ? 'spooky' : savedTheme;
+                const theme = ['fantasy', 'sci-fi', 'spooky', 'library'].includes(normalizedTheme || '') ? normalizedTheme : 'library';
                 const darkMode = localStorage.getItem('readingQuestDarkMode') === 'true';
                 const fontSize = localStorage.getItem('readingQuestFontSize') || '16';
+                const panelOpacity = localStorage.getItem('readingQuestPanelOpacity') || localStorage.getItem('readingQuestFantasyPanelOpacity') || '90';
+                const parsedPanelOpacity = Number(panelOpacity);
+                const safePanelOpacity = Number.isFinite(parsedPanelOpacity) ? Math.min(96, Math.max(84, parsedPanelOpacity)) : 90;
                 document.documentElement.setAttribute('data-theme-style', theme);
                 document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
                 document.documentElement.style.setProperty('--font-size-base', fontSize + 'px');
+                document.documentElement.style.setProperty('--theme-panel-opacity', String(safePanelOpacity / 100));
               } catch (e) {}
             `,
           }}

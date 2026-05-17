@@ -19,7 +19,8 @@ export default function SettingsPage() {
   const [user, setUser] = useState<Profile | null>(null);
   const [darkMode, setDarkMode] = useState(false);
   const [fontSize, setFontSize] = useState(16);
-  const [theme, setTheme] = useState("fantasy");
+  const [theme, setTheme] = useState("library");
+  const [panelOpacity, setPanelOpacity] = useState(90);
   const [leaderboardPrivate, setLeaderboardPrivate] = useState(false);
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>("free");
   const [settingsMessage, setSettingsMessage] = useState("");
@@ -35,17 +36,34 @@ export default function SettingsPage() {
     }
 
     const savedDarkMode = localStorage.getItem("readingQuestDarkMode") === "true";
-    const savedFontSize = parseInt(localStorage.getItem("readingQuestFontSize") || "16");
-    const savedTheme = localStorage.getItem("readingQuestTheme") || "fantasy";
+    const savedFontSize = parseInt(localStorage.getItem("readingQuestFontSize") || "16", 10);
+    const savedTheme = normalizeTheme(localStorage.getItem("readingQuestTheme"));
+    const savedPanelOpacity = parseInt(
+      localStorage.getItem("readingQuestPanelOpacity") || localStorage.getItem("readingQuestFantasyPanelOpacity") || "90",
+      10
+    );
+    const safePanelOpacity = Number.isFinite(savedPanelOpacity)
+      ? Math.min(96, Math.max(84, savedPanelOpacity))
+      : 90;
 
     setDarkMode(savedDarkMode);
     setFontSize(savedFontSize);
     setTheme(savedTheme);
+    setPanelOpacity(safePanelOpacity);
 
     applyDarkMode(savedDarkMode);
     applyFontSize(savedFontSize);
     applyTheme(savedTheme);
+    applyPanelOpacity(safePanelOpacity);
   }, []);
+
+  const normalizeTheme = (selectedTheme: string | null) => {
+    if (selectedTheme === "horror") return "spooky";
+    if (selectedTheme === "fantasy" || selectedTheme === "sci-fi" || selectedTheme === "spooky" || selectedTheme === "library") {
+      return selectedTheme;
+    }
+    return "library";
+  };
 
   const applyDarkMode = (isDark: boolean) => {
     document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
@@ -58,8 +76,15 @@ export default function SettingsPage() {
   };
 
   const applyTheme = (selectedTheme: string) => {
-    document.documentElement.setAttribute("data-theme-style", selectedTheme);
-    localStorage.setItem("readingQuestTheme", selectedTheme);
+    const normalizedTheme = normalizeTheme(selectedTheme);
+    document.documentElement.setAttribute("data-theme-style", normalizedTheme);
+    localStorage.setItem("readingQuestTheme", normalizedTheme);
+  };
+
+  const applyPanelOpacity = (opacity: number) => {
+    const safeOpacity = Number.isFinite(opacity) ? Math.min(96, Math.max(84, opacity)) : 90;
+    document.documentElement.style.setProperty("--theme-panel-opacity", `${safeOpacity / 100}`);
+    localStorage.setItem("readingQuestPanelOpacity", safeOpacity.toString());
   };
 
   const handleDarkModeToggle = () => {
@@ -69,15 +94,21 @@ export default function SettingsPage() {
   };
 
   const handleFontSizeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const newSize = parseInt(event.target.value);
+    const newSize = parseInt(event.target.value, 10);
     setFontSize(newSize);
     applyFontSize(newSize);
   };
 
   const handleThemeChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const newTheme = event.target.value;
+    const newTheme = normalizeTheme(event.target.value);
     setTheme(newTheme);
     applyTheme(newTheme);
+  };
+
+  const handlePanelOpacityChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const opacity = parseInt(event.target.value, 10);
+    setPanelOpacity(opacity);
+    applyPanelOpacity(opacity);
   };
 
   const savePrivacyAndPlan = () => {
@@ -154,10 +185,10 @@ export default function SettingsPage() {
           <div className="setting-item">
             <label htmlFor="theme" className="setting-label">Theme</label>
             <select id="theme" value={theme} onChange={handleThemeChange}>
-              <option value="fantasy">Fantasy (quests and castles)</option>
-              <option value="sci-fi">Sci-Fi (missions and space)</option>
-              <option value="horror">Horror (spooky library)</option>
-              <option value="library">Library (books and shelves)</option>
+              <option value="fantasy">Fantasy</option>
+              <option value="sci-fi">Sci-Fi</option>
+              <option value="spooky">Spooky</option>
+              <option value="library">Library</option>
             </select>
             <p className="setting-description">Choose the visual skin for the whole app.</p>
           </div>
@@ -175,6 +206,24 @@ export default function SettingsPage() {
               className="font-size-slider"
             />
             <p className="setting-description">Adjust text size for better readability.</p>
+          </div>
+
+          <div className="setting-item">
+            <label htmlFor="panelOpacity" className="setting-label">
+              Window opacity: {panelOpacity}%
+            </label>
+            <input
+              id="panelOpacity"
+              type="range"
+              min="84"
+              max="96"
+              value={panelOpacity}
+              onChange={handlePanelOpacityChange}
+              className="font-size-slider"
+            />
+            <p className="setting-description">
+              Lower values reveal more of the theme artwork. The range is capped so buttons and text stay readable.
+            </p>
           </div>
         </div>
 
