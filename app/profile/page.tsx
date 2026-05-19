@@ -18,6 +18,7 @@ import {
   updateProfile,
 } from "../../lib/user";
 import { betaConfig } from "../../lib/beta";
+import { refreshSharedProfileData } from "../../lib/supabase/profileData";
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -46,8 +47,16 @@ export default function ProfilePage() {
   };
 
   const refresh = async () => {
-    const profile = getCurrentProfile();
+    let profile = getCurrentProfile();
     if (!profile) return;
+    let sharedChildren: Profile[] | null = null;
+    try {
+      const sharedData = await refreshSharedProfileData(profile.id);
+      profile = sharedData.profile;
+      sharedChildren = sharedData.linkedChildren;
+    } catch {
+      // Local beta data remains available if Supabase hydration fails.
+    }
     setUser(profile);
     setRealName(profile.realName || "");
     setPhone(profile.phone || "");
@@ -59,7 +68,7 @@ export default function ProfilePage() {
         profile.isParent ? request.parentId === profile.id : request.childId === profile.id
       )));
     }
-    setLinkedChildren(getProfiles().filter((child) => profile.linkedChildren?.includes(child.id)));
+    setLinkedChildren(sharedChildren ?? getProfiles().filter((child) => profile.linkedChildren?.includes(child.id)));
   };
 
   useEffect(() => {

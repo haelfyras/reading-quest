@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { BETA_FEEDBACK_KEY } from "../../lib/beta";
+import { BETA_FEEDBACK_KEY, betaConfig } from "../../lib/beta";
 import { getCurrentProfile } from "../../lib/user";
 
 type FeedbackEntry = {
@@ -38,7 +38,7 @@ export default function FeedbackButton() {
   const [showButton, setShowButton] = useState(false);
 
   useEffect(() => {
-    setShowButton(Boolean(getCurrentProfile()) && !window.location.pathname.startsWith("/admin"));
+    setShowButton(betaConfig.feedbackEnabled && Boolean(getCurrentProfile()) && !window.location.pathname.startsWith("/admin"));
   }, []);
 
   const submitFeedback = (event: FormEvent<HTMLFormElement>) => {

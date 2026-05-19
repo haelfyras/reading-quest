@@ -24,6 +24,8 @@ import {
   type PrizeAddRequest,
   type PrizeSuggestion,
 } from "../../lib/prizeData";
+import { refreshSharedProfileData } from "../../lib/supabase/profileData";
+import { isUuid } from "../../lib/ids";
 
 export default function PrizesPage() {
   const router = useRouter();
@@ -40,36 +42,66 @@ export default function PrizesPage() {
   const [requestedPrizePoints, setRequestedPrizePoints] = useState(100);
 
   useEffect(() => {
-    const currentUser = getCurrentProfile();
-    setUser(currentUser);
+    const loadInitialData = async () => {
+      const currentUser = getCurrentProfile();
+      setUser(currentUser);
 
-    if (!currentUser) {
-      return;
-    }
-    setPrizeAddRequests(readPrizeAddRequests());
-
-    if (currentUser.isParent) {
-      const linkedChildren = getProfiles().filter((profile) => currentUser.linkedChildren?.includes(profile.id));
-      setChildren(linkedChildren);
-      if (linkedChildren[0]) {
-        setSelectedChildId(linkedChildren[0].id);
-        setPrizes(readPrizes(linkedChildren[0].id));
+      if (!currentUser) {
+        return;
       }
-      return;
-    }
+      setPrizeAddRequests(readPrizeAddRequests());
 
-    if (hasSavedPrizes(currentUser.id)) {
-      setHasParentSetup(true);
-      setPrizes(readPrizes(currentUser.id));
-    } else {
-      setPrizes(defaultPrizes);
-    }
+      if (currentUser.isParent) {
+        try {
+          const sharedData = await refreshSharedProfileData(currentUser.id);
+          setUser(sharedData.profile);
+          setChildren(sharedData.linkedChildren);
+          if (sharedData.linkedChildren[0]) {
+            await loadChildPrizes(sharedData.linkedChildren[0].id);
+          }
+          return;
+        } catch {
+          const linkedChildren = getProfiles().filter((profile) => currentUser.linkedChildren?.includes(profile.id));
+          setChildren(linkedChildren);
+          if (linkedChildren[0]) {
+            await loadChildPrizes(linkedChildren[0].id);
+          }
+          return;
+        }
+      }
+
+      await loadChildPrizes(currentUser.id);
+    };
+
+    void loadInitialData();
   }, []);
 
-  const loadChildPrizes = (childId: string) => {
+  const loadChildPrizes = async (childId: string) => {
     setSelectedChildId(childId);
-    setPrizes(readPrizes(childId));
     setClaimMessage("");
+
+    try {
+      if (!isUuid(childId)) {
+        throw new Error("Local beta profile.");
+      }
+      const response = await fetch(`/api/prizes?childId=${encodeURIComponent(childId)}`);
+      if (!response.ok) {
+        throw new Error("Unable to load shared prizes.");
+      }
+
+      const data = await response.json() as {
+        prizes?: Prize[];
+        hasSavedPrizes?: boolean;
+        prizeAddRequests?: PrizeAddRequest[];
+      };
+      setPrizes(data.prizes?.length ? data.prizes : defaultPrizes);
+      setHasParentSetup(Boolean(data.hasSavedPrizes));
+      setPrizeAddRequests(data.prizeAddRequests ?? readPrizeAddRequests());
+    } catch {
+      setPrizes(readPrizes(childId));
+      setHasParentSetup(hasSavedPrizes(childId));
+      setPrizeAddRequests(readPrizeAddRequests());
+    }
   };
 
   const updateParentPrize = (index: number, field: keyof Prize, value: string) => {
@@ -110,7 +142,7 @@ export default function PrizesPage() {
     setClaimMessage(`${suggestion.name} added. Save prizes when you are ready.`);
   };
 
-  const requestPrizeIdea = () => {
+  const requestPrizeIdea = async () => {
     if (!user || user.isParent) return;
 
     const name = requestedPrizeName.trim();
@@ -130,7 +162,32 @@ export default function PrizesPage() {
       status: "pending",
       requestedAt: new Date().toISOString(),
     };
-    const nextRequests = [nextRequest, ...prizeAddRequests];
+    let savedRequest = nextRequest;
+    try {
+      if (!isUuid(user.id)) {
+        throw new Error("Local beta profile.");
+      }
+      const response = await fetch("/api/prizes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "request_prize_idea",
+          childId: user.id,
+          childName: user.name,
+          name,
+          description: nextRequest.description,
+          pointsRequired,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json() as { request?: PrizeAddRequest };
+        savedRequest = data.request ?? nextRequest;
+      }
+    } catch {
+      // Local fallback keeps the child request visible in this browser.
+    }
+
+    const nextRequests = [savedRequest, ...prizeAddRequests];
     savePrizeAddRequests(nextRequests);
     setPrizeAddRequests(nextRequests);
     setRequestedPrizeName("");
@@ -139,7 +196,7 @@ export default function PrizesPage() {
     setClaimMessage(`${name} was sent to your parent to review.`);
   };
 
-  const addRequestedPrizeToMenu = (request: PrizeAddRequest) => {
+  const addRequestedPrizeToMenu = async (request: PrizeAddRequest) => {
     setPrizes((current) => [
       ...current,
       {
@@ -156,21 +213,45 @@ export default function PrizesPage() {
     const nextRequests = prizeAddRequests.map((item) =>
       item.id === request.id ? { ...item, status: "added" as const } : item,
     );
+    try {
+      if (!isUuid(request.id)) {
+        throw new Error("Local beta request.");
+      }
+      await fetch("/api/prizes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update_prize_request", requestId: request.id, status: "added" }),
+      });
+    } catch {
+      // Local fallback keeps beta prize review moving.
+    }
     savePrizeAddRequests(nextRequests);
     setPrizeAddRequests(nextRequests);
     setClaimMessage(`${request.name} added to the prize menu. Save prizes when you are ready.`);
   };
 
-  const dismissRequestedPrize = (requestId: string) => {
+  const dismissRequestedPrize = async (requestId: string) => {
     const nextRequests = prizeAddRequests.map((item) =>
       item.id === requestId ? { ...item, status: "dismissed" as const } : item,
     );
+    try {
+      if (!isUuid(requestId)) {
+        throw new Error("Local beta request.");
+      }
+      await fetch("/api/prizes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update_prize_request", requestId, status: "dismissed" }),
+      });
+    } catch {
+      // Local fallback keeps beta prize review moving.
+    }
     savePrizeAddRequests(nextRequests);
     setPrizeAddRequests(nextRequests);
     setClaimMessage("Prize request dismissed.");
   };
 
-  const saveParentPrizes = () => {
+  const saveParentPrizes = async () => {
     if (!selectedChildId) {
       setClaimMessage("Select a child before saving prizes.");
       return;
@@ -184,16 +265,51 @@ export default function PrizesPage() {
 
     savePrizes(selectedChildId, validPrizes);
     setPrizes(validPrizes);
-    setClaimMessage("Prizes saved.");
+    try {
+      if (!isUuid(selectedChildId)) {
+        throw new Error("This child profile has not been synced to Supabase yet.");
+      }
+      const response = await fetch("/api/prizes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save_prizes",
+          parentId: user?.id,
+          childId: selectedChildId,
+          prizes: validPrizes,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: "" }));
+        throw new Error(data.error || "Unable to save prizes to Supabase.");
+      }
+      setClaimMessage("Prizes saved.");
+    } catch (err) {
+      setClaimMessage(err instanceof Error ? `Saved in this browser, but Supabase sync needs attention: ${err.message}` : "Saved in this browser, but Supabase sync needs attention.");
+    }
   };
 
-  const markPrizeRedeemed = (prizeId: string) => {
+  const markPrizeRedeemed = async (prizeId: string) => {
     if (!selectedChildId) return;
+    const selectedPrize = prizes.find((prize) => prize.id === prizeId);
+
+    if (selectedPrize?.redemptionId && isUuid(selectedPrize.redemptionId)) {
+      try {
+        await fetch("/api/prizes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "complete_redemption", redemptionId: selectedPrize.redemptionId }),
+        });
+      } catch {
+        // Local fallback still clears the parent-facing button.
+      }
+    }
 
     const updatedPrizes = prizes.map((prize) => prize.id === prizeId ? {
       ...prize,
       claimed: false,
       requestedAt: undefined,
+      redemptionId: undefined,
     } : prize);
     savePrizes(selectedChildId, updatedPrizes);
     setPrizes(updatedPrizes);
@@ -284,7 +400,7 @@ export default function PrizesPage() {
             <>
               <div className="field">
                 <label htmlFor="selectedChild">Selected child</label>
-                <select id="selectedChild" value={selectedChildId} onChange={(event) => loadChildPrizes(event.target.value)}>
+                <select id="selectedChild" value={selectedChildId} onChange={(event) => void loadChildPrizes(event.target.value)}>
                   {children.map((child) => (
                     <option key={child.id} value={child.id}>{child.name}</option>
                   ))}
@@ -307,7 +423,7 @@ export default function PrizesPage() {
                           <p>{prize.pointsRequired} points spent.</p>
                           <small>Claimed {prize.claimCount ?? 0} {prize.claimCount === 1 ? "time" : "times"}</small>
                         </div>
-                        <button type="button" onClick={() => markPrizeRedeemed(prize.id)}>Mark Redeemed</button>
+                        <button type="button" onClick={() => void markPrizeRedeemed(prize.id)}>Mark Redeemed</button>
                       </div>
                     ))}
                   </div>
@@ -333,8 +449,8 @@ export default function PrizesPage() {
                           <small>{request.childName} suggested {request.pointsRequired} points.</small>
                         </div>
                         <div className="button-row">
-                          <button type="button" onClick={() => addRequestedPrizeToMenu(request)}>Add to Menu</button>
-                          <button type="button" className="secondary" onClick={() => dismissRequestedPrize(request.id)}>Dismiss</button>
+                          <button type="button" onClick={() => void addRequestedPrizeToMenu(request)}>Add to Menu</button>
+                          <button type="button" className="secondary" onClick={() => void dismissRequestedPrize(request.id)}>Dismiss</button>
                         </div>
                       </div>
                     ))}
@@ -395,7 +511,7 @@ export default function PrizesPage() {
               </div>
               <div className="button-row">
                 <button type="button" onClick={addParentPrize}>Add Prize</button>
-                <button type="button" onClick={saveParentPrizes}>Save Prizes</button>
+                <button type="button" onClick={() => void saveParentPrizes()}>Save Prizes</button>
               </div>
             </>
           ) : (
@@ -524,7 +640,7 @@ export default function PrizesPage() {
             placeholder="I would like to earn this after finishing a chapter book."
           />
         </div>
-        <button type="button" onClick={requestPrizeIdea}>Send to Parent</button>
+        <button type="button" onClick={() => void requestPrizeIdea()}>Send to Parent</button>
         {childPendingPrizeIdeas.length > 0 ? (
           <p className="setting-description">
             {childPendingPrizeIdeas.length} prize {childPendingPrizeIdeas.length === 1 ? "idea is" : "ideas are"} waiting for parent review.

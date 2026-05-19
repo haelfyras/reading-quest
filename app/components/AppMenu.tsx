@@ -14,6 +14,7 @@ import {
 } from "../../lib/user";
 import { readPrizeAddRequests, readPrizes } from "../../lib/prizeData";
 import { signOutSupabase } from "../../lib/supabase/auth";
+import { isUuid } from "../../lib/ids";
 
 const sharedLinks = [
   { href: "/my-books", label: "My Books" },
@@ -68,18 +69,44 @@ export default function AppMenu() {
       }
 
       if (profile.isParent) {
-        const reportCount = getQuizIssueReports().filter((report) => report.status !== "dismissed" && !report.correctionPointsAwarded).length;
+        let reportCount = getQuizIssueReports().filter((report) => report.status !== "dismissed" && !report.correctionPointsAwarded).length;
+        try {
+          if (!isUuid(profile.id)) {
+            throw new Error("Local beta profile.");
+          }
+          const response = await fetch(`/api/quiz-report?parentId=${encodeURIComponent(profile.id)}&summary=true`);
+          if (response.ok) {
+            const data = await response.json() as { openCount?: number };
+            reportCount = data.openCount ?? reportCount;
+          }
+        } catch {
+          // Local notification fallback is enough if shared report data is unavailable.
+        }
         if (reportCount > 0) {
           notifications.push({ text: `${reportCount} quiz review ${reportCount === 1 ? "item" : "items"}`, href: "/parent" });
         }
 
         const linkedChildIds = new Set(profile.linkedChildren ?? []);
-        const pendingPrizeIdeas = readPrizeAddRequests().filter((request) =>
+        let pendingPrizeIdeas = readPrizeAddRequests().filter((request) =>
           linkedChildIds.has(request.childId) && request.status === "pending",
         ).length;
-        const pendingPrizeClaims = getProfiles()
+        let pendingPrizeClaims = getProfiles()
           .filter((child) => linkedChildIds.has(child.id))
           .reduce((total, child) => total + readPrizes(child.id).filter((prize) => prize.claimed).length, 0);
+
+        try {
+          if (!isUuid(profile.id)) {
+            throw new Error("Local beta profile.");
+          }
+          const response = await fetch(`/api/prizes?parentId=${encodeURIComponent(profile.id)}&summary=true`);
+          if (response.ok) {
+            const data = await response.json() as { pendingPrizeIdeas?: number; pendingPrizeClaims?: number };
+            pendingPrizeIdeas = data.pendingPrizeIdeas ?? pendingPrizeIdeas;
+            pendingPrizeClaims = data.pendingPrizeClaims ?? pendingPrizeClaims;
+          }
+        } catch {
+          // Local notification fallback is enough if shared prize data is unavailable.
+        }
 
         if (pendingPrizeIdeas > 0) {
           notifications.push({ text: `${pendingPrizeIdeas} prize ${pendingPrizeIdeas === 1 ? "idea" : "ideas"} waiting`, href: "/prizes" });

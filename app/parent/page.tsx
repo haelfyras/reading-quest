@@ -29,6 +29,8 @@ import {
 import { loadSiteLeaderboardProfiles } from "../../lib/leaderboards";
 import { betaConfig } from "../../lib/beta";
 import { hasSavedPrizes } from "../../lib/prizeData";
+import { refreshSharedProfileData } from "../../lib/supabase/profileData";
+import { isUuid } from "../../lib/ids";
 import BetaDisclaimer from "../components/BetaDisclaimer";
 import SetupGuide, { type SetupStep } from "../components/SetupGuide";
 
@@ -73,6 +75,20 @@ export default function ParentPage() {
     setCurrentUser(profile);
     setChildren(getProfiles().filter((child) => profile.linkedChildren?.includes(child.id)));
     setReports(getQuizIssueReports().filter((report) => report.status !== "dismissed"));
+    if (isUuid(profile.id)) {
+      refreshSharedProfileData(profile.id)
+        .then((data) => {
+          setCurrentUser(data.profile);
+          setChildren(data.linkedChildren);
+        })
+        .catch(() => {
+          // Browser beta data remains available if Supabase hydration fails.
+        });
+      fetch(`/api/quiz-report?parentId=${encodeURIComponent(profile.id)}`)
+        .then((response) => response.ok ? response.json() : Promise.reject(new Error("Unable to load reports")))
+        .then((data: { reports?: QuizIssueReport[] }) => setReports(data.reports ?? []))
+        .catch(() => setReports(getQuizIssueReports().filter((report) => report.status !== "dismissed")));
+    }
     loadSiteLeaderboardProfiles(profile.id)
       .then((profiles) => {
         setAdultLeaderboard(
@@ -140,8 +156,25 @@ export default function ParentPage() {
     },
   ];
 
-  const refreshParentData = () => {
+  const refreshParentData = async () => {
     if (!currentUser) return;
+    try {
+      if (!isUuid(currentUser.id)) {
+        throw new Error("Local beta profile.");
+      }
+      const data = await refreshSharedProfileData(currentUser.id);
+      setCurrentUser(data.profile);
+      setChildren(data.linkedChildren);
+      const response = await fetch(`/api/quiz-report?parentId=${encodeURIComponent(currentUser.id)}`);
+      if (response.ok) {
+        const reportData = await response.json() as { reports?: QuizIssueReport[] };
+        setReports(reportData.reports ?? []);
+        return;
+      }
+    } catch {
+      // Fall through to browser beta data.
+    }
+
     const profiles = getProfiles();
     const updatedParent = profiles.find((profile) => profile.id === currentUser.id) ?? currentUser;
     setCurrentUser(updatedParent);
@@ -162,22 +195,45 @@ export default function ParentPage() {
     setParentMessage("Parent control saved.");
   };
 
-  const resolveReport = (reportId: string, status: "accepted" | "dismissed") => {
-    if (status === "accepted") {
-      awardQuizIssueReportPoints(reportId);
-      updateQuizIssueReport(reportId, {
-        status,
-        parentNote: "Parent agreed this quiz item needs review and awarded the missed points.",
+  const resolveReport = async (reportId: string, status: "accepted" | "dismissed") => {
+    try {
+      if (!isUuid(reportId)) {
+        throw new Error("Local beta report.");
+      }
+      const response = await fetch("/api/quiz-report", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reportId,
+          status,
+          parentNote: status === "accepted"
+            ? "Parent agreed this quiz item needs review and awarded the missed points."
+            : "Parent dismissed this report.",
+        }),
       });
-      setParentMessage("Report accepted. The reader received the missed points for that question.");
-    } else {
-      updateQuizIssueReport(reportId, {
-        status,
-        parentNote: "Parent dismissed this report.",
-      });
-      setParentMessage("Report dismissed.");
+      if (!response.ok) {
+        throw new Error("Unable to update shared quiz report.");
+      }
+      setParentMessage(status === "accepted" ? "Report accepted. The reader received the missed points for that question." : "Report dismissed.");
+      await refreshParentData();
+      return;
+    } catch {
+      if (status === "accepted") {
+        awardQuizIssueReportPoints(reportId);
+        updateQuizIssueReport(reportId, {
+          status,
+          parentNote: "Parent agreed this quiz item needs review and awarded the missed points.",
+        });
+        setParentMessage("Report accepted. The reader received the missed points for that question.");
+      } else {
+        updateQuizIssueReport(reportId, {
+          status,
+          parentNote: "Parent dismissed this report.",
+        });
+        setParentMessage("Report dismissed.");
+      }
+      await refreshParentData();
     }
-    refreshParentData();
   };
 
   if (!currentUser) {
@@ -338,10 +394,10 @@ export default function ParentPage() {
                   </small>
                 </div>
                 <div className="button-row">
-                  <button type="button" className="secondary" disabled={report.correctionPointsAwarded} onClick={() => resolveReport(report.id, "accepted")}>
+                  <button type="button" className="secondary" disabled={report.correctionPointsAwarded} onClick={() => void resolveReport(report.id, "accepted")}>
                     {report.correctionPointsAwarded ? "Points awarded" : "Agree and award points"}
                   </button>
-                  <button type="button" className="secondary" onClick={() => resolveReport(report.id, "dismissed")}>Dismiss</button>
+                  <button type="button" className="secondary" onClick={() => void resolveReport(report.id, "dismissed")}>Dismiss</button>
                 </div>
               </div>
             ))}

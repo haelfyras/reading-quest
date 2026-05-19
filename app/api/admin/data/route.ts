@@ -35,6 +35,7 @@ function mapProfile(
     learningGoal: row.learning_goal ?? undefined,
     favoriteBooks: asStringArray(row.favorite_books),
     readingPreferences: typeof row.reading_preferences === "object" && row.reading_preferences ? row.reading_preferences : undefined,
+    readingPath: row.reading_path ?? "explorer",
     readingNow: asStringArray(row.reading_now),
     readingLogs,
     bookAccess: typeof row.book_access === "object" && row.book_access ? row.book_access : {},

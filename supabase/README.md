@@ -9,7 +9,8 @@ This folder contains the database foundation for moving Reading Quest from brows
 3. Run `supabase/migrations/002_data_api_grants.sql`.
 4. Run `supabase/migrations/003_child_screen_name_accounts.sql`.
 5. Run `supabase/migrations/004_parent_verification_privacy.sql`.
-6. In Vercel, add these environment variables for Production and Preview:
+6. Run `supabase/migrations/005_shared_beta_state.sql`.
+7. In Vercel, add these environment variables for Production and Preview:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
@@ -34,6 +35,7 @@ Supabase Auth confirmation emails use this value for redirects.
 - `beta_local_id` on profiles so browser-local beta accounts can be linked or migrated during the bridge phase.
 - Unique child screen names with no required child email address.
 - Parent-child verification that does not require a child's real name.
+- Shared reading path preferences and richer prize menu fields for cross-device beta accounts.
 
 ## Next Pushes
 

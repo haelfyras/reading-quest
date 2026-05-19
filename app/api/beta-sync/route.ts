@@ -8,6 +8,11 @@ const allowedKinds = new Set([
   "quiz_issue_report_update",
   "reading_log",
   "prize_redemption",
+  "prize_add_request",
+  "prize_add_request_update",
+  "reading_challenge",
+  "reading_challenge_update",
+  "friend_book_suggestion",
   "review",
   "feedback",
   "telemetry",
@@ -19,6 +24,14 @@ function cleanString(value: unknown, fallback = "") {
 
 function isUuid(value: unknown) {
   return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function cleanReadingPath(value: unknown): "explorer" | "genre_adventurer" | "skill_builder" {
+  const candidate = String(value);
+  if (candidate === "genre_adventurer" || candidate === "skill_builder") {
+    return candidate;
+  }
+  return "explorer";
 }
 
 export async function POST(request: Request) {
@@ -55,6 +68,7 @@ export async function POST(request: Request) {
           favorite_books: Array.isArray(payload.favoriteBooks) ? payload.favoriteBooks.filter((item: unknown) => typeof item === "string") : [],
           reading_now: Array.isArray(payload.readingNow) ? payload.readingNow.filter((item: unknown) => typeof item === "string") : [],
           reading_preferences: payload.readingPreferences ?? null,
+          reading_path: cleanReadingPath(payload.readingPath),
           book_access: payload.bookAccess ?? {},
           parent_controls: payload.parentControls ?? {},
           leaderboard_private: Boolean(payload.leaderboardPrivate),
@@ -184,6 +198,100 @@ export async function POST(request: Request) {
       }
 
       const { error } = await adminSupabase.from("prize_redemptions").upsert(insertPayload);
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+    }
+
+    if (kind === "prize_add_request") {
+      if (!isUuid(payload.childId)) {
+        return NextResponse.json({ skipped: true });
+      }
+
+      const insertPayload: Record<string, any> = {
+        child_profile_id: payload.childId,
+        prize_name: cleanString(payload.name, "Prize idea"),
+        description: cleanString(payload.description) || null,
+        suggested_points: Math.max(10, Math.round(Number(payload.pointsRequired ?? 10))),
+        status: "requested",
+        created_at: cleanString(payload.requestedAt) || new Date().toISOString(),
+      };
+      if (isUuid(payload.id)) {
+        insertPayload.id = payload.id;
+      }
+
+      const { error } = await adminSupabase.from("prize_add_requests").upsert(insertPayload);
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+    }
+
+    if (kind === "prize_add_request_update") {
+      if (!isUuid(payload.id)) {
+        return NextResponse.json({ skipped: true });
+      }
+
+      const status = payload.status === "added" ? "approved" : payload.status === "dismissed" ? "dismissed" : "requested";
+      const { error } = await adminSupabase
+        .from("prize_add_requests")
+        .update({ status })
+        .eq("id", payload.id);
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+    }
+
+    if (kind === "reading_challenge" || kind === "reading_challenge_update") {
+      if (!isUuid(payload.id) || !isUuid(payload.fromProfileId) || !isUuid(payload.toProfileId)) {
+        return NextResponse.json({ skipped: true });
+      }
+
+      const challengePayload = {
+        id: payload.id,
+        book_title: cleanString(payload.bookTitle, "Unknown book"),
+        difficulty: payload.difficulty,
+        book_level: payload.bookLevel,
+        quiz_title: cleanString(payload.quizTitle, "Friendly challenge"),
+        quiz_description: cleanString(payload.quizDescription),
+        questions: Array.isArray(payload.questions) ? payload.questions : [],
+        from_profile_id: payload.fromProfileId,
+        to_profile_id: payload.toProfileId,
+        initiator_score: Math.max(0, Math.round(Number(payload.initiatorScore ?? 0))),
+        initiator_max_score: Math.max(0, Math.round(Number(payload.initiatorMaxScore ?? 0))),
+        initiator_answers: Array.isArray(payload.initiatorAnswers) ? payload.initiatorAnswers : [],
+        responder_score: payload.responderScore ?? null,
+        responder_max_score: payload.responderMaxScore ?? null,
+        responder_answers: payload.responderAnswers ?? null,
+        status: payload.status === "completed" ? "completed" : "pending",
+        created_at: cleanString(payload.createdAt) || new Date().toISOString(),
+        completed_at: cleanString(payload.completedAt) || null,
+      };
+
+      const { error } = await adminSupabase.from("reading_challenges").upsert(challengePayload);
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+    }
+
+    if (kind === "friend_book_suggestion") {
+      if (!isUuid(payload.fromProfileId) || !isUuid(payload.toProfileId)) {
+        return NextResponse.json({ skipped: true });
+      }
+
+      const insertPayload: Record<string, any> = {
+        from_profile_id: payload.fromProfileId,
+        to_profile_id: payload.toProfileId,
+        book_title: cleanString(payload.bookTitle, "Unknown book"),
+        note: cleanString(payload.note) || null,
+        status: "sent",
+        created_at: cleanString(payload.date) || new Date().toISOString(),
+      };
+      if (isUuid(payload.id)) {
+        insertPayload.id = payload.id;
+      }
+
+      const { error } = await adminSupabase.from("friend_book_suggestions").upsert(insertPayload);
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
       }

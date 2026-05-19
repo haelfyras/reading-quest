@@ -1073,7 +1073,7 @@ export default function AdminConsole() {
         </section>
       ) : null}
 
-      <p className="auth-footer-note">Admin data currently reflects browser-stored beta data. Move profiles and events to a database before broad public launch. {COMPANY_NAME}</p>
+      <p className="auth-footer-note">Admin data uses Supabase when available and falls back to browser beta data only if the shared database cannot be reached. {COMPANY_NAME}</p>
     </main>
   );
 }

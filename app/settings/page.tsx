@@ -28,6 +28,7 @@ export default function SettingsPage() {
   const [settingsMessage, setSettingsMessage] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
+  const [deleteMessage, setDeleteMessage] = useState("");
 
   useEffect(() => {
     setUser(getCurrentProfile());
@@ -136,7 +137,7 @@ export default function SettingsPage() {
 
   const handleDeleteAccount = () => {
     if (!user || deletePassword !== user.password) {
-      alert("Incorrect password. Account deletion cancelled.");
+      setDeleteMessage("Incorrect password. Account deletion cancelled.");
       return;
     }
 
@@ -147,7 +148,6 @@ export default function SettingsPage() {
     setCurrentUserId(null);
     localStorage.removeItem("readingQuestCurrentUserId");
 
-    alert("Account deleted successfully.");
     window.location.href = "/";
   };
 
@@ -297,7 +297,10 @@ export default function SettingsPage() {
                   id="deletePassword"
                   type="password"
                   value={deletePassword}
-                  onChange={(e) => setDeletePassword(e.target.value)}
+                  onChange={(e) => {
+                    setDeletePassword(e.target.value);
+                    setDeleteMessage("");
+                  }}
                   placeholder="Your password"
                 />
               </div>
@@ -321,6 +324,7 @@ export default function SettingsPage() {
                   Cancel
                 </button>
               </div>
+              {deleteMessage ? <div className="error-box">{deleteMessage}</div> : null}
             </div>
           )}
         </div>

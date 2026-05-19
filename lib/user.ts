@@ -928,6 +928,7 @@ export function createReadingChallenge(details: {
   };
 
   saveReadingChallenges([challenge, ...getReadingChallenges()]);
+  syncBetaData("reading_challenge", challenge);
   return challenge;
 }
 
@@ -953,7 +954,11 @@ export function completeReadingChallenge(
       : challenge,
   );
   saveReadingChallenges(next);
-  return next.find((challenge) => challenge.id === challengeId) ?? null;
+  const updated = next.find((challenge) => challenge.id === challengeId) ?? null;
+  if (updated) {
+    syncBetaData("reading_challenge_update", updated);
+  }
+  return updated;
 }
 
 export function verifyProfile(name: string, password: string): Profile | null {

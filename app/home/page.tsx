@@ -25,6 +25,7 @@ import {
 } from "../../lib/user";
 import { loadSiteLeaderboardProfiles } from "../../lib/leaderboards";
 import { getBookRecommendations as buildRecommendations } from "../../lib/recommendations";
+import { isUuid } from "../../lib/ids";
 import BetaDisclaimer from "../components/BetaDisclaimer";
 import SetupGuide, { type SetupStep } from "../components/SetupGuide";
 
@@ -56,6 +57,7 @@ export default function HomePage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   const [childLeaderboard, setChildLeaderboard] = useState<Profile[]>([]);
+  const [prizeGoals, setPrizeGoals] = useState<PrizeGoal[]>(defaultPrizeGoals);
 
   useEffect(() => {
     const profile = getCurrentProfile();
@@ -71,6 +73,36 @@ export default function HomePage() {
     }
 
     setCurrentUser(profile);
+    const loadLocalPrizeGoals = () => {
+      if (typeof window === "undefined") return;
+      const saved = localStorage.getItem(`readingQuestPrizes_${profile.id}`);
+      if (!saved) return;
+      try {
+        const parsed = JSON.parse(saved) as PrizeGoal[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setPrizeGoals(parsed);
+        }
+      } catch {
+        setPrizeGoals(defaultPrizeGoals);
+      }
+    };
+
+    if (isUuid(profile.id)) {
+      fetch(`/api/prizes?childId=${encodeURIComponent(profile.id)}`)
+        .then((response) => response.ok ? response.json() : Promise.reject(new Error("Prize data unavailable")))
+        .then((data: { prizes?: PrizeGoal[] }) => {
+          if (data.prizes?.length) {
+            setPrizeGoals(data.prizes.map((prize) => ({
+              id: prize.id,
+              name: prize.name,
+              pointsRequired: prize.pointsRequired,
+            })));
+          }
+        })
+        .catch(loadLocalPrizeGoals);
+    } else {
+      loadLocalPrizeGoals();
+    }
     loadSiteLeaderboardProfiles(profile.id)
       .then((profiles) => {
         setChildLeaderboard(
@@ -89,24 +121,6 @@ export default function HomePage() {
         );
       });
   }, [router]);
-
-  const prizeGoals = useMemo(() => {
-    if (!currentUser || typeof window === "undefined") {
-      return defaultPrizeGoals;
-    }
-
-    const saved = localStorage.getItem(`readingQuestPrizes_${currentUser.id}`);
-    if (!saved) {
-      return defaultPrizeGoals;
-    }
-
-    try {
-      const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : defaultPrizeGoals;
-    } catch {
-      return defaultPrizeGoals;
-    }
-  }, [currentUser]);
 
   const currentPoints = currentUser ? getSpendablePoints(currentUser) : 0;
   const lifetimePoints = currentUser ? getLifetimePoints(currentUser) : 0;

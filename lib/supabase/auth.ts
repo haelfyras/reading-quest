@@ -9,6 +9,7 @@ import {
   saveProfiles,
   setCurrentUserId,
 } from "../user";
+import { refreshSharedProfileData } from "./profileData";
 
 type DbProfile = Database["public"]["Tables"]["profiles"]["Row"];
 
@@ -35,7 +36,7 @@ function mapDbProfileToLocalProfile(row: DbProfile): Profile {
     id: row.id,
     name: row.screen_name,
     password: "__supabase_auth__",
-    realName: row.real_name ?? row.screen_name,
+    realName: row.account_type === "parent" ? row.real_name ?? row.screen_name : undefined,
     phone: row.phone ?? undefined,
     friends: [],
     canAddFriends: row.can_add_friends,
@@ -50,6 +51,7 @@ function mapDbProfileToLocalProfile(row: DbProfile): Profile {
     readingPreferences: typeof row.reading_preferences === "object" && row.reading_preferences
       ? row.reading_preferences as Profile["readingPreferences"]
       : undefined,
+    readingPath: row.reading_path ?? "explorer",
     readingNow: row.reading_now,
     readingLogs: [],
     bookAccess: typeof row.book_access === "object" && row.book_access
@@ -126,7 +128,8 @@ async function accessChildProfile(action: "create" | "signIn", screenName: strin
     throw new Error(data.error || "Unable to access that child account.");
   }
 
-  return saveLocalMirror(mapDbProfileToLocalProfile(data.profile));
+  const localProfile = saveLocalMirror(mapDbProfileToLocalProfile(data.profile));
+  return refreshSharedProfileData(localProfile.id).then((data) => data.profile).catch(() => localProfile);
 }
 
 export async function signInChildWithSupabase(screenName: string, password: string) {
@@ -167,7 +170,8 @@ export async function signInParentWithSupabase(email: string, password: string) 
       : data.user.email?.split("@")[0],
   );
 
-  return saveLocalMirror(mapDbProfileToLocalProfile(dbProfile));
+  const localProfile = saveLocalMirror(mapDbProfileToLocalProfile(dbProfile));
+  return refreshSharedProfileData(localProfile.id).then((data) => data.profile).catch(() => localProfile);
 }
 
 export async function createParentWithSupabase(details: {
@@ -204,7 +208,8 @@ export async function createParentWithSupabase(details: {
   }
 
   const dbProfile = await ensureParentProfile(data.session.access_token, details.realName);
-  return saveLocalMirror(mapDbProfileToLocalProfile(dbProfile));
+  const localProfile = saveLocalMirror(mapDbProfileToLocalProfile(dbProfile));
+  return refreshSharedProfileData(localProfile.id).then((data) => data.profile).catch(() => localProfile);
 }
 
 export async function requestParentPasswordReset(email: string) {

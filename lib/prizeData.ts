@@ -10,6 +10,7 @@ export type Prize = {
   claimCount?: number;
   requestedAt?: string;
   lastClaimedAt?: string;
+  redemptionId?: string;
 };
 
 export type PrizeAddRequest = {

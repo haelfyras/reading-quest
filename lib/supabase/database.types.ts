@@ -30,6 +30,7 @@ export type Database = {
           favorite_books: string[];
           reading_now: string[];
           reading_preferences: Json | null;
+          reading_path: "explorer" | "genre_adventurer" | "skill_builder";
           book_access: Json;
           parent_controls: Json;
           leaderboard_private: boolean;
