@@ -870,8 +870,8 @@ button:disabled {
 }
 
 .admin-shell {
-  width: min(1220px, calc(100% - 32px));
-  max-width: 1220px;
+  width: min(1500px, calc(100% - 32px));
+  max-width: 1500px;
 }
 
 .admin-hero,
@@ -1025,6 +1025,57 @@ button:disabled {
   scrollbar-color: var(--accent) color-mix(in srgb, var(--panel) 76%, transparent);
 }
 
+.admin-issue-controls {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(150px, 1fr));
+  align-items: end;
+}
+
+.admin-issue-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-issue-table-wrap {
+  max-height: min(680px, 68vh);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.admin-issue-table {
+  min-width: 1120px;
+  margin-top: 0;
+  background: var(--panel-strong);
+}
+
+.admin-issue-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.admin-issue-table th,
+.admin-issue-table td {
+  vertical-align: top;
+}
+
+.admin-issue-row.issue-ongoing {
+  box-shadow: inset 5px 0 0 #dc2626;
+}
+
+.admin-issue-row.issue-resolved {
+  box-shadow: inset 5px 0 0 #16a34a;
+}
+
+.admin-issue-message {
+  min-width: 280px;
+  max-width: 460px;
+  line-height: 1.4;
+}
+
 .admin-feedback-notice {
   display: flex;
   align-items: center;
@@ -1090,6 +1141,17 @@ button:disabled {
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 12px;
+}
+
+.feedback-status-controls.compact {
+  min-width: 168px;
+  margin-top: 0;
+}
+
+.feedback-status-controls.compact button {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 0.84rem;
 }
 
 .feedback-status-button.red.selected,
@@ -2391,6 +2453,19 @@ pre {
     margin: 0;
     border-radius: 0;
     padding: 76px 16px 16px;
+  }
+
+  .admin-shell {
+    width: 100%;
+    max-width: none;
+  }
+
+  .admin-issue-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-issue-table-wrap {
+    max-height: 64vh;
   }
 
   .topbar,

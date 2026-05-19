@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   Cell,
   Pie,
@@ -30,6 +30,9 @@ import { COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION } from "../../lib/product";
 import { BETA_FEEDBACK_KEY } from "../../lib/beta";
 
 type AdminTab = "overview" | "accounts" | "quiz" | "safety" | "prizes" | "errors";
+type IssueTypeFilter = "all" | "feedback" | "quiz_report" | "error";
+type IssueStatusFilter = "all" | "ongoing" | "resolved";
+type IssueSort = "newest" | "oldest" | "type" | "status";
 
 type TelemetryEvent = {
   id: string;
@@ -66,13 +69,27 @@ type AdminProfile = Profile & {
   appDeletedReason?: string;
 };
 
+type AdminIssueRow = {
+  id: string;
+  type: "Feedback" | "Quiz report" | "Error";
+  filterType: Exclude<IssueTypeFilter, "all">;
+  status: "ongoing" | "resolved";
+  statusLabel: string;
+  source: string;
+  profileName: string;
+  category: string;
+  message: string;
+  date: string;
+  action?: ReactNode;
+};
+
 const tabs: Array<{ id: AdminTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "accounts", label: "Accounts" },
   { id: "quiz", label: "Quiz Trust" },
   { id: "safety", label: "Safety" },
   { id: "prizes", label: "Prizes" },
-  { id: "errors", label: "Errors" },
+  { id: "errors", label: "Issue Center" },
 ];
 
 const pageUsageColors = ["#22d3ee", "#facc15", "#2f6f4e", "#c084fc", "#f97316", "#9b2c2c", "#60a5fa", "#34d399"];
@@ -148,6 +165,10 @@ export default function AdminConsole() {
   const [dataSource, setDataSource] = useState<"browser" | "database">("browser");
   const [feedbackSeenAt, setFeedbackSeenAt] = useState("");
   const [search, setSearch] = useState("");
+  const [issueSearch, setIssueSearch] = useState("");
+  const [issueTypeFilter, setIssueTypeFilter] = useState<IssueTypeFilter>("all");
+  const [issueStatusFilter, setIssueStatusFilter] = useState<IssueStatusFilter>("all");
+  const [issueSort, setIssueSort] = useState<IssueSort>("newest");
   const [message, setMessage] = useState("");
   const [pointAdjustments, setPointAdjustments] = useState<Record<string, string>>({});
 
@@ -416,6 +437,108 @@ export default function AdminConsole() {
     [telemetry],
   );
 
+  const issueRows = useMemo<AdminIssueRow[]>(() => {
+    const feedbackRows: AdminIssueRow[] = feedbackEntries.map((entry) => {
+      const status = entry.adminStatus ?? "still_problem";
+      return {
+        id: `feedback-${entry.id}`,
+        type: "Feedback",
+        filterType: "feedback",
+        status: status === "resolved" ? "resolved" : "ongoing",
+        statusLabel: feedbackStatusLabels[status],
+        source: entry.page || "App",
+        profileName: entry.profileName || "Unknown profile",
+        category: entry.category,
+        message: entry.message,
+        date: entry.date,
+        action: (
+          <div className="feedback-status-controls compact">
+            <button
+              type="button"
+              className={status === "still_problem" ? "selected feedback-status-button red" : "secondary feedback-status-button red"}
+              onClick={() => void updateFeedbackStatus(entry.id, "still_problem")}
+            >
+              Red
+            </button>
+            <button
+              type="button"
+              className={status === "in_process" ? "selected feedback-status-button yellow" : "secondary feedback-status-button yellow"}
+              onClick={() => void updateFeedbackStatus(entry.id, "in_process")}
+            >
+              Yellow
+            </button>
+            <button
+              type="button"
+              className={status === "resolved" ? "selected feedback-status-button green" : "secondary feedback-status-button green"}
+              onClick={() => void updateFeedbackStatus(entry.id, "resolved")}
+            >
+              Green
+            </button>
+          </div>
+        ),
+      };
+    });
+
+    const reportRows: AdminIssueRow[] = reports.map((report) => {
+      const resolved = report.status === "accepted" || report.status === "dismissed";
+      return {
+        id: `quiz-report-${report.id}`,
+        type: "Quiz report",
+        filterType: "quiz_report",
+        status: resolved ? "resolved" : "ongoing",
+        statusLabel: report.status === "accepted" ? "Accepted" : report.status === "dismissed" ? "Dismissed" : "Open",
+        source: report.bookTitle,
+        profileName: report.profileName || "Unknown profile",
+        category: report.reason.replace(/_/g, " "),
+        message: report.question,
+        date: report.date,
+        action: resolved ? (
+          <span className="badge-pill">Reviewed</span>
+        ) : (
+          <div className="feedback-status-controls compact">
+            <button type="button" className="secondary" onClick={() => void resolveReport(report.id, "accepted")}>Accept</button>
+            <button type="button" className="secondary" onClick={() => void resolveReport(report.id, "dismissed")}>Dismiss</button>
+          </div>
+        ),
+      };
+    });
+
+    const errorRows: AdminIssueRow[] = actionableTelemetry.map((event) => ({
+      id: `error-${event.id}`,
+      type: "Error",
+      filterType: "error",
+      status: "ongoing",
+      statusLabel: "Needs review",
+      source: event.source || "App",
+      profileName: "System",
+      category: event.type.replace(/_/g, " "),
+      message: `${event.message}${event.status ? `, status ${event.status}` : ""}`,
+      date: event.date,
+    }));
+
+    const normalizedSearch = issueSearch.trim().toLowerCase();
+    return [...feedbackRows, ...reportRows, ...errorRows]
+      .filter((row) => issueTypeFilter === "all" || row.filterType === issueTypeFilter)
+      .filter((row) => issueStatusFilter === "all" || row.status === issueStatusFilter)
+      .filter((row) => {
+        if (!normalizedSearch) return true;
+        return [
+          row.type,
+          row.statusLabel,
+          row.source,
+          row.profileName,
+          row.category,
+          row.message,
+        ].join(" ").toLowerCase().includes(normalizedSearch);
+      })
+      .sort((a, b) => {
+        if (issueSort === "oldest") return new Date(a.date).getTime() - new Date(b.date).getTime();
+        if (issueSort === "type") return a.type.localeCompare(b.type) || new Date(b.date).getTime() - new Date(a.date).getTime();
+        if (issueSort === "status") return a.status.localeCompare(b.status) || new Date(b.date).getTime() - new Date(a.date).getTime();
+        return new Date(b.date).getTime() - new Date(a.date).getTime();
+      });
+  }, [actionableTelemetry, feedbackEntries, issueSearch, issueSort, issueStatusFilter, issueTypeFilter, reports]);
+
   return (
     <main className="admin-shell">
       <section className="admin-hero" aria-labelledby="admin-title">
@@ -554,6 +677,28 @@ export default function AdminConsole() {
               <div className="nested-section">
                 <strong>Prize flow</strong>
                 <p>{latestRedemptions.length} recent redemptions and {prizeAddRequests.filter((request) => request.status === "pending").length} child prize ideas waiting.</p>
+              </div>
+            </div>
+          </section>
+
+          <section className="admin-section" aria-labelledby="admin-recommendations-heading">
+            <h2 id="admin-recommendations-heading">Admin Recommendations</h2>
+            <div className="admin-watch-grid">
+              <div className="nested-section">
+                <strong>Review unresolved issues first</strong>
+                <p>Use the Issue Center to filter for ongoing feedback, quiz reports, and unexpected API failures before adding new features.</p>
+              </div>
+              <div className="nested-section">
+                <strong>Watch quiz trust weekly</strong>
+                <p>Track repeated wrong-answer and not-from-book reports by title so prompt fixes are based on patterns, not one-off examples.</p>
+              </div>
+              <div className="nested-section">
+                <strong>Separate usage from errors</strong>
+                <p>Keep page views in usage analytics, and reserve the Issue Center for items that need admin action.</p>
+              </div>
+              <div className="nested-section">
+                <strong>Protect beta families</strong>
+                <p>Check parent-child verification, prize requests, and child account access before expanding social features.</p>
               </div>
             </div>
           </section>
@@ -841,24 +986,89 @@ export default function AdminConsole() {
         <section className="admin-section" aria-labelledby="admin-errors-heading">
           <div className="section-header-row">
             <div>
-              <h2 id="admin-errors-heading">Errors And API Health</h2>
-              <p>Client crashes, unhandled errors, failed fetches, and unexpected API failures. Page views and normal failed sign-ins are filtered out.</p>
+              <h2 id="admin-errors-heading">Issue Center</h2>
+              <p>Table-friendly review for feedback, quiz reports, client crashes, failed fetches, and unexpected API failures.</p>
             </div>
             <button type="button" className="secondary" onClick={clearTelemetry}>Clear log</button>
           </div>
-          <div className="admin-card-list admin-error-list" role="log" aria-label="Actionable admin errors">
-            {actionableTelemetry.length > 0 ? actionableTelemetry.map((event) => (
-              <article key={event.id} className="nested-section">
-                <div className="section-header-row">
-                  <div>
-                    <strong>{event.type.replace(/_/g, " ")}</strong>
-                    <p>{event.message}</p>
-                    <small>{event.source || "App"}{event.status ? `, status ${event.status}` : ""}</small>
-                  </div>
-                  <span className="badge-pill">{formatDate(event.date)}</span>
-                </div>
-              </article>
-            )) : <p>No client errors have been captured in this browser.</p>}
+
+          <div className="admin-issue-controls">
+            <div className="field">
+              <label htmlFor="issue-search">Search issues</label>
+              <input
+                id="issue-search"
+                value={issueSearch}
+                onChange={(event) => setIssueSearch(event.target.value)}
+                placeholder="Search feedback, errors, books, profiles"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="issue-type-filter">Type</label>
+              <select id="issue-type-filter" value={issueTypeFilter} onChange={(event) => setIssueTypeFilter(event.target.value as IssueTypeFilter)}>
+                <option value="all">All types</option>
+                <option value="feedback">Feedback</option>
+                <option value="quiz_report">Quiz reports</option>
+                <option value="error">Errors/API failures</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="issue-status-filter">Status</label>
+              <select id="issue-status-filter" value={issueStatusFilter} onChange={(event) => setIssueStatusFilter(event.target.value as IssueStatusFilter)}>
+                <option value="all">All statuses</option>
+                <option value="ongoing">Ongoing</option>
+                <option value="resolved">Resolved</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="issue-sort">Sort</label>
+              <select id="issue-sort" value={issueSort} onChange={(event) => setIssueSort(event.target.value as IssueSort)}>
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="type">Type</option>
+                <option value="status">Status</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="admin-issue-summary">
+            <span className="badge-pill">{issueRows.length} shown</span>
+            <span className="badge-pill">{issueRows.filter((row) => row.status === "ongoing").length} ongoing</span>
+            <span className="badge-pill">{issueRows.filter((row) => row.status === "resolved").length} resolved</span>
+          </div>
+
+          <div className="responsive-table admin-issue-table-wrap">
+            <table className="admin-issue-table">
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Profile</th>
+                  <th>Source</th>
+                  <th>Category</th>
+                  <th>Message</th>
+                  <th>Date</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {issueRows.length > 0 ? issueRows.map((row) => (
+                  <tr key={row.id} className={`admin-issue-row issue-${row.status}`}>
+                    <td><strong>{row.type}</strong></td>
+                    <td><span className={`feedback-status-pill feedback-status-${row.status === "resolved" ? "resolved" : "still_problem"}`}>{row.statusLabel}</span></td>
+                    <td>{row.profileName}</td>
+                    <td>{row.source}</td>
+                    <td>{row.category}</td>
+                    <td className="admin-issue-message">{row.message}</td>
+                    <td>{formatDate(row.date)}</td>
+                    <td>{row.action ?? <span className="badge-pill">Review</span>}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={8}>No issues match the current filters.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </section>
       ) : null}
