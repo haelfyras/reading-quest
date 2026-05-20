@@ -25,7 +25,7 @@ export async function PATCH(request: Request) {
     const supabase = createServiceSupabaseClient() as any;
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("id, points, lifetime_points, parent_controls")
+      .select("id, points, lifetime_points, leaderboard_private, parent_controls")
       .eq("id", profileId)
       .maybeSingle();
 
@@ -75,6 +75,36 @@ export async function PATCH(request: Request) {
 
       if (error || !updated) {
         return NextResponse.json({ error: error?.message || "Unable to remove profile from the app." }, { status: 500 });
+      }
+
+      return NextResponse.json({ profile: updated });
+    }
+
+    if (action === "toggle_test_account") {
+      const controls = getProfileControls(profile);
+      const makeTestAccount = Boolean(body.enabled);
+      const nextControls = { ...controls };
+      if (makeTestAccount) {
+        nextControls.testAccountAt = new Date().toISOString();
+        nextControls.testAccountPreviousLeaderboardPrivate = Boolean(profile.leaderboard_private);
+      } else {
+        delete nextControls.testAccountAt;
+        delete nextControls.testAccountPreviousLeaderboardPrivate;
+      }
+
+      const previousLeaderboardPrivate = Boolean(controls.testAccountPreviousLeaderboardPrivate);
+      const { data: updated, error } = await supabase
+        .from("profiles")
+        .update({
+          leaderboard_private: makeTestAccount ? true : previousLeaderboardPrivate,
+          parent_controls: nextControls,
+        })
+        .eq("id", profileId)
+        .select("*")
+        .single();
+
+      if (error || !updated) {
+        return NextResponse.json({ error: error?.message || "Unable to update test account status." }, { status: 500 });
       }
 
       return NextResponse.json({ profile: updated });

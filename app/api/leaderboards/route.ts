@@ -50,6 +50,14 @@ function isAppDeleted(profile: Record<string, any>) {
   );
 }
 
+function isTestAccount(profile: Record<string, any>) {
+  return Boolean(
+    typeof profile.parent_controls === "object" &&
+    profile.parent_controls &&
+    typeof profile.parent_controls.testAccountAt === "string",
+  );
+}
+
 export async function GET(request: Request) {
   const currentProfileId = new URL(request.url).searchParams.get("currentProfileId") ?? "";
 
@@ -64,7 +72,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: profilesError.message }, { status: 500 });
     }
 
-    const activeProfiles = (profiles ?? []).filter((profile: any) => !isAppDeleted(profile));
+    const activeProfiles = (profiles ?? []).filter((profile: any) => !isAppDeleted(profile) && !isTestAccount(profile));
     const profileIds = activeProfiles.map((profile: any) => profile.id);
     const { data: quizzes, error: quizzesError } = profileIds.length
       ? await supabase.from("quiz_results").select("profile_id").in("profile_id", profileIds)

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION } from "../lib/product";
+import { COMPANY_NAME, PRODUCT_DESCRIPTION, PRODUCT_NAME, PRODUCT_VERSION } from "../lib/product";
 import AppMenu from "./components/AppMenu";
 import AppTelemetry from "./components/AppTelemetry";
 import FeedbackButton from "./components/FeedbackButton";
@@ -7,7 +7,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: `${PRODUCT_NAME} ${PRODUCT_VERSION}`,
-  description: `${PRODUCT_NAME} by ${COMPANY_NAME}: AI-generated book quizzes with points, prizes, and leaderboards.`,
+  description: PRODUCT_DESCRIPTION,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

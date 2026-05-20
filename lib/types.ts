@@ -1,3 +1,5 @@
+import type { QuestionType } from "./quizQuestionTypes";
+
 export type QuizHistory = {
   bookTitle: string;
   date: string;
@@ -6,6 +8,8 @@ export type QuizHistory = {
   earnedPoints?: number;
   difficulty: string;
   bookLevel: string;
+  bookDifficultyScore?: number;
+  bookDifficultyRatingId?: string;
   learningGoal: string;
 };
 
@@ -70,10 +74,15 @@ export type QuizIssueReport = {
 
 export type ChallengeQuizQuestion = {
   question: string;
+  questionKey?: string;
+  questionType?: QuestionType;
   choices: string[];
   answerIndex: number;
   answerText?: string;
   explanation?: string;
+  qualityScore?: number;
+  questionVersion?: number;
+  poolQuestionId?: string;
 };
 
 export type ReadingChallenge = {
@@ -132,6 +141,7 @@ export type ParentControls = {
   requireAiQuizReview: boolean;
   allowLocationLookup: boolean;
   testingLevel: TestingLevel;
+  testAccountAt?: string;
 };
 
 export type SubscriptionTier = "free" | "ad_free" | "plus";

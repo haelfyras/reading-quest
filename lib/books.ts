@@ -7,6 +7,8 @@ export type BookMatch = {
   isbn?: string;
   source?: string;
   confidence?: number;
+  difficultyIndex?: number;
+  bookLevel?: string;
 };
 
 export type BookLookupResult = {

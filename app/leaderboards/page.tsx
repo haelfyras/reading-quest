@@ -6,6 +6,7 @@ import {
   getCurrentProfile,
   getLifetimePoints,
   getProfiles,
+  isTestAccount,
   Profile,
 } from "../../lib/user";
 import { loadSiteLeaderboardProfiles } from "../../lib/leaderboards";
@@ -23,7 +24,9 @@ export default function LeaderboardsPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const buildLeaderboards = (profiles: Profile[], currentProfile: Profile | null) => {
-    const publicProfiles = profiles.filter((profile) => !profile.leaderboardPrivate || profile.id === currentProfile?.id);
+    const publicProfiles = profiles.filter((profile) =>
+      !isTestAccount(profile) && (!profile.leaderboardPrivate || profile.id === currentProfile?.id),
+    );
     const byLifetimePoints = (a: Profile, b: Profile) => getLifetimePoints(b) - getLifetimePoints(a);
 
     setLeaderboards({

@@ -21,7 +21,11 @@ import {
   getPointTimeline,
   getProfiles,
   getSpendablePoints,
+  childLibraryMessage,
+  getEffectiveSubscriptionTier,
+  isTestAccount,
   Profile,
+  subscriptionPlans,
 } from "../../lib/user";
 import { loadSiteLeaderboardProfiles } from "../../lib/leaderboards";
 import { getBookRecommendations as buildRecommendations } from "../../lib/recommendations";
@@ -107,7 +111,7 @@ export default function HomePage() {
       .then((profiles) => {
         setChildLeaderboard(
           profiles
-            .filter((item) => !item.isParent)
+            .filter((item) => !item.isParent && !isTestAccount(item))
             .slice()
             .sort((a, b) => getLifetimePoints(b) - getLifetimePoints(a)),
         );
@@ -115,7 +119,7 @@ export default function HomePage() {
       .catch(() => {
         setChildLeaderboard(
           getProfiles()
-            .filter((item) => !item.isParent)
+            .filter((item) => !item.isParent && !isTestAccount(item))
             .slice()
             .sort((a, b) => getLifetimePoints(b) - getLifetimePoints(a)),
         );
@@ -138,6 +142,7 @@ export default function HomePage() {
   const reachedPrizeCount = sortedPrizeGoals.filter((goal) => currentPoints >= goal.pointsRequired).length;
   const recommendationData = useMemo(() => buildRecommendations({ profile: currentUser, limit: 1 }), [currentUser]);
   const readingPath = currentUser?.readingPath ?? "explorer";
+  const effectiveTier = currentUser ? getEffectiveSubscriptionTier(currentUser) : "free";
   const currentlyReading = currentUser?.readingNow?.[0] ?? recentTitle(currentUser);
   const hasReadingInterests = Boolean(
     currentUser?.favoriteBooks?.filter(Boolean).length ||
@@ -200,6 +205,15 @@ export default function HomePage() {
       </div>
 
       <BetaDisclaimer />
+
+      <section className="home-section" aria-labelledby="library-note-heading">
+        <h2 id="library-note-heading">Library Quest</h2>
+        <p><strong>{childLibraryMessage}</strong></p>
+        <p>Local libraries are a great way to learn more and earn more. Library books, audiobooks, ebooks, read-aloud books, and borrowed books all count in Reading Quest.</p>
+        {effectiveTier !== "plus" ? (
+          <p className="setting-description">{subscriptionPlans[effectiveTier].childUnlockMessage}</p>
+        ) : null}
+      </section>
 
       <SetupGuide
         title="Set Up Your Reading Quest"

@@ -1,5 +1,6 @@
 import type { BookLookupResult, BookMatch } from "./books";
 import { isBookLevel, type BookLevel } from "./scoring";
+import { type BookDifficultyRating } from "./bookDifficulty";
 
 export type BookLookupPayload = {
   bookTitle?: string;
@@ -21,7 +22,7 @@ export async function lookupBook(payload: BookLookupPayload) {
   return await response.json() as BookLookupResult;
 }
 
-export async function detectBookLevel(book: BookMatch): Promise<BookLevel> {
+export async function detectBookLevel(book: BookMatch): Promise<BookDifficultyRating> {
   const response = await fetch("/api/book-level", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -37,7 +38,22 @@ export async function detectBookLevel(book: BookMatch): Promise<BookLevel> {
     throw new Error("Failed to determine book level.");
   }
 
-  const data = await response.json() as { level?: unknown };
+  const data = await response.json() as {
+    level?: unknown;
+    difficultyIndex?: unknown;
+    ratingId?: unknown;
+    canonicalKey?: unknown;
+    source?: unknown;
+  };
   const level = String(data.level || "");
-  return isBookLevel(level) ? level : "intermediate";
+  const difficultyIndex = Number(data.difficultyIndex);
+  return {
+    level: isBookLevel(level) ? level : "intermediate",
+    difficultyIndex: Number.isFinite(difficultyIndex) ? difficultyIndex : 5,
+    ratingId: typeof data.ratingId === "string" ? data.ratingId : undefined,
+    canonicalKey: typeof data.canonicalKey === "string" ? data.canonicalKey : undefined,
+    source: data.source === "known" || data.source === "cache" || data.source === "ai" || data.source === "fallback"
+      ? data.source
+      : "fallback",
+  };
 }

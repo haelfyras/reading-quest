@@ -1011,6 +1011,13 @@ button:disabled {
   color: #7f1d1d;
 }
 
+.test-pill {
+  margin-top: 8px;
+  border-color: #2563eb;
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
 .danger-button:hover:not(:disabled) {
   border-color: #dc2626;
   background: #dc2626;
@@ -2354,6 +2361,17 @@ pre {
 .suggestion-card {
   display: grid;
   gap: 14px;
+}
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.plan-card.selected-plan {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .path-steps {

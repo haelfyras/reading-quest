@@ -7,7 +7,9 @@ import {
   getLifetimePoints,
   getSpendablePoints,
   getSpentPoints,
+  childLibraryMessage,
   normalizeSubscriptionTier,
+  parentLibraryMessage,
   Profile,
   ReadingPath,
   setCurrentUserId,
@@ -348,33 +350,71 @@ export default function SettingsPage() {
 
         <div className="settings-section">
           <h2>Plan</h2>
-          <p className="setting-description">Free keeps Reading Quest accessible. Paid plans remove ads, increase family capacity, and unlock more reading tools.</p>
-          <div className="field">
-            <label htmlFor="subscriptionTier">Current plan</label>
-            <select id="subscriptionTier" value={subscriptionTier} onChange={(event) => setSubscriptionTier(event.target.value as SubscriptionTier)}>
-              {Object.entries(subscriptionPlans).map(([key, plan]) => (
-                <option key={key} value={key}>{plan.name}</option>
-              ))}
-            </select>
-          </div>
-          <div className="plan-card">
-            <strong>{subscriptionPlans[subscriptionTier].name}</strong>
-            <div className="plan-price-row">
-              <span>{subscriptionPlans[subscriptionTier].monthlyPrice}</span>
-              {subscriptionPlans[subscriptionTier].annualPrice ? <span>{subscriptionPlans[subscriptionTier].annualPrice}</span> : null}
-            </div>
-            <p>{subscriptionPlans[subscriptionTier].description}</p>
-            <p className="setting-description">
-              Includes {subscriptionPlans[subscriptionTier].includedChildren} child profiles.
-              {subscriptionPlans[subscriptionTier].extraChildPrice ? ` ${subscriptionPlans[subscriptionTier].extraChildPrice}.` : " Extra child seats are available on paid plans."}
-            </p>
-            <p className="setting-description">{subscriptionPlans[subscriptionTier].quizRule}</p>
-            <ul className="small-list">
-              {subscriptionPlans[subscriptionTier].limits.map((limit) => <li key={limit}>{limit}</li>)}
-            </ul>
-          </div>
-          <button type="button" onClick={savePrivacyAndPlan}>Save privacy and plan</button>
-          {settingsMessage ? <div className="success-box">{settingsMessage}</div> : null}
+          {user.isParent ? (
+            <>
+              <p className="setting-description">Free keeps Reading Quest accessible. Ad-Free removes friction. Plus gives families the full reading coach.</p>
+              <div className="field">
+                <label htmlFor="subscriptionTier">Current plan</label>
+                <select id="subscriptionTier" value={subscriptionTier} onChange={(event) => setSubscriptionTier(event.target.value as SubscriptionTier)}>
+                  {Object.entries(subscriptionPlans).map(([key, plan]) => (
+                    <option key={key} value={key}>{plan.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="plan-grid">
+                {Object.entries(subscriptionPlans).map(([key, plan]) => (
+                  <div key={key} className={`plan-card ${key === subscriptionTier ? "selected-plan" : ""}`}>
+                    <strong>{plan.name}</strong>
+                    <p className="kicker">{plan.tagline}</p>
+                    <div className="plan-price-row">
+                      <span>{plan.monthlyPrice}</span>
+                      {plan.annualPrice ? <span>{plan.annualPrice}</span> : null}
+                    </div>
+                    <p>{plan.description}</p>
+                    <p className="setting-description">
+                      Includes {plan.includedChildren} child profiles.
+                      {plan.extraChildPrice ? ` ${plan.extraChildPrice}.` : " Extra child seats are available on paid plans."}
+                    </p>
+                    <p className="setting-description">{plan.quizRule}</p>
+                    <h3>Features</h3>
+                    <ul className="small-list">
+                      {plan.parentFeatures.map((feature) => <li key={feature}>{feature}</li>)}
+                    </ul>
+                    <h3>Parent reports</h3>
+                    <ul className="small-list">
+                      {plan.reportFeatures.map((feature) => <li key={feature}>{feature}</li>)}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+              <div className="notice">
+                <strong>Library access matters.</strong> {parentLibraryMessage}
+              </div>
+              <button type="button" onClick={savePrivacyAndPlan}>Save privacy and plan</button>
+              {settingsMessage ? <div className="success-box">{settingsMessage}</div> : null}
+            </>
+          ) : (
+            <>
+              <p className="setting-description">{subscriptionPlans[subscriptionTier].childUnlockMessage}</p>
+              <div className="plan-grid">
+                {Object.entries(subscriptionPlans).map(([key, plan]) => (
+                  <div key={key} className={`plan-card ${key === subscriptionTier ? "selected-plan" : ""}`}>
+                    <strong>{plan.name}</strong>
+                    <p className="kicker">{plan.tagline}</p>
+                    <p>{plan.childUnlockMessage}</p>
+                    <ul className="small-list">
+                      {plan.limits.filter((limit) => !limit.includes("$")).map((limit) => <li key={limit}>{limit}</li>)}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+              <div className="notice">
+                <strong>{childLibraryMessage}</strong> Library books, audiobooks, ebooks, read-aloud books, and borrowed books all count.
+              </div>
+              <button type="button" onClick={savePrivacyAndPlan}>Save settings</button>
+              {settingsMessage ? <div className="success-box">{settingsMessage}</div> : null}
+            </>
+          )}
         </div>
       </div>
     </main>

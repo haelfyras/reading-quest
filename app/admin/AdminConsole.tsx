@@ -67,6 +67,7 @@ type FeedbackEntry = {
 type AdminProfile = Profile & {
   appDeletedAt?: string;
   appDeletedReason?: string;
+  testAccountAt?: string;
 };
 
 type AdminIssueRow = {
@@ -401,6 +402,36 @@ export default function AdminConsole() {
     }
 
     setMessage(`${profile.realName || profile.name} was removed from the app.`);
+    await refresh();
+  };
+
+  const toggleTestAccount = async (profile: AdminProfile) => {
+    const enabled = !profile.testAccountAt;
+    const confirmed = window.confirm(
+      enabled
+        ? `Turn ${profile.realName || profile.name} into a test account? They will be hidden from leaderboards while this is on and should sign out and back in before testing.`
+        : `Turn off test account mode for ${profile.realName || profile.name}? They should sign out and back in before testing again.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const response = await fetch("/api/admin/account", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "toggle_test_account", profileId: profile.id, enabled }),
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({ error: "Unable to update test account status." }));
+      setMessage(data.error ?? "Unable to update test account status.");
+      return;
+    }
+
+    setMessage(enabled
+      ? `${profile.realName || profile.name} is now a test account. Ask them to sign out and back in.`
+      : `${profile.realName || profile.name} is no longer a test account. Ask them to sign out and back in.`,
+    );
     await refresh();
   };
 
@@ -782,6 +813,7 @@ export default function AdminConsole() {
                       <strong>{profile.realName || profile.name}</strong>
                       <small className="block-note">{profile.email || profile.profileCode || profile.id}</small>
                       {profile.appDeletedAt ? <span className="badge-pill danger-pill">Removed from app</span> : null}
+                      {profile.testAccountAt ? <span className="badge-pill test-pill">Test account</span> : null}
                     </td>
                     <td>{profile.isParent ? "Parent" : "Child"}</td>
                     <td>{subscriptionPlans[getEffectiveSubscriptionTier(profile)].name}</td>
@@ -803,6 +835,9 @@ export default function AdminConsole() {
                         <button type="button" className="secondary" onClick={() => void addManualPoints(profile)}>Add</button>
                         <button type="button" className="secondary danger-button" disabled={Boolean(profile.appDeletedAt)} onClick={() => void softDeleteAccount(profile)}>
                           {profile.appDeletedAt ? "Removed" : "Delete"}
+                        </button>
+                        <button type="button" className="secondary" disabled={Boolean(profile.appDeletedAt)} onClick={() => void toggleTestAccount(profile)}>
+                          {profile.testAccountAt ? "Test Off" : "Test On"}
                         </button>
                       </div>
                     </td>
@@ -903,7 +938,7 @@ export default function AdminConsole() {
                   <th>Parent linked</th>
                   <th>Friend sharing</th>
                   <th>Location lookup</th>
-                  <th>AI review</th>
+                  <th>Quiz review</th>
                 </tr>
               </thead>
               <tbody>

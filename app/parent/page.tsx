@@ -21,8 +21,12 @@ import {
   getProfiles,
   getQuizIssueReports,
   getSpendablePoints,
+  getEffectiveSubscriptionTier,
+  isTestAccount,
+  parentLibraryMessage,
   Profile,
   QuizIssueReport,
+  subscriptionPlans,
   updateProfile,
   updateQuizIssueReport,
 } from "../../lib/user";
@@ -93,7 +97,7 @@ export default function ParentPage() {
       .then((profiles) => {
         setAdultLeaderboard(
           profiles
-            .filter((item) => item.isParent)
+            .filter((item) => item.isParent && !isTestAccount(item))
             .slice()
             .sort((a, b) => getLifetimePoints(b) - getLifetimePoints(a)),
         );
@@ -101,7 +105,7 @@ export default function ParentPage() {
       .catch(() => {
         setAdultLeaderboard(
           getProfiles()
-            .filter((item) => item.isParent)
+            .filter((item) => item.isParent && !isTestAccount(item))
             .slice()
             .sort((a, b) => getLifetimePoints(b) - getLifetimePoints(a)),
         );
@@ -110,6 +114,8 @@ export default function ParentPage() {
 
   const currentRank = currentUser ? adultLeaderboard.findIndex((profile) => profile.id === currentUser.id) + 1 : 0;
   const pointsProgressData = useMemo(() => currentUser ? getPointTimeline(currentUser) : [], [currentUser]);
+  const currentTier = currentUser ? getEffectiveSubscriptionTier(currentUser) : "free";
+  const currentPlan = subscriptionPlans[currentTier];
   const childQuizCount = children.reduce((total, child) => total + child.quizzes.length, 0);
   const hasChildPrizes = children.some((child) => hasSavedPrizes(child.id));
   const hasAdjustedChildSettings = children.some((child) => Boolean(child.parentControls));
@@ -252,6 +258,27 @@ export default function ParentPage() {
 
       <BetaDisclaimer />
 
+      <section className="home-section" aria-labelledby="parent-library-heading">
+        <h2 id="parent-library-heading">Library Access</h2>
+        <p>Local libraries are a great way to learn more and earn more. Library books, audiobooks, ebooks, read-aloud books, and borrowed books all count in Reading Quest.</p>
+        <p className="setting-description">{parentLibraryMessage}</p>
+      </section>
+
+      <section className="home-section" aria-labelledby="parent-plan-heading">
+        <div className="section-header-row">
+          <div>
+            <h2 id="parent-plan-heading">{currentPlan.name}</h2>
+            <p>{currentPlan.tagline} {currentPlan.description}</p>
+          </div>
+          <Link href="/settings"><button type="button" className="secondary">View plans</button></Link>
+        </div>
+        <div className="compact-list">
+          {currentPlan.reportFeatures.slice(0, 6).map((feature) => (
+            <div key={feature} className="nested-section">{feature}</div>
+          ))}
+        </div>
+      </section>
+
       <SetupGuide
         title="Set Up Your Family Reading Hub"
         description="These steps help parents move from account setup to child safety, quiz review, prizes, and reading alongside the family."
@@ -333,7 +360,7 @@ export default function ParentPage() {
                     </label>
                     <label className="setting-label">
                       <input type="checkbox" checked={controls.requireAiQuizReview} onChange={(event) => updateChildControls(child, "requireAiQuizReview", event.target.checked)} />
-                      <span>Review AI quizzes first</span>
+                      <span>Review new quizzes first</span>
                     </label>
                     <label className="setting-label">
                       <input

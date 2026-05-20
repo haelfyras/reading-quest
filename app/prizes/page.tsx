@@ -9,8 +9,13 @@ import {
   getProfiles,
   getSpendablePoints,
   getSpentPoints,
+  canRequestPrizeIdeasForTier,
+  getEffectiveSubscriptionTier,
+  getPrizeSlotLimit,
+  parentLibraryMessage,
   Profile,
   redeemPrize,
+  subscriptionPlans,
 } from "../../lib/user";
 import {
   defaultPrizes,
@@ -112,7 +117,19 @@ export default function PrizesPage() {
     setClaimMessage("");
   };
 
+  const getCurrentPrizeLimit = () => {
+    if (!user) return 4;
+    return getPrizeSlotLimit(getEffectiveSubscriptionTier(user));
+  };
+
+  const canAddMorePrizes = () => prizes.length < getCurrentPrizeLimit();
+
   const addParentPrize = () => {
+    if (!user || !canAddMorePrizes()) {
+      const tier = user ? getEffectiveSubscriptionTier(user) : "free";
+      setClaimMessage(`${subscriptionPlans[tier].name} supports up to ${getCurrentPrizeLimit()} prizes.`);
+      return;
+    }
     setPrizes((current) => [
       ...current,
       {
@@ -127,6 +144,11 @@ export default function PrizesPage() {
   };
 
   const addSuggestedPrize = (suggestion: PrizeSuggestion) => {
+    if (!user || !canAddMorePrizes()) {
+      const tier = user ? getEffectiveSubscriptionTier(user) : "free";
+      setClaimMessage(`${subscriptionPlans[tier].name} supports up to ${getCurrentPrizeLimit()} prizes.`);
+      return;
+    }
     setPrizes((current) => [
       ...current,
       {
@@ -142,8 +164,18 @@ export default function PrizesPage() {
     setClaimMessage(`${suggestion.name} added. Save prizes when you are ready.`);
   };
 
+  const removeParentPrize = (prizeId: string) => {
+    setPrizes((current) => current.filter((prize) => prize.id !== prizeId));
+    setClaimMessage("Prize removed. Save prizes when you are ready.");
+  };
+
   const requestPrizeIdea = async () => {
     if (!user || user.isParent) return;
+    const tier = getEffectiveSubscriptionTier(user);
+    if (!canRequestPrizeIdeasForTier(tier)) {
+      setClaimMessage("Talk to your parent about our ad-free experience and more ways to request prizes.");
+      return;
+    }
 
     const name = requestedPrizeName.trim();
     if (!name) {
@@ -197,6 +229,11 @@ export default function PrizesPage() {
   };
 
   const addRequestedPrizeToMenu = async (request: PrizeAddRequest) => {
+    if (!user || !canAddMorePrizes()) {
+      const tier = user ? getEffectiveSubscriptionTier(user) : "free";
+      setClaimMessage(`${subscriptionPlans[tier].name} supports up to ${getCurrentPrizeLimit()} prizes.`);
+      return;
+    }
     setPrizes((current) => [
       ...current,
       {
@@ -260,6 +297,11 @@ export default function PrizesPage() {
     const validPrizes = prizes.filter((prize) => prize.name.trim() && prize.pointsRequired > 0);
     if (!validPrizes.length) {
       setClaimMessage("Add at least one prize with a name and point value.");
+      return;
+    }
+    if (validPrizes.length > getCurrentPrizeLimit()) {
+      const tier = user ? getEffectiveSubscriptionTier(user) : "free";
+      setClaimMessage(`${subscriptionPlans[tier].name} supports up to ${getCurrentPrizeLimit()} prizes. Remove a prize or change plans before saving.`);
       return;
     }
 
@@ -379,6 +421,9 @@ export default function PrizesPage() {
   const childPendingPrizeIdeas = user.isParent ? [] : prizeAddRequests.filter(
     (request) => request.childId === user.id && request.status === "pending",
   );
+  const effectiveTier = getEffectiveSubscriptionTier(user);
+  const prizeLimit = getPrizeSlotLimit(effectiveTier);
+  const canRequestPrizeIdeas = canRequestPrizeIdeasForTier(effectiveTier);
 
   if (user.isParent) {
     return (
@@ -396,6 +441,9 @@ export default function PrizesPage() {
 
         <section className="home-section" aria-labelledby="child-prizes-heading">
           <h2 id="child-prizes-heading">Child Prizes</h2>
+          <div className="notice">
+            <strong>Library access matters.</strong> {parentLibraryMessage}
+          </div>
           {children.length > 0 ? (
             <>
               <div className="field">
@@ -488,7 +536,13 @@ export default function PrizesPage() {
                 </div>
               </div>
               <div className="nested-section" aria-labelledby="prize-menu-heading">
-                <h3 id="prize-menu-heading">Prize Menu</h3>
+                <div className="section-header-row">
+                  <div>
+                    <h3 id="prize-menu-heading">Prize Menu</h3>
+                    <p>{subscriptionPlans[effectiveTier].name} supports up to {prizeLimit} prizes. You can edit or remove existing prizes anytime.</p>
+                  </div>
+                  <span className="badge-pill">{prizes.length} / {prizeLimit}</span>
+                </div>
                 <div className="prize-editor-grid">
                   {prizes.map((prize, index) => (
                     <div key={prize.id} className="prize-editor-card">
@@ -505,14 +559,20 @@ export default function PrizesPage() {
                         <input id={`prizeDescription-${index}`} value={prize.description} onChange={(event) => updateParentPrize(index, "description", event.target.value)} />
                       </div>
                       <p className="setting-description">Claimed {prize.claimCount ?? 0} {prize.claimCount === 1 ? "time" : "times"}</p>
+                      <button type="button" className="secondary danger-button" onClick={() => removeParentPrize(prize.id)}>
+                        Remove prize
+                      </button>
                     </div>
                   ))}
                 </div>
               </div>
               <div className="button-row">
-                <button type="button" onClick={addParentPrize}>Add Prize</button>
+                <button type="button" onClick={addParentPrize} disabled={!canAddMorePrizes()}>Add Prize</button>
                 <button type="button" onClick={() => void saveParentPrizes()}>Save Prizes</button>
               </div>
+              {!canAddMorePrizes() ? (
+                <p className="setting-description">Change plans in Settings to unlock more prize slots.</p>
+              ) : null}
             </>
           ) : (
             <p>Verify a child from Profile before setting prize goals.</p>
@@ -609,43 +669,51 @@ export default function PrizesPage() {
 
       <section className="home-section" aria-labelledby="request-prize-heading">
         <h2 id="request-prize-heading">Request a Prize</h2>
-        <p>Ask your parent to add a prize idea to your list.</p>
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor="requestedPrizeName">Prize idea</label>
-            <input
-              id="requestedPrizeName"
-              value={requestedPrizeName}
-              onChange={(event) => setRequestedPrizeName(event.target.value)}
-              placeholder="New soccer ball"
-            />
+        {canRequestPrizeIdeas ? (
+          <>
+            <p>Ask your parent to add a prize idea to your list.</p>
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor="requestedPrizeName">Prize idea</label>
+                <input
+                  id="requestedPrizeName"
+                  value={requestedPrizeName}
+                  onChange={(event) => setRequestedPrizeName(event.target.value)}
+                  placeholder="New soccer ball"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="requestedPrizePoints">Suggested points</label>
+                <input
+                  id="requestedPrizePoints"
+                  type="number"
+                  min={10}
+                  value={requestedPrizePoints}
+                  onChange={(event) => setRequestedPrizePoints(Number(event.target.value))}
+                />
+              </div>
+            </div>
+            <div className="field">
+              <label htmlFor="requestedPrizeDescription">Why this prize?</label>
+              <input
+                id="requestedPrizeDescription"
+                value={requestedPrizeDescription}
+                onChange={(event) => setRequestedPrizeDescription(event.target.value)}
+                placeholder="I would like to earn this after finishing a chapter book."
+              />
+            </div>
+            <button type="button" onClick={() => void requestPrizeIdea()}>Send to Parent</button>
+            {childPendingPrizeIdeas.length > 0 ? (
+              <p className="setting-description">
+                {childPendingPrizeIdeas.length} prize {childPendingPrizeIdeas.length === 1 ? "idea is" : "ideas are"} waiting for parent review.
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <div className="notice">
+            Talk to your parent about our ad-free experience and more ways to celebrate your reading.
           </div>
-          <div className="field">
-            <label htmlFor="requestedPrizePoints">Suggested points</label>
-            <input
-              id="requestedPrizePoints"
-              type="number"
-              min={10}
-              value={requestedPrizePoints}
-              onChange={(event) => setRequestedPrizePoints(Number(event.target.value))}
-            />
-          </div>
-        </div>
-        <div className="field">
-          <label htmlFor="requestedPrizeDescription">Why this prize?</label>
-          <input
-            id="requestedPrizeDescription"
-            value={requestedPrizeDescription}
-            onChange={(event) => setRequestedPrizeDescription(event.target.value)}
-            placeholder="I would like to earn this after finishing a chapter book."
-          />
-        </div>
-        <button type="button" onClick={() => void requestPrizeIdea()}>Send to Parent</button>
-        {childPendingPrizeIdeas.length > 0 ? (
-          <p className="setting-description">
-            {childPendingPrizeIdeas.length} prize {childPendingPrizeIdeas.length === 1 ? "idea is" : "ideas are"} waiting for parent review.
-          </p>
-        ) : null}
+        )}
       </section>
 
       {hasParentSetup && (

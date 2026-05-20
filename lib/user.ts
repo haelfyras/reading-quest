@@ -151,41 +151,127 @@ export const subscriptionPlans: Record<SubscriptionTier, {
   name: string;
   monthlyPrice: string;
   annualPrice?: string;
+  tagline: string;
   includedChildren: number;
   extraChildPrice?: string;
+  dailyGeneratedQuizLimit: number;
+  prizeSlots: number;
+  childPrizeRequests: boolean;
   quizRule: string;
   description: string;
   limits: string[];
+  parentFeatures: string[];
+  reportFeatures: string[];
+  childUnlockMessage: string;
 }> = {
   free: {
     name: "Free",
     monthlyPrice: "$0",
+    tagline: "Start the habit.",
     includedChildren: 2,
+    dailyGeneratedQuizLimit: 3,
+    prizeSlots: 4,
+    childPrizeRequests: false,
     quizRule: "10 quizzes per child per 24 hours during beta",
-    description: "A simple starter plan for families beginning a reading habit.",
-    limits: ["2 child profiles", "Prizes", "Quizzes without ads during beta", "10 quizzes per child per 24 hours during beta", "Basic points"],
+    description: "Start building a reading habit with quizzes, points, and editable starter prizes.",
+    limits: ["2 child profiles", "4 editable starter prizes", "Quizzes without ads during beta", "10 quizzes per child per 24 hours during beta", "Basic points"],
+    parentFeatures: [
+      "Recent quizzes",
+      "Current points",
+      "Prize requests",
+      "Basic missed-question review",
+    ],
+    reportFeatures: [
+      "Recent quizzes",
+      "Current points",
+      "Prize requests",
+      "Basic missed-question review",
+    ],
+    childUnlockMessage: "Talk to your parent about our ad-free experience and more ways to celebrate your reading.",
   },
   ad_free: {
     name: "Ad-Free Family",
     monthlyPrice: "$2.99/mo",
     annualPrice: "$24.99/year",
+    tagline: "A calmer experience.",
     includedChildren: 3,
     extraChildPrice: "+$1/mo per extra child",
+    dailyGeneratedQuizLimit: 5,
+    prizeSlots: 5,
+    childPrizeRequests: true,
     quizRule: "10 quizzes per child per 24 hours during beta",
-    description: "The same core reading loop without ads.",
-    limits: ["3 child profiles included", "No ads", "10 quizzes per child per 24 hours during beta", "Prizes and basic progress"],
+    description: "Keep the reading experience calmer, add a child profile, and let kids request prize ideas.",
+    limits: ["3 child profiles included", "No ads", "5 prize slots", "Kids can request prize ideas", "10 quizzes per child per 24 hours during beta", "Simple weekly parent summary"],
+    parentFeatures: [
+      "Everything in Free",
+      "No ads",
+      "3 child profiles included",
+      "5 prize slots",
+      "Child prize idea requests",
+      "Weekly summary with quiz count, best book/topic, points earned, suggested next book, and reported quiz issues",
+      "Plus features are visible so families can see what is available later",
+    ],
+    reportFeatures: [
+      "Quizzes taken this week",
+      "Best book/topic",
+      "Points earned",
+      "Suggested next book",
+      "Any reported quiz issues",
+    ],
+    childUnlockMessage: "Your reading space can be ad-free, and you can ask your parent for prize ideas to add.",
   },
   plus: {
     name: "Reading Quest Plus",
     monthlyPrice: "$7.99/mo",
     annualPrice: "$69.99/year",
+    tagline: "The full reading coach.",
     includedChildren: 5,
     extraChildPrice: "+$1/mo per extra child",
+    dailyGeneratedQuizLimit: 10,
+    prizeSlots: 20,
+    childPrizeRequests: true,
     quizRule: "10 quizzes per child per 24 hours during beta",
-    description: "The complete family reading toolkit.",
-    limits: ["5 child profiles included", "10 quizzes per child per 24 hours during beta", "All reading, friend, location, leaderboard, and parent review features", "Full prize and progress tools"],
+    description: "Get fuller reading insights, more prize flexibility, richer recommendations, and support for more children.",
+    limits: ["5 child profiles included", "20 prize slots", "Kids can request prize ideas", "10 quizzes per child per 24 hours during beta", "Advanced recommendations", "Printable/exportable progress reports"],
+    parentFeatures: [
+      "Everything in Ad-Free",
+      "5 child profiles included",
+      "20 prize slots",
+      "Reading trend over time",
+      "Comprehension by quiz difficulty",
+      "Strengths across recall, inference, and themes",
+      "Books completed",
+      "Recommendations with why this book",
+      "Export/print option",
+    ],
+    reportFeatures: [
+      "Reading trend over time",
+      "Comprehension by quiz difficulty",
+      "Strengths: recall, inference, themes",
+      "Books completed",
+      "Recommendations with why this book",
+      "Export/print option",
+    ],
+    childUnlockMessage: "Plus adds more goals, more prize options, and more ways to explore books.",
   },
 };
+
+export const libraryAccessMessage = "Local libraries are a great way to learn more and earn more. Library books, audiobooks, ebooks, read-aloud books, and borrowed books all count in Reading Quest.";
+export const childLibraryMessage = "Your next quest might be waiting at the library.";
+export const parentLibraryMessage = "Reading Quest counts library books, audiobooks, ebooks, and read-aloud books so families can participate without buying more books.";
+
+export function getPrizeSlotLimit(tier: SubscriptionTier) {
+  return subscriptionPlans[tier].prizeSlots;
+}
+
+export function canRequestPrizeIdeasForTier(tier: SubscriptionTier) {
+  return subscriptionPlans[tier].childPrizeRequests;
+}
+
+export function isTestAccount(profile: Pick<Profile, "parentControls"> | null | undefined) {
+  const controls = profile?.parentControls as (ParentControls & { testAccountAt?: string }) | undefined;
+  return Boolean(controls?.testAccountAt);
+}
 
 export function getProfiles(): Profile[] {
   const stored = readStorage<Profile[]>(STORAGE_KEY);
@@ -1042,6 +1128,10 @@ export function addQuizResult(
     bookTitle: string;
     difficulty: string;
     bookLevel: string;
+    bookDifficultyScore?: number;
+    bookDifficultyRatingId?: string;
+    quizPayload?: unknown;
+    selectedAnswers?: number[];
     learningGoal: string;
   },
 ): Profile | null {
@@ -1060,6 +1150,8 @@ export function addQuizResult(
     earnedPoints,
     difficulty: details.difficulty,
     bookLevel: details.bookLevel,
+    bookDifficultyScore: details.bookDifficultyScore,
+    bookDifficultyRatingId: details.bookDifficultyRatingId,
     learningGoal: details.learningGoal,
   };
 
@@ -1076,6 +1168,9 @@ export function addQuizResult(
   syncBetaData("quiz_result", {
     profileId: saved.id,
     ...quizEntry,
+    bookDifficultyRatingId: details.bookDifficultyRatingId,
+    quizPayload: details.quizPayload,
+    selectedAnswers: details.selectedAnswers,
   });
   return saved;
 }

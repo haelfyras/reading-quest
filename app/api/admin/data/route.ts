@@ -14,7 +14,7 @@ function mapProfile(
   quizzes: QuizHistory[],
   readingLogs: ReadingLog[],
   prizeRedemptions: PrizeRedemption[],
-): Profile & { appDeletedAt?: string; appDeletedReason?: string } {
+): Profile & { appDeletedAt?: string; appDeletedReason?: string; testAccountAt?: string } {
   const parentControls = typeof row.parent_controls === "object" && row.parent_controls ? row.parent_controls : undefined;
 
   return {
@@ -49,6 +49,7 @@ function mapProfile(
     linkedChildren,
     appDeletedAt: typeof parentControls?.appDeletedAt === "string" ? parentControls.appDeletedAt : undefined,
     appDeletedReason: typeof parentControls?.appDeletedReason === "string" ? parentControls.appDeletedReason : undefined,
+    testAccountAt: typeof parentControls?.testAccountAt === "string" ? parentControls.testAccountAt : undefined,
   };
 }
 
@@ -61,6 +62,10 @@ function mapQuiz(row: Record<string, any>): QuizHistory {
     earnedPoints: Number(row.earned_points ?? 0),
     difficulty: row.difficulty,
     bookLevel: row.book_level,
+    bookDifficultyScore: row.book_difficulty_score === null || row.book_difficulty_score === undefined
+      ? undefined
+      : Number(row.book_difficulty_score),
+    bookDifficultyRatingId: row.book_difficulty_rating_id ?? undefined,
     learningGoal: row.learning_goal,
   };
 }

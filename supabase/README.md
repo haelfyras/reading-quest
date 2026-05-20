@@ -10,7 +10,9 @@ This folder contains the database foundation for moving Reading Quest from brows
 4. Run `supabase/migrations/003_child_screen_name_accounts.sql`.
 5. Run `supabase/migrations/004_parent_verification_privacy.sql`.
 6. Run `supabase/migrations/005_shared_beta_state.sql`.
-7. In Vercel, add these environment variables for Production and Preview:
+7. Run `supabase/migrations/006_book_difficulty_index.sql`.
+8. Run `supabase/migrations/007_quiz_question_pool.sql`.
+9. In Vercel, add these environment variables for Production and Preview:
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY`
@@ -36,6 +38,8 @@ Supabase Auth confirmation emails use this value for redirects.
 - Unique child screen names with no required child email address.
 - Parent-child verification that does not require a child's real name.
 - Shared reading path preferences and richer prize menu fields for cross-device beta accounts.
+- Stored RQ Difficulty Index scores so confirmed books do not need AI re-rating every time.
+- Reusable categorized quiz question pools with quality scores, versions, usage counts, and report counts.
 
 ## Next Pushes
 

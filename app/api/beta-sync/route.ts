@@ -34,6 +34,91 @@ function cleanReadingPath(value: unknown): "explorer" | "genre_adventurer" | "sk
   return "explorer";
 }
 
+function clampDifficultyAdjustment(value: number) {
+  return Math.min(1, Math.max(-1, Math.round(value * 10) / 10));
+}
+
+function clampDifficultyScore(value: number) {
+  return Math.min(9.9, Math.max(1, Math.round(value * 10) / 10));
+}
+
+async function updateBookDifficultyStats(supabase: any, payload: Record<string, any>) {
+  const ratingId = cleanString(payload.bookDifficultyRatingId);
+  if (!isUuid(ratingId)) return;
+
+  const score = Math.max(0, Number(payload.score ?? 0));
+  const maxScore = Math.max(1, Number(payload.maxScore ?? 1));
+  const accuracy = Math.min(1, Math.max(0, score / maxScore));
+  const eligible = accuracy >= 0.1;
+
+  const { data: rating } = await supabase
+    .from("book_difficulty_ratings")
+    .select("ai_base_score,community_adjustment,completed_quiz_count,eligible_attempt_count,eligible_accuracy_total,last_adjusted_attempt_count")
+    .eq("id", ratingId)
+    .maybeSingle();
+
+  if (!rating) return;
+
+  const completedCount = Number(rating.completed_quiz_count ?? 0) + 1;
+  const eligibleCount = Number(rating.eligible_attempt_count ?? 0) + (eligible ? 1 : 0);
+  const accuracyTotal = Number(rating.eligible_accuracy_total ?? 0) + (eligible ? accuracy : 0);
+  const lastAdjusted = Number(rating.last_adjusted_attempt_count ?? 0);
+  const updates: Record<string, unknown> = {
+    completed_quiz_count: completedCount,
+    eligible_attempt_count: eligibleCount,
+    eligible_accuracy_total: accuracyTotal,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (completedCount >= 25 && eligibleCount - lastAdjusted >= 10 && eligibleCount > 0) {
+    const averageAccuracy = accuracyTotal / eligibleCount;
+    const delta = averageAccuracy >= 0.9 ? -0.1 : averageAccuracy <= 0.45 ? 0.1 : 0;
+    const nextAdjustment = clampDifficultyAdjustment(Number(rating.community_adjustment ?? 0) + delta);
+    updates.community_adjustment = nextAdjustment;
+    updates.current_score = clampDifficultyScore(Number(rating.ai_base_score ?? 5) + nextAdjustment);
+    updates.last_adjusted_attempt_count = eligibleCount;
+  }
+
+  await supabase.from("book_difficulty_ratings").update(updates).eq("id", ratingId);
+}
+
+async function updateQuestionPoolStats(supabase: any, payload: Record<string, any>) {
+  const quizPayload = payload.quizPayload && typeof payload.quizPayload === "object"
+    ? payload.quizPayload as Record<string, any>
+    : null;
+  const questions = Array.isArray(quizPayload?.questions) ? quizPayload.questions : [];
+  const selectedAnswers = Array.isArray(payload.selectedAnswers) ? payload.selectedAnswers : [];
+  if (questions.length === 0 || selectedAnswers.length === 0) return;
+
+  await Promise.allSettled(questions.map(async (question: any, index: number) => {
+    const questionId = cleanString(question.poolQuestionId);
+    if (!isUuid(questionId)) return;
+
+    const selected = Number(selectedAnswers[index]);
+    const answerIndex = Number(question.answerIndex);
+    const { data } = await supabase
+      .from("book_question_pool")
+      .select("correct_count,incorrect_count,skipped_count")
+      .eq("id", questionId)
+      .maybeSingle();
+
+    if (!data) return;
+
+    const updates: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (selected < 0) {
+      updates.skipped_count = Number(data.skipped_count ?? 0) + 1;
+    } else if (selected === answerIndex) {
+      updates.correct_count = Number(data.correct_count ?? 0) + 1;
+    } else {
+      updates.incorrect_count = Number(data.incorrect_count ?? 0) + 1;
+    }
+
+    await supabase.from("book_question_pool").update(updates).eq("id", questionId);
+  }));
+}
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const kind = cleanString(body.kind);
@@ -92,6 +177,10 @@ export async function POST(request: Request) {
         book_title: cleanString(payload.bookTitle, "Unknown book"),
         difficulty: payload.difficulty,
         book_level: payload.bookLevel,
+        book_difficulty_rating_id: isUuid(payload.bookDifficultyRatingId) ? payload.bookDifficultyRatingId : null,
+        book_difficulty_score: Number.isFinite(Number(payload.bookDifficultyScore))
+          ? Math.round(Number(payload.bookDifficultyScore) * 10) / 10
+          : null,
         learning_goal: cleanString(payload.learningGoal, "basic_recollection"),
         score: Math.max(0, Math.round(Number(payload.score ?? 0))),
         max_score: Math.max(1, Math.round(Number(payload.maxScore ?? 1))),
@@ -104,6 +193,9 @@ export async function POST(request: Request) {
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
+
+      await updateBookDifficultyStats(supabase, payload);
+      await updateQuestionPoolStats(supabase, payload);
     }
 
     if (kind === "quiz_issue_report") {

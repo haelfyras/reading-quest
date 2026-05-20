@@ -1,6 +1,6 @@
 # Reading Quest
 
-Reading Quest is a Next.js app for turning books into AI-generated quizzes for children. It now supports profile logins, one-question-at-a-time quiz flow, and points attached to a user account.
+Reading Quest is a Next.js app for families that turns books from home, school, or the library into quizzes, goals, and parent-approved rewards. It now supports profile logins, one-question-at-a-time quiz flow, and points attached to a user account.
 
 ## Product Overview
 

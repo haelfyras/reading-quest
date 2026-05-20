@@ -58,6 +58,37 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["parent_child_links"]["Row"]>;
         Relationships: [];
       };
+      book_difficulty_ratings: {
+        Row: {
+          id: string;
+          canonical_key: string;
+          title: string;
+          author: string | null;
+          isbn: string | null;
+          first_published_year: number | null;
+          ai_base_score: number;
+          current_score: number;
+          book_level: "beginner" | "intermediate" | "advanced";
+          scoring_factors: Json;
+          ai_model: string | null;
+          community_adjustment: number;
+          completed_quiz_count: number;
+          eligible_attempt_count: number;
+          eligible_accuracy_total: number;
+          last_adjusted_attempt_count: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["book_difficulty_ratings"]["Row"]> & {
+          canonical_key: string;
+          title: string;
+          ai_base_score: number;
+          current_score: number;
+          book_level: "beginner" | "intermediate" | "advanced";
+        };
+        Update: Partial<Database["public"]["Tables"]["book_difficulty_ratings"]["Row"]>;
+        Relationships: [];
+      };
       quiz_results: {
         Row: {
           id: string;
@@ -65,6 +96,8 @@ export type Database = {
           book_title: string;
           difficulty: "easy" | "medium" | "hard";
           book_level: "beginner" | "intermediate" | "advanced";
+          book_difficulty_rating_id: string | null;
+          book_difficulty_score: number | null;
           learning_goal: string;
           score: number;
           max_score: number;
@@ -83,6 +116,47 @@ export type Database = {
           max_score: number;
         };
         Update: Partial<Database["public"]["Tables"]["quiz_results"]["Row"]>;
+        Relationships: [];
+      };
+      book_question_pool: {
+        Row: {
+          id: string;
+          book_difficulty_rating_id: string | null;
+          canonical_key: string;
+          book_title: string;
+          author: string | null;
+          quiz_difficulty: "easy" | "medium" | "hard";
+          question_type: string;
+          book_level: "beginner" | "intermediate" | "advanced";
+          question_key: string;
+          question: string;
+          choices: Json;
+          answer_index: number;
+          answer_text: string | null;
+          explanation: string | null;
+          quality_score: number;
+          question_version: number;
+          times_used: number;
+          correct_count: number;
+          incorrect_count: number;
+          skipped_count: number;
+          report_count: number;
+          active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["book_question_pool"]["Row"]> & {
+          canonical_key: string;
+          book_title: string;
+          quiz_difficulty: "easy" | "medium" | "hard";
+          question_type: string;
+          book_level: "beginner" | "intermediate" | "advanced";
+          question_key: string;
+          question: string;
+          choices: Json;
+          answer_index: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["book_question_pool"]["Row"]>;
         Relationships: [];
       };
       quiz_issue_reports: {

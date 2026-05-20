@@ -24,7 +24,9 @@ import {
 } from "../../lib/user";
 import { getBookRecommendations } from "../../lib/recommendations";
 import type { BookMatch } from "../../lib/books";
+import type { QuestionType } from "../../lib/quizQuestionTypes";
 import { detectBookLevel as detectBookLevelFromApi, lookupBook as lookupBookFromApi, type BookLookupPayload } from "../../lib/bookClient";
+import { getDifficultyIndexRange } from "../../lib/bookDifficulty";
 import { getEncouragementMessage } from "../../lib/quizFeedback";
 import {
   getBasePoints,
@@ -40,10 +42,14 @@ import {
 type QuizQuestion = {
   question: string;
   questionKey?: string;
+  questionType?: QuestionType;
   choices: string[];
   answerIndex: number;
   answerText?: string;
   explanation?: string;
+  qualityScore?: number;
+  questionVersion?: number;
+  poolQuestionId?: string;
 };
 
 type QuizData = {
@@ -88,6 +94,9 @@ function QuizPageContent() {
   const [showIsbnFallback, setShowIsbnFallback] = useState(false);
   const [difficulty, setDifficulty] = useState<typeof difficultyLevels[number]>("easy");
   const [bookLevel, setBookLevel] = useState<BookLevel | null>(null);
+  const [bookDifficultyIndex, setBookDifficultyIndex] = useState<number | null>(null);
+  const [bookDifficultyRatingId, setBookDifficultyRatingId] = useState<string | null>(null);
+  const [bookDifficultyCanonicalKey, setBookDifficultyCanonicalKey] = useState<string | null>(null);
   const [quizData, setQuizData] = useState<QuizData | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [selectedChoice, setSelectedChoice] = useState<number | null>(null);
@@ -98,6 +107,7 @@ function QuizPageContent() {
   const [isWaitingForQuestion, setIsWaitingForQuestion] = useState(false);
   const [quizTargetCount, setQuizTargetCount] = useState(0);
   const [firstQuestionLoadMs, setFirstQuestionLoadMs] = useState<number | null>(null);
+  const [isFirstReaderForBook, setIsFirstReaderForBook] = useState(false);
   const [quizGenerationStatus, setQuizGenerationStatus] = useState("");
   const [isDetectingLevel, setIsDetectingLevel] = useState(false);
   const [error, setError] = useState("");
@@ -148,6 +158,7 @@ function QuizPageContent() {
         author: "Friend challenge",
       });
       const challengeLevel = isBookLevel(challenge.bookLevel) ? challenge.bookLevel : "intermediate";
+      setBookDifficultyIndex(null);
       const challengeDifficulty = difficultyLevels.includes(challenge.difficulty as typeof difficultyLevels[number])
         ? challenge.difficulty as typeof difficultyLevels[number]
         : "easy";
@@ -226,6 +237,7 @@ function QuizPageContent() {
       }
       if (parsedBookLevel) {
         setBookLevel(parsedBookLevel);
+        setBookDifficultyIndex(null);
       }
       setDifficulty(isDifficultyAllowedForBookLevel(parsedDifficulty, parsedBookLevel) ? parsedDifficulty : getAllowedDifficulties(parsedBookLevel)[0]);
       if (bookLevelParam.trim() && !parsedBookLevel) {
@@ -282,13 +294,35 @@ function QuizPageContent() {
   const loadingSuggestion = user ? getBookRecommendations({ profile: user, limit: 1 }).suggestions[0] : "";
   const encouragementMessage = quizData ? getEncouragementMessage(score, maxScore, bookTitle) : "";
 
+  const checkFirstReaderStatus = async (book: BookMatch) => {
+    if (!bookDifficultyCanonicalKey) return false;
+    try {
+      const params = new URLSearchParams({
+        canonicalKey: bookDifficultyCanonicalKey,
+        bookTitle: book.title,
+        author: book.author,
+        isbn: book.isbn ?? "",
+      });
+      const response = await fetch(`/api/book-quiz-status?${params.toString()}`);
+      if (!response.ok) return false;
+      const data = await response.json() as { firstReader?: boolean; certain?: boolean };
+      return Boolean(data.certain && data.firstReader);
+    } catch {
+      return false;
+    }
+  };
+
   const detectReadingLevel = async (book: BookMatch) => {
     setError("");
     setIsDetectingLevel(true);
 
     try {
-      const level = await detectBookLevelFromApi(book);
+      const rating = await detectBookLevelFromApi(book);
+      const level = rating.level;
       setBookLevel(level);
+      setBookDifficultyIndex(rating.difficultyIndex);
+      setBookDifficultyRatingId(rating.ratingId ?? null);
+      setBookDifficultyCanonicalKey(rating.canonicalKey ?? null);
       if (!isDifficultyAllowedForBookLevel(difficulty, level)) {
         setDifficulty(getAllowedDifficulties(level)[0]);
       }
@@ -307,6 +341,9 @@ function QuizPageContent() {
     setBookAuthor(book.author === "Unknown author" ? "" : book.author);
     setIsbn(book.isbn ?? "");
     setBookLevel(null);
+    setBookDifficultyIndex(null);
+    setBookDifficultyRatingId(null);
+    setBookDifficultyCanonicalKey(null);
     setBookOptions([]);
     setBookLookupMessage("");
     setShowIsbnFallback(false);
@@ -316,6 +353,9 @@ function QuizPageContent() {
   const resetBookLookupState = () => {
     setConfirmedBook(null);
     setBookLevel(null);
+    setBookDifficultyIndex(null);
+    setBookDifficultyRatingId(null);
+    setBookDifficultyCanonicalKey(null);
     setBookOptions([]);
     setBookLookupMessage("");
     setShowIsbnFallback(false);
@@ -440,6 +480,8 @@ function QuizPageContent() {
         bookAuthor: details.book.author,
         bookYear: details.book.year,
         bookIsbn: details.book.isbn,
+        bookDifficultyRatingId,
+        bookDifficultyCanonicalKey,
         difficulty,
         bookLevel: details.resolvedBookLevel,
         learningGoal: details.learningGoal,
@@ -540,7 +582,7 @@ function QuizPageContent() {
         return;
       }
       if (!user.isParent && controls.requireAiQuizReview) {
-        setError("A parent has asked to review AI-generated quizzes before they are taken.");
+        setError("A parent has asked to review new quizzes before they are taken.");
         return;
       }
       if (!isFriendlyChallenge) {
@@ -578,6 +620,7 @@ function QuizPageContent() {
     setIsWaitingForQuestion(false);
     setQuizTargetCount(0);
     setFirstQuestionLoadMs(null);
+    setIsFirstReaderForBook(false);
     setQuizGenerationStatus("");
 
     const learningGoal = getProfileTestingGoal(user);
@@ -586,6 +629,7 @@ function QuizPageContent() {
     const generationStartedAt = performance.now();
 
     try {
+      setIsFirstReaderForBook(await checkFirstReaderStatus(book));
       const response = await fetch("/api/quiz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -595,6 +639,8 @@ function QuizPageContent() {
           bookAuthor: book.author,
           bookYear: book.year,
           bookIsbn: book.isbn,
+          bookDifficultyRatingId,
+          bookDifficultyCanonicalKey,
           difficulty,
           bookLevel: resolvedBookLevel,
           learningGoal,
@@ -672,6 +718,10 @@ function QuizPageContent() {
       bookTitle,
       difficulty,
       bookLevel,
+      bookDifficultyScore: bookDifficultyIndex ?? undefined,
+      bookDifficultyRatingId: bookDifficultyRatingId ?? undefined,
+      quizPayload: quizData,
+      selectedAnswers,
       learningGoal,
     });
 
@@ -945,15 +995,26 @@ function QuizPageContent() {
           {isDetectingLevel ? (
             <p className="notice">Detecting reading level...</p>
           ) : bookLevel ? (
-            <p className="success-box">Reading level detected: {bookLevel}</p>
+            <div className="success-box">
+              <strong>Reading level detected: {bookLevel}</strong>
+              {bookDifficultyIndex ? (
+                <span>
+                  RQ Difficulty Index: {bookDifficultyIndex.toFixed(1)} / 9.9 ({getDifficultyIndexRange(bookLevel)})
+                </span>
+              ) : null}
+            </div>
           ) : null}
 
           <div className="field">
-            <label htmlFor="difficulty">Difficulty</label>
+            <label htmlFor="difficulty">Quiz difficulty</label>
             <select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as typeof difficultyLevels[number])}>
               {allowedDifficulties.map((level) => (
                 <option key={level} value={level}>
-                  {level === "easy" ? "Easy (5 questions, 10 base points)" : level === "medium" ? "Medium (10 questions, 40 base points)" : "Hard (20 questions, 100 base points)"}
+                  {level === "easy"
+                    ? "Easy - recall/basic comprehension"
+                    : level === "medium"
+                      ? "Medium - inference/cause-effect"
+                      : "Hard - themes/author intent"}
                 </option>
               ))}
             </select>
@@ -964,6 +1025,7 @@ function QuizPageContent() {
                   : bookLevel === "intermediate"
                     ? "Intermediate books can be tested on Easy or Medium."
                     : "Advanced books can be tested on Easy, Medium, or Hard."}
+                {" "}Easy checks recall/basic comprehension, Medium checks inference and cause/effect, and Hard checks themes and author intent.
               </p>
             ) : confirmedBook ? (
               <p className="setting-description">Reading Quest will detect the book reading level after you confirm the book.</p>
@@ -979,10 +1041,14 @@ function QuizPageContent() {
               <div className="quiz-loading-spinner" aria-hidden="true" />
               <div>
                 <strong>Building and checking your quiz...</strong>
-                <p>
-                  We are checking the questions and answers before the quiz starts.
-                  {loadingSuggestion ? ` After this, you might like ${loadingSuggestion}.` : " Keep a favorite book nearby in case you want to look back after the quiz."}
-                </p>
+                {isFirstReaderForBook ? (
+                  <p>You’re the first Reading Quest reader to quiz on this book! Good luck, and we’d love your feedback afterward!</p>
+                ) : (
+                  <p>
+                    We are checking the questions and answers before the quiz starts.
+                    {loadingSuggestion ? ` After this, you might like ${loadingSuggestion}.` : " Keep a favorite book nearby in case you want to look back after the quiz."}
+                  </p>
+                )}
               </div>
             </div>
           ) : null}
