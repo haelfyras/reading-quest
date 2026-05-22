@@ -281,6 +281,11 @@ export default function Page() {
             </button>
           </div>
 
+          <div className="auth-choice-heading">
+            <strong>Choose your account type</strong>
+            <span>Select the path that matches who is signing in.</span>
+          </div>
+
           <div className="role-picker" aria-label="Account type">
             <button
               type="button"
@@ -290,7 +295,7 @@ export default function Page() {
                 resetMessages();
               }}
             >
-              <strong>Child reader</strong>
+              <strong>Child Reader</strong>
               <span>Quizzes, books, points, badges, and prizes.</span>
             </button>
             <button
@@ -301,7 +306,7 @@ export default function Page() {
                 resetMessages();
               }}
             >
-              <strong>Parent account</strong>
+              <strong>Parent Account</strong>
               <span>Family controls, review queue, reports, and prize approval.</span>
             </button>
           </div>
