@@ -1279,23 +1279,25 @@ button:disabled {
   gap: 0;
   margin: 0 0 22px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--warning) 62%, var(--border));
+  border: 1px solid var(--border);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--warning) 10%, var(--panel-strong));
+  background: var(--panel-strong);
 }
 
 .beta-disclaimer-toggle {
   width: 100%;
   justify-content: space-between;
-  border: 0;
+  border: 0 !important;
   border-radius: 0;
-  background: transparent;
+  background: transparent !important;
   color: var(--text);
   box-shadow: none;
+  padding: 14px 16px 8px;
   text-align: left;
 }
 
 .beta-disclaimer-toggle span:first-child {
+  color: var(--text);
   font-weight: 900;
 }
 
@@ -1370,15 +1372,15 @@ button:disabled {
   display: grid;
   gap: 0;
   overflow: hidden;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-soft) 42%, var(--panel-strong)), var(--panel-strong));
+  background: var(--panel-strong);
 }
 
 .setup-guide-toggle {
   width: 100%;
   justify-content: space-between;
-  border: 0;
+  border: 0 !important;
   border-radius: 0;
-  background: transparent;
+  background: transparent !important;
   box-shadow: none;
   color: var(--text);
   padding: 0;
@@ -2371,19 +2373,48 @@ tr:hover {
 
 .star-row {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 10px;
   margin: 12px 0;
 }
 
 .star-button {
-  min-width: 46px;
-  border-color: var(--border);
-  background: var(--panel);
+  display: inline-grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border-color: transparent;
+  background: transparent;
+  padding: 4px;
+  box-shadow: none;
 }
 
 .star-button.selected {
-  background: color-mix(in srgb, var(--reward) 20%, var(--panel));
-  box-shadow: inset 0 0 0 2px var(--reward);
+  background: transparent;
+  box-shadow: none;
+}
+
+.star-button img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.star-button:hover:not(:disabled),
+.star-button:focus-visible {
+  transform: translateY(-1px) scale(1.04);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--reward) 28%, transparent);
+}
+
+.question-report-control {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.question-report-control label {
+  font-weight: 850;
 }
 
 .empty-state {

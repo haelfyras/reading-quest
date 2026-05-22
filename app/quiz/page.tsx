@@ -66,6 +66,16 @@ type ParentApprovedQuiz = QuizData & {
   pointEstimate?: number;
 };
 
+type QuizIssueReason = "impossible" | "wrong_answer" | "too_hard" | "spoiler" | "not_from_book";
+
+const quizIssueOptions: Array<{ value: QuizIssueReason; label: string }> = [
+  { value: "impossible", label: "Impossible to answer" },
+  { value: "wrong_answer", label: "Answer was wrong" },
+  { value: "too_hard", label: "Too hard for this quiz level" },
+  { value: "spoiler", label: "Spoiler or unfair detail" },
+  { value: "not_from_book", label: "Not from this book" },
+];
+
 function getProfileTestingGoal(profile: Profile | null, approvedQuiz?: ParentApprovedQuiz | null) {
   if (approvedQuiz?.learningGoal) {
     return approvedQuiz.learningGoal;
@@ -774,10 +784,7 @@ function QuizPageContent() {
     setTimerActive(true);
   };
 
-  const reportQuestionIssue = (
-    questionIndex: number,
-    reason: "impossible" | "wrong_answer" | "too_hard" | "spoiler" | "not_from_book",
-  ) => {
+  const reportQuestionIssue = (questionIndex: number, reason: QuizIssueReason) => {
     if (!quizData || !user) return;
     const alreadyReportedForQuestion = Object.keys(reportedQuestions).some((key) => key.startsWith(`${questionIndex}-`));
     if (alreadyReportedForQuestion) {
@@ -1229,48 +1236,33 @@ function QuizPageContent() {
                       ))}
                     </ul>
                   </div>
-                  <div className="button-row">
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => reportQuestionIssue(index, "impossible")}
-                    >
-                      Impossible to answer
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => reportQuestionIssue(index, "wrong_answer")}
-                    >
-                      Answer was wrong
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => reportQuestionIssue(index, "too_hard")}
-                    >
-                      Too hard
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => reportQuestionIssue(index, "spoiler")}
-                    >
-                      Spoiler
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => reportQuestionIssue(index, "not_from_book")}
-                    >
-                      Not from this book
-                    </button>
-                  </div>
-                  {["impossible", "wrong_answer", "too_hard", "spoiler", "not_from_book"].map((reason) =>
-                    reportedQuestions[`${index}-${reason}`] ? (
-                      <div key={reason} className="notice">{reportedQuestions[`${index}-${reason}`]}</div>
-                    ) : null,
-                  )}
+                  {(() => {
+                    const reportedOption = quizIssueOptions.find((option) => reportedQuestions[`${index}-${option.value}`]);
+                    return (
+                      <div className="question-report-control">
+                        <label htmlFor={`question-report-${index}`}>Report a problem with this question</label>
+                        <select
+                          id={`question-report-${index}`}
+                          value={reportedOption?.value ?? ""}
+                          disabled={Boolean(reportedOption)}
+                          onChange={(event) => {
+                            const reason = event.target.value as QuizIssueReason;
+                            if (reason) {
+                              reportQuestionIssue(index, reason);
+                            }
+                          }}
+                        >
+                          <option value="">Choose an issue, if needed</option>
+                          {quizIssueOptions.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                        {reportedOption ? (
+                          <div className="notice">{reportedQuestions[`${index}-${reportedOption.value}`]}</div>
+                        ) : null}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -1300,9 +1292,15 @@ function QuizPageContent() {
                     key={star}
                     type="button"
                     className={`star-button ${reviewRating >= star ? "selected" : ""}`}
+                    aria-label={`${star} star${star === 1 ? "" : "s"}`}
+                    aria-pressed={reviewRating >= star}
                     onClick={() => setReviewRating(star)}
                   >
-                    Star
+                    <img
+                      src={reviewRating >= star ? "/images/star-filled.png" : "/images/star-empty.png"}
+                      alt=""
+                      aria-hidden="true"
+                    />
                   </button>
                 ))}
               </div>
