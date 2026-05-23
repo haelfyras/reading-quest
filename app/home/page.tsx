@@ -29,6 +29,7 @@ import { loadSiteLeaderboardProfiles } from "../../lib/leaderboards";
 import { getBookRecommendations as buildRecommendations } from "../../lib/recommendations";
 import { isUuid } from "../../lib/ids";
 import BetaDisclaimer from "../components/BetaDisclaimer";
+import HeroProfileActions from "../components/HeroProfileActions";
 import SetupGuide, { type SetupStep } from "../components/SetupGuide";
 
 function recentTitle(profile: Profile | null) {
@@ -199,6 +200,7 @@ export default function HomePage() {
           <h1>Reading Quest</h1>
           <p>Welcome back, {currentUser.name}.</p>
         </div>
+        <HeroProfileActions profile={currentUser} />
       </div>
 
       <BetaDisclaimer />

@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import HeroProfileActions from "../components/HeroProfileActions";
 import {
   addFriendContact,
   childConfirmParentRequest,
@@ -13,18 +13,24 @@ import {
   getProfiles,
   ParentVerificationRequest,
   Profile,
+  ReadingPath,
   rejectParentVerificationRequest,
   retryParentVerificationRequest,
   updateProfile,
 } from "../../lib/user";
 import { betaConfig } from "../../lib/beta";
 import { refreshSharedProfileData } from "../../lib/supabase/profileData";
+import { defaultAvatarId, getAvatarOption } from "../../lib/avatarOptions";
+import AvatarPicker from "../components/AvatarPicker";
 
 export default function ProfilePage() {
   const router = useRouter();
   const [user, setUser] = useState<Profile | null>(null);
   const [realName, setRealName] = useState("");
   const [phone, setPhone] = useState("");
+  const [selectedAvatar, setSelectedAvatar] = useState(defaultAvatarId);
+  const [theme, setTheme] = useState("library");
+  const [readingPath, setReadingPath] = useState<ReadingPath>("explorer");
   const [profileMessage, setProfileMessage] = useState("");
   const [friendName, setFriendName] = useState("");
   const [friendEmail, setFriendEmail] = useState("");
@@ -60,6 +66,9 @@ export default function ProfilePage() {
     setUser(profile);
     setRealName(profile.realName || "");
     setPhone(profile.phone || "");
+    setSelectedAvatar(getAvatarOption(profile.avatarStyle)?.id ?? defaultAvatarId);
+    setReadingPath(profile.readingPath ?? "explorer");
+    setTheme(normalizeTheme(localStorage.getItem("readingQuestTheme")));
     try {
       const databaseRequests = await loadDatabaseRequests(profile);
       setRequests(databaseRequests);
@@ -69,6 +78,21 @@ export default function ProfilePage() {
       )));
     }
     setLinkedChildren(sharedChildren ?? getProfiles().filter((child) => profile.linkedChildren?.includes(child.id)));
+  };
+
+  const normalizeTheme = (selectedTheme: string | null) => {
+    if (selectedTheme === "horror") return "spooky";
+    if (selectedTheme === "fantasy" || selectedTheme === "sci-fi" || selectedTheme === "spooky" || selectedTheme === "library") {
+      return selectedTheme;
+    }
+    return "library";
+  };
+
+  const applyTheme = (selectedTheme: string) => {
+    const normalizedTheme = normalizeTheme(selectedTheme);
+    document.documentElement.setAttribute("data-theme-style", normalizedTheme);
+    localStorage.setItem("readingQuestTheme", normalizedTheme);
+    setTheme(normalizedTheme);
   };
 
   useEffect(() => {
@@ -86,8 +110,11 @@ export default function ProfilePage() {
       ...user,
       realName: user.isParent ? realName.trim() : user.realName,
       phone: betaConfig.phoneCollectionEnabled ? phone.trim() : user.phone,
+      avatarStyle: selectedAvatar,
+      readingPath,
     });
     setUser(updated);
+    window.dispatchEvent(new Event("readingQuestProfileUpdated"));
     setProfileMessage("Profile saved.");
   };
 
@@ -283,12 +310,50 @@ export default function ProfilePage() {
         <div>
           <div className="kicker">Account</div>
           <h1>Profile</h1>
-          <p>Manage your account, friends, and family connections.</p>
+          <p>Manage your account, avatar, theme, reading path, friends, and family connections.</p>
         </div>
-        <Link href={homeHref}>
-          <button type="button" className="secondary">Home</button>
-        </Link>
+        <HeroProfileActions profile={user} homeHref={homeHref} />
       </div>
+
+      <section className="home-section" aria-labelledby="avatar-heading">
+        <h2 id="avatar-heading">Avatar and Theme</h2>
+        <p>Choose the character that appears at the top of the app. You can change this anytime.</p>
+        <AvatarPicker selectedAvatar={selectedAvatar} onSelect={setSelectedAvatar} />
+        <div className="profile-preferences-grid">
+          <div className="field">
+            <label htmlFor="profileTheme">Theme</label>
+            <select id="profileTheme" value={theme} onChange={(event) => applyTheme(event.target.value)}>
+              <option value="fantasy">Fantasy</option>
+              <option value="sci-fi">Sci-Fi</option>
+              <option value="spooky">Spooky</option>
+              <option value="library">Library</option>
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="profileReadingPath">Reading Path</label>
+            <select id="profileReadingPath" value={readingPath} onChange={(event) => setReadingPath(event.target.value as ReadingPath)}>
+              <option value="explorer">Explorer</option>
+              <option value="genre_adventurer">Genre Adventurer</option>
+              <option value="skill_builder">Skill Builder</option>
+            </select>
+          </div>
+        </div>
+        <div className="path-explainer-grid">
+          <div className="nested-section">
+            <strong>Explorer</strong>
+            <p>Keeps recommendations close to your favorites, quizzes, and taste quiz answers.</p>
+          </div>
+          <div className="nested-section">
+            <strong>Genre Adventurer</strong>
+            <p>Suggests books outside your usual patterns so you can try new kinds of stories.</p>
+          </div>
+          <div className="nested-section">
+            <strong>Skill Builder</strong>
+            <p>Recommends thoughtful books that teach ideas, build understanding, or invite discussion.</p>
+          </div>
+        </div>
+        <button type="button" onClick={saveProfile}>Save Avatar and Preferences</button>
+      </section>
 
       <section className="home-section" aria-labelledby="account-heading">
         <h2 id="account-heading">Account</h2>

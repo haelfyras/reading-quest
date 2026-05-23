@@ -314,11 +314,18 @@ export function setCurrentUserId(id: string | null) {
 
 export function getCurrentProfile(): Profile | null {
   const currentId = getCurrentUserId();
+  const profiles = getProfiles();
+
   if (!currentId) {
     return null;
   }
 
-  return getProfiles().find((profile) => profile.id === currentId) ?? null;
+  const currentProfile = profiles.find((profile) => profile.id === currentId);
+  if (currentProfile) {
+    return currentProfile;
+  }
+
+  return null;
 }
 
 export function normalizeSubscriptionTier(tier: string | undefined): SubscriptionTier {
@@ -1092,7 +1099,7 @@ export function createProfile(name: string, password: string, isParent = false, 
     readingNow: [],
     readingLogs: [],
     bookAccess: {},
-    avatarStyle: isParent ? "Library Hero" : "Explorer",
+    avatarStyle: "tassel",
     badges: [],
     parentControls: defaultParentControls,
     leaderboardPrivate: false,
@@ -1115,9 +1122,16 @@ export function createProfile(name: string, password: string, isParent = false, 
 
 export function updateProfile(updated: Profile): Profile {
   const profiles = getProfiles();
-  const next = profiles.map((profile) => (profile.id === updated.id ? updated : profile));
+  const exists = profiles.some((profile) => profile.id === updated.id);
+  const next = exists
+    ? profiles.map((profile) => (profile.id === updated.id ? updated : profile))
+    : [...profiles, updated];
   saveProfiles(next);
+  setCurrentUserId(updated.id);
   syncProfile(updated);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("readingQuestProfileUpdated"));
+  }
   return updated;
 }
 

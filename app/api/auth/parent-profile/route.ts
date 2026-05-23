@@ -167,7 +167,7 @@ export async function POST(request: Request) {
         email,
         profile_code: generateProfileCode(safeScreenName),
         can_add_friends: true,
-        avatar_style: "Library Hero",
+        avatar_style: "tassel",
         verified: Boolean(user.email_confirmed_at),
       })
       .select("*")

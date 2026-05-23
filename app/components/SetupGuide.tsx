@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { tasselAvatar } from "../../lib/avatarOptions";
 
 export type SetupStep = {
   id: string;
@@ -60,7 +61,10 @@ export default function SetupGuide({
                     {step.complete ? "OK" : index + 1}
                   </div>
                   <div>
-                    <strong>{step.title}</strong>
+                    <div className="setup-step-title-row">
+                      {isNext ? <img src={tasselAvatar.src} alt="Tassel suggests this next" className="tassel-suggestion-icon" /> : null}
+                      <strong>{step.title}</strong>
+                    </div>
                     <p>{step.description}</p>
                     <Link href={step.href}>
                       <button type="button" className={isNext ? "suggested-action" : "secondary"}>

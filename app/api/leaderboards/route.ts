@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServiceSupabaseClient } from "../../../lib/supabase/server";
+import { createServiceSupabaseClient, isServiceSupabaseConfigured } from "../../../lib/supabase/server";
 import type { Profile } from "../../../lib/user";
 
 function mapLeaderboardProfile(row: Record<string, any>, quizCount: number): Profile {
@@ -27,7 +27,7 @@ function mapLeaderboardProfile(row: Record<string, any>, quizCount: number): Pro
     readingNow: [],
     readingLogs: [],
     bookAccess: {},
-    avatarStyle: row.avatar_style ?? "Explorer",
+    avatarStyle: row.avatar_style ?? "tassel",
     badges: Array.isArray(row.badges) ? row.badges : [],
     leaderboardPrivate: Boolean(row.leaderboard_private),
     subscriptionTier: row.subscription_tier ?? "free",
@@ -60,6 +60,10 @@ function isTestAccount(profile: Record<string, any>) {
 
 export async function GET(request: Request) {
   const currentProfileId = new URL(request.url).searchParams.get("currentProfileId") ?? "";
+
+  if (!isServiceSupabaseConfigured()) {
+    return NextResponse.json({ profiles: [] });
+  }
 
   try {
     const supabase = createServiceSupabaseClient() as any;

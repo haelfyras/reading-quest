@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import HeroProfileActions from "../components/HeroProfileActions";
 import {
   getCurrentProfile,
   getLifetimePoints,
@@ -11,7 +12,6 @@ import {
   normalizeSubscriptionTier,
   parentLibraryMessage,
   Profile,
-  ReadingPath,
   setCurrentUserId,
   subscriptionPlans,
   SubscriptionTier,
@@ -22,9 +22,7 @@ export default function SettingsPage() {
   const [user, setUser] = useState<Profile | null>(null);
   const [darkMode, setDarkMode] = useState(false);
   const [fontSize, setFontSize] = useState(16);
-  const [theme, setTheme] = useState("library");
   const [panelOpacity, setPanelOpacity] = useState(80);
-  const [readingPath, setReadingPath] = useState<ReadingPath>("explorer");
   const [leaderboardPrivate, setLeaderboardPrivate] = useState(false);
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>("free");
   const [settingsMessage, setSettingsMessage] = useState("");
@@ -38,12 +36,10 @@ export default function SettingsPage() {
     if (profile) {
       setLeaderboardPrivate(Boolean(profile.leaderboardPrivate));
       setSubscriptionTier(normalizeSubscriptionTier(profile.subscriptionTier));
-      setReadingPath(profile.readingPath ?? "explorer");
     }
 
     const savedDarkMode = localStorage.getItem("readingQuestDarkMode") === "true";
     const savedFontSize = parseInt(localStorage.getItem("readingQuestFontSize") || "16", 10);
-    const savedTheme = normalizeTheme(localStorage.getItem("readingQuestTheme"));
     const savedPanelOpacity = parseInt(
       localStorage.getItem("readingQuestPanelOpacity") || localStorage.getItem("readingQuestFantasyPanelOpacity") || "80",
       10
@@ -54,22 +50,12 @@ export default function SettingsPage() {
 
     setDarkMode(savedDarkMode);
     setFontSize(savedFontSize);
-    setTheme(savedTheme);
     setPanelOpacity(safePanelOpacity);
 
     applyDarkMode(savedDarkMode);
     applyFontSize(savedFontSize);
-    applyTheme(savedTheme);
     applyPanelOpacity(safePanelOpacity);
   }, []);
-
-  const normalizeTheme = (selectedTheme: string | null) => {
-    if (selectedTheme === "horror") return "spooky";
-    if (selectedTheme === "fantasy" || selectedTheme === "sci-fi" || selectedTheme === "spooky" || selectedTheme === "library") {
-      return selectedTheme;
-    }
-    return "library";
-  };
 
   const applyDarkMode = (isDark: boolean) => {
     document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
@@ -79,12 +65,6 @@ export default function SettingsPage() {
   const applyFontSize = (size: number) => {
     document.documentElement.style.setProperty("--font-size-base", `${size}px`);
     localStorage.setItem("readingQuestFontSize", size.toString());
-  };
-
-  const applyTheme = (selectedTheme: string) => {
-    const normalizedTheme = normalizeTheme(selectedTheme);
-    document.documentElement.setAttribute("data-theme-style", normalizedTheme);
-    localStorage.setItem("readingQuestTheme", normalizedTheme);
   };
 
   const applyPanelOpacity = (opacity: number) => {
@@ -105,25 +85,10 @@ export default function SettingsPage() {
     applyFontSize(newSize);
   };
 
-  const handleThemeChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const newTheme = normalizeTheme(event.target.value);
-    setTheme(newTheme);
-    applyTheme(newTheme);
-  };
-
   const handlePanelOpacityChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const opacity = parseInt(event.target.value, 10);
     setPanelOpacity(opacity);
     applyPanelOpacity(opacity);
-  };
-
-  const handleReadingPathChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    if (!user) return;
-    const nextPath = event.target.value as ReadingPath;
-    setReadingPath(nextPath);
-    const updated = updateProfile({ ...user, readingPath: nextPath });
-    setUser(updated);
-    setSettingsMessage("Reading path saved.");
   };
 
   const savePrivacyAndPlan = () => {
@@ -173,11 +138,7 @@ export default function SettingsPage() {
           <h1>Settings</h1>
           <p>Customize your Reading Quest experience.</p>
         </div>
-        <Link href={user.isParent ? "/parent" : "/home"}>
-          <button type="button" className="secondary">
-            Home
-          </button>
-        </Link>
+        <HeroProfileActions profile={user} homeHref={user.isParent ? "/parent" : "/home"} />
       </div>
 
       <div className="settings-grid">
@@ -194,17 +155,6 @@ export default function SettingsPage() {
               <span>Dark Mode</span>
             </label>
             <p className="setting-description">Switch between light and dark presentation.</p>
-          </div>
-
-          <div className="setting-item">
-            <label htmlFor="theme" className="setting-label">Theme</label>
-            <select id="theme" value={theme} onChange={handleThemeChange}>
-              <option value="fantasy">Fantasy</option>
-              <option value="sci-fi">Sci-Fi</option>
-              <option value="spooky">Spooky</option>
-              <option value="library">Library</option>
-            </select>
-            <p className="setting-description">Choose the visual skin for the whole app.</p>
           </div>
 
           <div className="setting-item">
@@ -238,31 +188,6 @@ export default function SettingsPage() {
             <p className="setting-description">
               Lower values reveal more of the theme artwork. Increase opacity when you want a calmer, easier-to-read page.
             </p>
-          </div>
-        </div>
-
-        <div className="settings-section">
-          <h2>Reading Path</h2>
-          <p className="setting-description">Choose how Reading Quest should shape your book suggestions. This does not change scoring.</p>
-          <div className="field">
-            <label htmlFor="readingPath">Recommendation style</label>
-            <select id="readingPath" value={readingPath} onChange={handleReadingPathChange}>
-              <option value="explorer">Explorer</option>
-              <option value="genre_adventurer">Genre Adventurer</option>
-              <option value="skill_builder">Skill Builder</option>
-            </select>
-          </div>
-          <div className="setting-item">
-            <strong>Explorer</strong>
-            <p className="setting-description">Keeps recommendations close to your favorites, quizzes, and taste quiz answers.</p>
-          </div>
-          <div className="setting-item">
-            <strong>Genre Adventurer</strong>
-            <p className="setting-description">Suggests books outside your usual patterns so you can try new kinds of stories.</p>
-          </div>
-          <div className="setting-item">
-            <strong>Skill Builder</strong>
-            <p className="setting-description">Recommends thoughtful books that teach ideas, build understanding, or invite discussion.</p>
           </div>
         </div>
 

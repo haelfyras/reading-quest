@@ -13,9 +13,14 @@ import {
   signInChildWithSupabase,
   signInParentWithSupabase,
 } from "../lib/supabase/auth";
+import { markProfileForOnboarding } from "./components/OnboardingModal";
 
 type UserType = "child" | "parent";
 type AuthMode = "signIn" | "create";
+
+function pendingParentOnboardingKey(email: string) {
+  return `readingQuestPendingParentOnboarding_${email.trim().toLowerCase()}`;
+}
 
 export default function Page() {
   const router = useRouter();
@@ -80,6 +85,11 @@ export default function Page() {
         setIsSubmitting(true);
         const supabaseProfile = await signInParentWithSupabase(parentEmail, password);
         if (supabaseProfile) {
+          const pendingKey = pendingParentOnboardingKey(parentEmail);
+          if (window.localStorage.getItem(pendingKey) === "true") {
+            markProfileForOnboarding(supabaseProfile.id);
+            window.localStorage.removeItem(pendingKey);
+          }
           goToProfile(supabaseProfile);
           return;
         }
@@ -153,11 +163,13 @@ export default function Page() {
           realName: parentName,
         });
         if (supabaseProfile) {
+          markProfileForOnboarding(supabaseProfile.id);
           goToProfile(supabaseProfile);
           return;
         }
       } catch (err) {
         if (err instanceof EmailConfirmationRequiredError) {
+          window.localStorage.setItem(pendingParentOnboardingKey(parentEmail), "true");
           setNotice(err.message);
           setError("");
         } else {
@@ -172,10 +184,12 @@ export default function Page() {
     try {
       const supabaseProfile = await createChildWithSupabase(screenName, password);
       if (supabaseProfile) {
+        markProfileForOnboarding(supabaseProfile.id);
         goToProfile(supabaseProfile);
         return;
       }
       const profile = createProfile(screenName, password, false);
+      markProfileForOnboarding(profile.id);
       goToProfile(profile);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create account.");
@@ -369,7 +383,7 @@ export default function Page() {
 
           <div className="auth-actions">
             <button type="submit" disabled={isSubmitting || !canSubmit}>
-              {isSubmitting ? "Working..." : authMode === "signIn" ? "Continue" : "Create account"}
+              {isSubmitting ? "Working..." : authMode === "signIn" ? "Continue" : "Create Account"}
             </button>
             {authMode === "signIn" ? (
               <button type="button" className="secondary" disabled={isSubmitting} onClick={() => void handleForgotPassword()}>

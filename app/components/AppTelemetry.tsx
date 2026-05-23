@@ -25,6 +25,10 @@ function createId() {
 
 function saveTelemetry(event: Omit<TelemetryEvent, "id" | "date">) {
   try {
+    if (event.source?.includes("/api/beta-sync")) {
+      return;
+    }
+
     const profile = getCurrentProfile();
     const stored = window.localStorage.getItem(TELEMETRY_KEY);
     const current = stored ? (JSON.parse(stored) as TelemetryEvent[]) : [];
@@ -57,6 +61,10 @@ function saveTelemetry(event: Omit<TelemetryEvent, "id" | "date">) {
 }
 
 function isExpectedApiResponse(url: string, status: number) {
+  if (url.includes("/api/beta-sync")) {
+    return true;
+  }
+
   if (url.includes("/api/auth/child-profile") && [400, 401, 409].includes(status)) {
     return true;
   }

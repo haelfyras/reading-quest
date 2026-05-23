@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
+import HeroProfileActions from "../components/HeroProfileActions";
 import {
   getCurrentProfile,
   getLifetimePoints,
@@ -135,11 +135,7 @@ export default function LeaderboardsPage() {
           <h1>Leaderboards</h1>
           <p>See how readers stack up across children, adults, and everyone.</p>
         </div>
-        <Link href={currentUser?.isParent ? "/parent" : "/home"}>
-          <button type="button" className="secondary">
-            Back
-          </button>
-        </Link>
+        <HeroProfileActions profile={currentUser} homeHref={currentUser?.isParent ? "/parent" : "/home"} />
       </div>
 
       <p className="auth-footer-note">

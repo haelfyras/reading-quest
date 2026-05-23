@@ -24,7 +24,7 @@ const difficultyMap = {
   hard: "hard",
 };
 
-const quizModel = process.env.OPENAI_QUIZ_MODEL || "gpt-4o";
+const quizModel = process.env.OPENAI_QUIZ_MODEL || "gpt-4o-mini";
 
 type BookDetails = {
   title: string;
@@ -414,6 +414,9 @@ function getSafeGenerationError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   if (/api key|unauthorized|authentication|401/i.test(message)) {
     return "Quiz generation is not available because the API key is not authorized.";
+  }
+  if (/model|does not have access|permission|not found|404|403/i.test(message)) {
+    return `Quiz generation is not available because this API key cannot use ${quizModel}.`;
   }
   if (/connection error|network|fetch failed/i.test(message)) {
     return "Quiz generation could not connect to the quiz service. Please try again.";

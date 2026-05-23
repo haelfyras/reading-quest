@@ -80,6 +80,30 @@ const isLikelySeriesQuery = (title: string) =>
 const coverUrl = (coverId?: number) =>
   coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : undefined;
 
+async function fetchWithTimeout(url: string, timeoutMs = 2200) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      signal: controller.signal,
+      next: { revalidate: 86400 },
+    });
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function readJson(response: Response | null) {
+  if (!response?.ok) return null;
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 const canonicalBooks: BookMatch[] = [
   {
     id: "known-hp-chamber-of-secrets",
@@ -174,6 +198,17 @@ function getCanonicalMatches(bookTitle: string) {
     .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
 }
 
+function createProvidedBookMatch(bookTitle: string, author = ""): BookMatch | null {
+  if (!bookTitle.trim()) return null;
+  return {
+    id: `provided-${normalizeTitle([bookTitle, author].filter(Boolean).join("-"))}`,
+    title: bookTitle.trim(),
+    author: author.trim() || "Unknown author",
+    source: "User-provided title",
+    confidence: author.trim() ? 0.82 : 0.72,
+  };
+}
+
 const toBookMatch = (doc: OpenLibraryDoc, index: number): BookMatch | null => {
   if (!doc.title) return null;
 
@@ -242,6 +277,15 @@ function scoreBook(book: BookMatch, requestedTitle: string, requestedAuthor = ""
 }
 
 async function lookupBySearch(bookTitle: string, author: string) {
+  const canonicalMatches = bookTitle ? getCanonicalMatches(bookTitle) : [];
+  const requestedTitle = comparableTitle(bookTitle);
+  const exactCanonical = bookTitle
+    ? canonicalMatches.find((book) => comparableTitle(book.title) === requestedTitle && (!author || authorOverlap(author, book.author) >= 0.75))
+    : null;
+  if (exactCanonical && !isLikelySeriesQuery(bookTitle)) {
+    return NextResponse.json({ status: "exact", books: [exactCanonical] });
+  }
+
   const fields = "key,title,author_name,first_publish_year,cover_i,isbn";
   const openLibraryParams = new URLSearchParams({ limit: "12", fields });
   if (bookTitle) openLibraryParams.set("title", bookTitle);
@@ -250,31 +294,27 @@ async function lookupBySearch(bookTitle: string, author: string) {
   const googleTerms = [
     bookTitle ? `intitle:${bookTitle}` : "",
     author ? `inauthor:${author}` : "",
-  ].filter(Boolean).join("+");
+  ].filter(Boolean).join(" ");
   const [titleResponse, broadResponse, googleResponse] = await Promise.all([
-    fetch(
+    fetchWithTimeout(
       `https://openlibrary.org/search.json?${openLibraryParams.toString()}`,
-      { next: { revalidate: 86400 } },
+      2200,
     ),
-    fetch(
+    fetchWithTimeout(
       `https://openlibrary.org/search.json?q=${encodeURIComponent(broadQuery)}&limit=12&fields=${fields}`,
-      { next: { revalidate: 86400 } },
+      2200,
     ),
-    fetch(
+    fetchWithTimeout(
       `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(googleTerms || broadQuery)}&maxResults=10&printType=books`,
-      { next: { revalidate: 86400 } },
-    ).catch(() => null),
+      1800,
+    ),
   ]);
 
-  if (!titleResponse.ok || !broadResponse.ok) {
-    throw new Error("Book search failed.");
-  }
-
-  const titleData = await titleResponse.json();
-  const broadData = await broadResponse.json();
-  const googleData = googleResponse?.ok ? await googleResponse.json() : { items: [] };
+  const titleData = await readJson(titleResponse) ?? { docs: [] };
+  const broadData = await readJson(broadResponse) ?? { docs: [] };
+  const googleData = await readJson(googleResponse) ?? { items: [] };
   const mergedDocs = [
-    ...(bookTitle ? getCanonicalMatches(bookTitle) : []),
+    ...canonicalMatches,
     ...(((googleData.items ?? []) as GoogleBookVolume[]).map(toGoogleBookMatch).filter(Boolean) as BookMatch[]),
     ...((broadData.docs ?? []) as OpenLibraryDoc[]),
     ...((titleData.docs ?? []) as OpenLibraryDoc[]),
@@ -300,7 +340,6 @@ async function lookupBySearch(bookTitle: string, author: string) {
     .sort((a, b) => scoreBook(b, bookTitle, author) - scoreBook(a, bookTitle, author))
     .slice(0, 10);
 
-  const requestedTitle = comparableTitle(bookTitle);
   const exact = bookTitle ? books.find((book) => comparableTitle(book.title) === requestedTitle && (!author || authorOverlap(author, book.author) >= 0.75)) : null;
   const relatedAlternatives = exact
     ? books.filter((book) => comparableTitle(book.title) !== requestedTitle && hasSharedAuthor(book, exact))
@@ -317,28 +356,55 @@ async function lookupBySearch(bookTitle: string, author: string) {
     return NextResponse.json({ status: "options", books: orderedBooks.slice(0, 8) });
   }
 
+  const provided = createProvidedBookMatch(bookTitle, author);
+  if (provided) {
+    return NextResponse.json({ status: "exact", books: [provided] });
+  }
+
   return NextResponse.json({ status: "not_found", books: [] });
 }
 
-async function lookupByIsbn(isbn: string) {
+async function lookupByIsbn(isbn: string, bookTitle = "", author = "") {
   const cleaned = isbn.replace(/[^\dXx]/g, "");
-  const response = await fetch(`https://openlibrary.org/isbn/${encodeURIComponent(cleaned)}.json`, {
-    next: { revalidate: 86400 },
-  });
+  const [openLibraryResponse, googleResponse] = await Promise.all([
+    fetchWithTimeout(`https://openlibrary.org/isbn/${encodeURIComponent(cleaned)}.json`, 3500),
+    fetchWithTimeout(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(`isbn:${cleaned}`)}&maxResults=5&printType=books`, 3500),
+  ]);
 
-  if (!response.ok) {
+  const googleData = await readJson(googleResponse);
+  const googleBook = ((googleData?.items ?? []) as GoogleBookVolume[])
+    .map(toGoogleBookMatch)
+    .filter(Boolean)[0] as BookMatch | undefined;
+  if (googleBook) {
+    return NextResponse.json({ status: "exact", books: [googleBook] });
+  }
+
+  const data = await readJson(openLibraryResponse);
+  if (!data) {
+    if (bookTitle || author) {
+      return NextResponse.json({
+        status: "exact",
+        books: [{
+          id: `provided-${cleaned}`,
+          title: bookTitle || "Untitled book",
+          author: author || "Unknown author",
+          isbn: cleaned,
+          source: "User-provided ISBN",
+          confidence: 0.9,
+        }],
+      });
+    }
     return NextResponse.json({ status: "not_found", books: [] });
   }
 
-  const data = await response.json();
   const authors = Array.isArray(data.authors) ? data.authors : [];
   const authorNames = authors.map((author: { key?: string }) => author.key?.replace("/authors/", "")).filter(Boolean);
   const coverId = Array.isArray(data.covers) ? data.covers[0] : undefined;
 
   const book: BookMatch = {
     id: data.key ?? cleaned,
-    title: data.title ?? "Untitled book",
-    author: authorNames.length ? authorNames.join(", ") : "Unknown author",
+    title: data.title ?? bookTitle ?? "Untitled book",
+    author: author || (authorNames.length ? authorNames.join(", ") : "Unknown author"),
     year: typeof data.publish_date === "string" ? Number(data.publish_date.match(/\d{4}/)?.[0]) : undefined,
     coverUrl: coverUrl(coverId),
     isbn: cleaned,
@@ -357,7 +423,7 @@ export async function POST(request: Request) {
     const isbn = String(body.isbn || "").trim();
 
     if (isbn) {
-      return lookupByIsbn(isbn);
+      return lookupByIsbn(isbn, bookTitle, author);
     }
 
     if (!bookTitle && !author) {

@@ -1,4 +1,4 @@
-import { getProfiles, saveProfiles, setCurrentUserId } from "../user";
+import { getCurrentUserId, getProfiles, saveProfiles, setCurrentUserId } from "../user";
 import type { Profile } from "../types";
 import { isUuid } from "../ids";
 
@@ -35,7 +35,9 @@ export function mirrorSharedProfileData(data: SharedProfileData) {
   ];
 
   saveProfiles(merged);
-  setCurrentUserId(data.profile.id);
+  if (getCurrentUserId() === data.profile.id) {
+    setCurrentUserId(data.profile.id);
+  }
   return data.profile;
 }
 

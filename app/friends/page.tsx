@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import HeroProfileActions from "../components/HeroProfileActions";
 import { getBookRecommendations } from "../../lib/recommendations";
 import {
   addFriendByProfileCode,
@@ -252,9 +253,7 @@ export default function FriendsPage() {
           <h1>Friends</h1>
           <p>Add readers by profile code, share book ideas, and compete on the same book tests.</p>
         </div>
-        <Link href={homeHref}>
-          <button type="button" className="secondary">Home</button>
-        </Link>
+        <HeroProfileActions profile={user} homeHref={homeHref} />
       </div>
 
       <section className="home-section" aria-labelledby="code-sharing-heading">

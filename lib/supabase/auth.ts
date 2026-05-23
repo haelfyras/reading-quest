@@ -57,7 +57,7 @@ function mapDbProfileToLocalProfile(row: DbProfile): Profile {
     bookAccess: typeof row.book_access === "object" && row.book_access
       ? row.book_access as Profile["bookAccess"]
       : {},
-    avatarStyle: row.avatar_style ?? "Library Hero",
+    avatarStyle: row.avatar_style ?? "tassel",
     badges: row.badges,
     parentControls: typeof row.parent_controls === "object" && row.parent_controls
       ? { ...defaultParentControls, ...(row.parent_controls as Partial<NonNullable<Profile["parentControls"]>>) }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import HeroProfileActions from "../components/HeroProfileActions";
 import {
   addQuizResult,
   addQuizIssueReport,
@@ -68,6 +69,18 @@ type ParentApprovedQuiz = QuizData & {
 
 type QuizIssueReason = "impossible" | "wrong_answer" | "too_hard" | "spoiler" | "not_from_book";
 
+function formatBookLevel(level: BookLevel) {
+  if (level === "beginner") return "Beginner";
+  if (level === "advanced") return "Advanced";
+  return "Intermediate";
+}
+
+function getQuizDifficultyLabel(level: typeof difficultyLevels[number]) {
+  if (level === "easy") return "Easy - Start Your Reading Quest";
+  if (level === "medium") return "Medium - Test Your Questing Skills";
+  return "Hard - Show Your Reading Quest Mastery";
+}
+
 const quizIssueOptions: Array<{ value: QuizIssueReason; label: string }> = [
   { value: "impossible", label: "Impossible to answer" },
   { value: "wrong_answer", label: "Answer was wrong" },
@@ -119,6 +132,8 @@ function QuizPageContent() {
   const [firstQuestionLoadMs, setFirstQuestionLoadMs] = useState<number | null>(null);
   const [isFirstReaderForBook, setIsFirstReaderForBook] = useState(false);
   const [quizGenerationStatus, setQuizGenerationStatus] = useState("");
+  const [startCountdown, setStartCountdown] = useState<number | null>(null);
+  const [quizStarted, setQuizStarted] = useState(false);
   const [isDetectingLevel, setIsDetectingLevel] = useState(false);
   const [error, setError] = useState("");
   const [completed, setCompleted] = useState(false);
@@ -189,7 +204,9 @@ function QuizPageContent() {
       setEarnedPoints(0);
       setChallengeSavedMessage("");
       setTimeLeft(30);
-      setTimerActive(true);
+      setTimerActive(false);
+      setQuizStarted(false);
+      setStartCountdown(3);
       return;
     }
 
@@ -219,7 +236,9 @@ function QuizPageContent() {
           setSelectedAnswers([]);
           setParentApprovedQuiz(approvedQuiz);
           setTimeLeft(30);
-          setTimerActive(true);
+          setTimerActive(false);
+          setQuizStarted(false);
+          setStartCountdown(3);
           localStorage.removeItem("approvedQuiz");
           return;
         } catch {
@@ -267,6 +286,23 @@ function QuizPageContent() {
     }
     return () => clearInterval(interval);
   }, [timerActive, timeLeft, completed]);
+
+  useEffect(() => {
+    if (startCountdown === null) return;
+
+    if (startCountdown <= 0) {
+      setQuizStarted(true);
+      setStartCountdown(null);
+      setTimerActive(true);
+      setTimeLeft(30);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setStartCountdown((current) => current === null ? null : current - 1);
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [startCountdown]);
 
   useEffect(() => {
     const handleFocus = () => setFocusLost(false);
@@ -632,6 +668,8 @@ function QuizPageContent() {
     setFirstQuestionLoadMs(null);
     setIsFirstReaderForBook(false);
     setQuizGenerationStatus("");
+    setQuizStarted(false);
+    setStartCountdown(null);
 
     const learningGoal = getProfileTestingGoal(user);
     const targetQuestionCount = getMaxScore(difficulty);
@@ -664,7 +702,8 @@ function QuizPageContent() {
       setSelectedAnswers(Array(targetQuestionCount).fill(-1));
       setFirstQuestionLoadMs(Math.round(performance.now() - generationStartedAt));
       setTimeLeft(30);
-      setTimerActive(true);
+      setTimerActive(false);
+      setStartCountdown(3);
 
       if (shouldUseProceduralQuiz && payload.questions.length < targetQuestionCount) {
         void fillQuizInBackground({
@@ -743,7 +782,7 @@ function QuizPageContent() {
   };
 
   const handleChoice = (choiceIndex: number) => {
-    if (!quizData || selectedChoice !== null || completed) return;
+    if (!quizData || selectedChoice !== null || completed || !quizStarted) return;
 
     const current = quizData.questions[currentQuestion];
     const correct = choiceIndex === current.answerIndex;
@@ -768,6 +807,8 @@ function QuizPageContent() {
 
     if (currentQuestion + 1 >= targetCount) {
       setCompleted(true);
+      setStartCountdown(null);
+      setTimerActive(false);
       saveResult();
       return;
     }
@@ -851,18 +892,13 @@ function QuizPageContent() {
             </p>
           ) : null}
         </div>
-        <div className="topbar-buttons">
-          <Link href={homeHref}>
-            <button type="button" className="secondary">
-              Home
-            </button>
-          </Link>
+        <HeroProfileActions profile={user} homeHref={homeHref}>
           <Link href="/">
             <button type="button" className="secondary">
               Sign out
             </button>
           </Link>
-        </div>
+        </HeroProfileActions>
       </div>
 
       {!quizData ? (
@@ -1003,36 +1039,37 @@ function QuizPageContent() {
             <p className="notice">Detecting reading level...</p>
           ) : bookLevel ? (
             <div className="success-box">
-              <strong>Reading level detected: {bookLevel}</strong>
+              <strong>Reading Level Detected: {formatBookLevel(bookLevel)}</strong>
               {bookDifficultyIndex ? (
-                <span>
-                  RQ Difficulty Index: {bookDifficultyIndex.toFixed(1)} / 9.9 ({getDifficultyIndexRange(bookLevel)})
-                </span>
+                <>
+                  <br />
+                  <br />
+                  <span>
+                    RQ Difficulty Index: {bookDifficultyIndex.toFixed(1)} / 9.9 (Range {getDifficultyIndexRange(bookLevel)})
+                  </span>
+                </>
               ) : null}
             </div>
           ) : null}
 
           <div className="field">
-            <label htmlFor="difficulty">Quiz difficulty</label>
+            <label htmlFor="difficulty">Quiz Difficulty</label>
             <select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as typeof difficultyLevels[number])}>
               {allowedDifficulties.map((level) => (
                 <option key={level} value={level}>
-                  {level === "easy"
-                    ? "Easy - recall/basic comprehension"
-                    : level === "medium"
-                      ? "Medium - inference/cause-effect"
-                      : "Hard - themes/author intent"}
+                  {getQuizDifficultyLabel(level)}
                 </option>
               ))}
             </select>
             {bookLevel ? (
               <p className="setting-description">
+                {formatBookLevel(bookLevel)} books can be tested on{" "}
                 {bookLevel === "beginner"
-                  ? "Beginner books can only be tested on Easy."
+                  ? "Easy"
                   : bookLevel === "intermediate"
-                    ? "Intermediate books can be tested on Easy or Medium."
-                    : "Advanced books can be tested on Easy, Medium, or Hard."}
-                {" "}Easy checks recall/basic comprehension, Medium checks inference and cause/effect, and Hard checks themes and author intent.
+                    ? "Easy or Medium"
+                    : "Easy, Medium, or Hard"}
+                . Easy is a simple quest, Medium asks you to connect ideas, and Hard looks for the bigger meaning of the book.
               </p>
             ) : confirmedBook ? (
               <p className="setting-description">Reading Quest will detect the book reading level after you confirm the book.</p>
@@ -1089,6 +1126,19 @@ function QuizPageContent() {
         </div>
       ) : !completed ? (
         <div className="output">
+          {startCountdown !== null ? (
+            <div className="quiz-start-modal-shell" role="dialog" aria-modal="true" aria-labelledby="quiz-start-title">
+              <div className="quiz-start-modal-scrim" />
+              <section className="quiz-start-modal">
+                <div className="kicker">Quiz Ready</div>
+                <h2 id="quiz-start-title">Your quiz is about to begin</h2>
+                <p>Get ready for {quizDisplayTotal} questions on {bookTitle}.</p>
+                <div className="quiz-countdown" aria-live="assertive">
+                  {startCountdown > 0 ? startCountdown : "GO!"}
+                </div>
+              </section>
+            </div>
+          ) : null}
           <h2>{quizData.quizTitle}</h2>
           <p>{quizData.quizDescription}</p>
           <div className="quiz-status">

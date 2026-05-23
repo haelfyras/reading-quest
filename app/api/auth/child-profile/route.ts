@@ -93,7 +93,7 @@ export async function POST(request: Request) {
           child_password_hash: hashPassword(password),
           profile_code: generateProfileCode(screenName),
           can_add_friends: false,
-          avatar_style: "Explorer",
+          avatar_style: "tassel",
           verified: true,
         })
         .select("*")

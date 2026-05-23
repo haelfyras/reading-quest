@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServiceSupabaseClient } from "../../../lib/supabase/server";
+import { createServiceSupabaseClient, isServiceSupabaseConfigured } from "../../../lib/supabase/server";
 
 const allowedKinds = new Set([
   "profile",
@@ -126,6 +126,10 @@ export async function POST(request: Request) {
 
   if (!allowedKinds.has(kind)) {
     return NextResponse.json({ error: "Unsupported sync event." }, { status: 400 });
+  }
+
+  if (!isServiceSupabaseConfigured()) {
+    return NextResponse.json({ skipped: true, reason: "Supabase service sync is not configured locally." });
   }
 
   try {

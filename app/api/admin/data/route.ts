@@ -39,7 +39,7 @@ function mapProfile(
     readingNow: asStringArray(row.reading_now),
     readingLogs,
     bookAccess: typeof row.book_access === "object" && row.book_access ? row.book_access : {},
-    avatarStyle: row.avatar_style ?? "Library Hero",
+    avatarStyle: row.avatar_style ?? "tassel",
     badges: asStringArray(row.badges),
     parentControls,
     leaderboardPrivate: Boolean(row.leaderboard_private),

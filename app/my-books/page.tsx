@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import HeroProfileActions from "../components/HeroProfileActions";
 import {
   addReadingLog,
   BookAccessType,
@@ -443,9 +444,7 @@ export default function MyBooksPage() {
           <h1>My Books</h1>
           <p>Reading taste, next books, reading effort, and quiz history.</p>
         </div>
-        <Link href={homeHref}>
-          <button type="button" className="secondary">Home</button>
-        </Link>
+        <HeroProfileActions profile={currentUser} homeHref={homeHref} />
       </div>
 
       <section className="home-section" aria-labelledby="favorite-books-heading">

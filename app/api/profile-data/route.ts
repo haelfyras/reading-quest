@@ -95,7 +95,7 @@ function mapProfile(
     readingNow: asStringArray(row.reading_now),
     readingLogs,
     bookAccess: asObject(row.book_access) as Profile["bookAccess"],
-    avatarStyle: row.avatar_style ?? (row.account_type === "parent" ? "Library Hero" : "Explorer"),
+    avatarStyle: row.avatar_style ?? "tassel",
     badges: asStringArray(row.badges),
     parentControls: asObject(row.parent_controls) as Profile["parentControls"],
     leaderboardPrivate: Boolean(row.leaderboard_private),

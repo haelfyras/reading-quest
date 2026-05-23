@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createServiceSupabaseClient } from "../../../lib/supabase/server";
+import { createServiceSupabaseClient, isServiceSupabaseConfigured } from "../../../lib/supabase/server";
 
 const VERIFICATION_WINDOW_MS = 10 * 60 * 1000;
 
@@ -68,6 +68,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Profile id is required." }, { status: 400 });
   }
 
+  if (!isServiceSupabaseConfigured()) {
+    return NextResponse.json({ requests: [] });
+  }
+
   try {
     const supabase = createServiceSupabaseClient() as any;
     const requests = await getRequestsForProfile(supabase, profileId);
@@ -83,6 +87,13 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const action = clean(body.action);
+
+  if (!isServiceSupabaseConfigured()) {
+    return NextResponse.json(
+      { error: "Family verification requires Supabase service access." },
+      { status: 503 },
+    );
+  }
 
   try {
     const supabase = createServiceSupabaseClient() as any;

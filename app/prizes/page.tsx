@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import HeroProfileActions from "../components/HeroProfileActions";
 import {
   getCurrentProfile,
   getLifetimePoints,
@@ -33,7 +33,6 @@ import { refreshSharedProfileData } from "../../lib/supabase/profileData";
 import { isUuid } from "../../lib/ids";
 
 export default function PrizesPage() {
-  const router = useRouter();
   const [user, setUser] = useState<Profile | null>(null);
   const [prizes, setPrizes] = useState<Prize[]>([]);
   const [children, setChildren] = useState<Profile[]>([]);
@@ -434,9 +433,7 @@ export default function PrizesPage() {
             <h1>Prizes</h1>
             <p>Manage reward goals and requests for verified children.</p>
           </div>
-          <button type="button" className="secondary" onClick={() => router.push(homeHref)}>
-            Home
-          </button>
+          <HeroProfileActions profile={user} homeHref={homeHref} />
         </div>
 
         <section className="home-section" aria-labelledby="child-prizes-heading">
@@ -598,9 +595,7 @@ export default function PrizesPage() {
             Lifetime earned: {lifetimePoints} points. Spent on prizes: {spentPoints} points.
           </p>
         </div>
-        <button type="button" className="secondary" onClick={() => router.push(homeHref)}>
-          Home
-        </button>
+        <HeroProfileActions profile={user} homeHref={homeHref} />
       </div>
 
       {!hasParentSetup && (

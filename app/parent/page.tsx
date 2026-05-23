@@ -36,6 +36,7 @@ import { hasSavedPrizes } from "../../lib/prizeData";
 import { refreshSharedProfileData } from "../../lib/supabase/profileData";
 import { isUuid } from "../../lib/ids";
 import BetaDisclaimer from "../components/BetaDisclaimer";
+import HeroProfileActions from "../components/HeroProfileActions";
 import SetupGuide, { type SetupStep } from "../components/SetupGuide";
 
 const testingLevelOptions = [
@@ -254,6 +255,7 @@ export default function ParentPage() {
           <h1>Reading Quest</h1>
           <p>Welcome, {currentUser.realName || currentUser.name}.</p>
         </div>
+        <HeroProfileActions profile={currentUser} />
       </div>
 
       <BetaDisclaimer />

@@ -1,7 +1,7 @@
 ﻿"use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
+import HeroProfileActions from "../components/HeroProfileActions";
 import {
   getCurrentProfile,
   getReviews,
@@ -45,11 +45,7 @@ export default function ReviewPage() {
             }
           </p>
         </div>
-        <Link href={profile?.isParent ? "/parent" : "/home"}>
-          <button type="button" className="secondary">
-            Back
-          </button>
-        </Link>
+        <HeroProfileActions profile={profile} homeHref={profile?.isParent ? "/parent" : "/home"} />
       </div>
 
       {reviews.length === 0 ? (

@@ -243,6 +243,31 @@ body {
   box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
+.profile-avatar-chip {
+  position: fixed;
+  z-index: 1090;
+  top: 18px;
+  right: max(16px, calc((100vw - 960px) / 2 + 16px));
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-strong);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  font-weight: 850;
+  padding: 5px 12px 5px 5px;
+}
+
+.profile-avatar-chip img {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
 .app-drawer-scrim {
   position: fixed;
   inset: 0;
@@ -672,6 +697,35 @@ button:disabled {
 
 .app-hero {
   align-items: start;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.hero-profile-chip {
+  display: inline-flex;
+  min-height: 52px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-strong) 92%, white);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+  color: var(--text);
+  font-weight: 850;
+  padding: 6px 14px 6px 6px;
+}
+
+.hero-profile-chip img {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  object-fit: cover;
 }
 
 @media (min-width: 720px) {
@@ -1444,6 +1498,23 @@ button:disabled {
 .setup-step strong,
 .setup-step p {
   display: block;
+}
+
+.setup-step-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tassel-suggestion-icon {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border: 2px solid color-mix(in srgb, var(--reward) 76%, var(--border));
+  border-radius: 999px;
+  background: var(--panel-strong);
+  object-fit: cover;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.14);
 }
 
 .setup-step p {
@@ -2373,19 +2444,21 @@ tr:hover {
 
 .star-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  max-width: 100%;
+  flex-wrap: nowrap;
+  gap: clamp(4px, 1.8vw, 8px);
   margin: 12px 0;
 }
 
 .star-button {
   display: inline-grid;
-  width: 58px;
-  height: 58px;
+  flex: 0 1 clamp(40px, 13vw, 54px);
+  width: clamp(40px, 13vw, 54px);
+  height: clamp(40px, 13vw, 54px);
   place-items: center;
   border-color: transparent;
   background: transparent;
-  padding: 4px;
+  padding: 3px;
   box-shadow: none;
 }
 
@@ -2415,6 +2488,188 @@ tr:hover {
 
 .question-report-control label {
   font-weight: 850;
+}
+
+.quiz-start-modal-shell,
+.quiz-start-modal-scrim {
+  position: fixed;
+  inset: 0;
+}
+
+.quiz-start-modal-shell {
+  z-index: 1350;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.quiz-start-modal-scrim {
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.quiz-start-modal {
+  position: relative;
+  z-index: 1;
+  width: min(620px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+  padding: clamp(24px, 5vw, 44px);
+  text-align: center;
+}
+
+.quiz-start-modal h2 {
+  font-size: clamp(2rem, 5vw, 3.2rem);
+}
+
+.quiz-start-modal p {
+  margin-bottom: 10px;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.quiz-countdown {
+  margin-top: 18px;
+  color: var(--accent);
+  font-size: clamp(5rem, 22vw, 10rem);
+  font-weight: 950;
+  line-height: 0.9;
+  text-shadow: 0 10px 30px color-mix(in srgb, var(--accent) 26%, transparent);
+  animation: quiz-countdown-pop 0.9s ease-in-out infinite;
+}
+
+@keyframes quiz-countdown-pop {
+  0%,
+  100% {
+    transform: scale(0.96);
+  }
+
+  45% {
+    transform: scale(1.04);
+  }
+}
+
+.avatar-picker {
+  display: grid;
+  gap: 18px;
+  margin: 14px 0 18px;
+}
+
+.avatar-archetype-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+  gap: 10px;
+}
+
+.avatar-archetype-button {
+  display: grid;
+  min-height: 150px;
+  place-items: center;
+  gap: 6px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-strong);
+  color: var(--text);
+  padding: 10px;
+  text-align: center;
+}
+
+.avatar-archetype-button.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.avatar-archetype-button img {
+  width: 72px;
+  height: 72px;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
+.avatar-archetype-button span {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 750;
+}
+
+.avatar-group {
+  display: grid;
+  gap: 10px;
+}
+
+.avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(72px, 1fr));
+  gap: 10px;
+  max-width: 420px;
+}
+
+.avatar-grid-single {
+  grid-template-columns: minmax(104px, 160px);
+}
+
+.avatar-choice {
+  display: grid;
+  aspect-ratio: 1;
+  min-height: 86px;
+  place-items: center;
+  overflow: hidden;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-strong);
+  padding: 0;
+}
+
+.avatar-choice.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.avatar-choice img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-preferences-grid,
+.path-explainer-grid,
+.onboarding-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.onboarding-modal-shell,
+.onboarding-modal-scrim {
+  position: fixed;
+  inset: 0;
+}
+
+.onboarding-modal-shell {
+  z-index: 1400;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.onboarding-modal-scrim {
+  background: rgba(0, 0, 0, 0.56);
+}
+
+.onboarding-modal {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: min(960px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+  padding: clamp(18px, 3vw, 28px);
 }
 
 .empty-state {
@@ -2611,16 +2866,34 @@ pre {
 
   .topbar-actions,
   .topbar-buttons,
+  .hero-actions,
   .button-row {
     width: 100%;
   }
 
   .topbar-actions a,
   .topbar-buttons a,
+  .hero-actions a,
   .topbar-actions button,
   .topbar-buttons button,
+  .hero-actions button,
   .button-row button {
     width: 100%;
+  }
+
+  .hero-actions {
+    justify-content: flex-start;
+  }
+
+  .hero-profile-chip {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .hero-profile-chip span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   table {
@@ -2697,8 +2970,24 @@ pre {
 
   .fixed-quiz-action {
     left: 72px;
-    max-width: calc(100vw - 92px);
+    max-width: calc(100vw - 172px);
     padding: 0 12px;
     font-size: 0.92rem;
+  }
+
+  .profile-avatar-chip {
+    top: 18px;
+    right: 10px;
+    min-height: 44px;
+    padding: 4px;
+  }
+
+  .profile-avatar-chip span {
+    display: none;
+  }
+
+  .profile-avatar-chip img {
+    width: 36px;
+    height: 36px;
   }
 }

@@ -3,6 +3,7 @@ import { COMPANY_NAME, PRODUCT_DESCRIPTION, PRODUCT_NAME, PRODUCT_VERSION } from
 import AppMenu from "./components/AppMenu";
 import AppTelemetry from "./components/AppTelemetry";
 import FeedbackButton from "./components/FeedbackButton";
+import OnboardingModal from "./components/OnboardingModal";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -38,6 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <AppTelemetry />
         <AppMenu />
+        <OnboardingModal />
         {children}
         <FeedbackButton />
         <footer className="product-footer" aria-label="Product information">
