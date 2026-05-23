@@ -15,7 +15,6 @@ import {
 import { readPrizeAddRequests, readPrizes } from "../../lib/prizeData";
 import { signOutSupabase } from "../../lib/supabase/auth";
 import { isUuid } from "../../lib/ids";
-import { getAvatarOption } from "../../lib/avatarOptions";
 
 const sharedLinks = [
   { href: "/my-books", label: "My Books" },
@@ -164,8 +163,6 @@ export default function AppMenu() {
     ];
   }, [profile]);
 
-  const selectedAvatar = getAvatarOption(profile?.avatarStyle);
-
   const signOut = async () => {
     setCurrentUserId(null);
     setProfile(null);
@@ -200,13 +197,6 @@ export default function AppMenu() {
       <Link href="/quiz" className="fixed-quiz-action" onClick={() => setOpen(false)}>
         Take a Quiz
       </Link>
-
-      {selectedAvatar ? (
-        <Link href="/profile" className="profile-avatar-chip" aria-label="Open profile" onClick={() => setOpen(false)}>
-          <img src={selectedAvatar.src} alt="" aria-hidden="true" />
-          <span>{profile.name}</span>
-        </Link>
-      ) : null}
 
       {open ? <button type="button" className="app-drawer-scrim" aria-label="Close menu" onClick={() => setOpen(false)} /> : null}
 

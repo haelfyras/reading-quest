@@ -243,31 +243,6 @@ body {
   box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
-.profile-avatar-chip {
-  position: fixed;
-  z-index: 1090;
-  top: 18px;
-  right: max(16px, calc((100vw - 960px) / 2 + 16px));
-  display: inline-flex;
-  min-height: 48px;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--panel-strong);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
-  color: var(--text);
-  font-weight: 850;
-  padding: 5px 12px 5px 5px;
-}
-
-.profile-avatar-chip img {
-  width: 38px;
-  height: 38px;
-  border-radius: 999px;
-  object-fit: cover;
-}
-
 .app-drawer-scrim {
   position: fixed;
   inset: 0;
@@ -2885,9 +2860,20 @@ pre {
     justify-content: flex-start;
   }
 
-  .hero-profile-chip {
-    width: 100%;
+  .hero-actions .hero-profile-chip {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    width: auto;
+    max-width: min(52vw, 220px);
+    min-height: 66px;
     justify-content: flex-start;
+    padding: 6px 14px 6px 6px;
+  }
+
+  .hero-profile-chip img {
+    width: 56px;
+    height: 56px;
   }
 
   .hero-profile-chip span {
@@ -2975,19 +2961,4 @@ pre {
     font-size: 0.92rem;
   }
 
-  .profile-avatar-chip {
-    top: 18px;
-    right: 10px;
-    min-height: 44px;
-    padding: 4px;
-  }
-
-  .profile-avatar-chip span {
-    display: none;
-  }
-
-  .profile-avatar-chip img {
-    width: 36px;
-    height: 36px;
-  }
 }
