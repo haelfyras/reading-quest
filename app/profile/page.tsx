@@ -318,6 +318,7 @@ export default function ProfilePage() {
       <section className="home-section" aria-labelledby="avatar-heading">
         <h2 id="avatar-heading">Avatar and Theme</h2>
         <p>Choose the character that appears at the top of the app. You can change this anytime.</p>
+        <button type="button" onClick={saveProfile}>Save Avatar and Preferences</button>
         <AvatarPicker selectedAvatar={selectedAvatar} onSelect={setSelectedAvatar} />
         <div className="profile-preferences-grid">
           <div className="field">
