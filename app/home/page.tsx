@@ -19,6 +19,7 @@ import {
   getForgivingStreak,
   getLifetimePoints,
   getPointTimeline,
+  getPlanQuizAvailability,
   getProfiles,
   getSpendablePoints,
   childLibraryMessage,
@@ -128,6 +129,8 @@ export default function HomePage() {
   const currentPoints = currentUser ? getSpendablePoints(currentUser) : 0;
   const lifetimePoints = currentUser ? getLifetimePoints(currentUser) : 0;
   const effortPoints = currentUser ? getEffortPoints(currentUser) : 0;
+  const quizAvailability = currentUser ? getPlanQuizAvailability(currentUser) : null;
+  const remainingQuizzes = quizAvailability ? Math.max(0, quizAvailability.limit - quizAvailability.used) : 0;
   const streak = currentUser ? getForgivingStreak(currentUser) : { activeDaysThisWeek: 0, goalDays: 4, metThisWeek: false };
   const badges = currentUser ? getBadges(currentUser) : [];
   const sortedPrizeGoals = useMemo(
@@ -198,7 +201,10 @@ export default function HomePage() {
         <div>
           <div className="kicker">Child Quest Hub</div>
           <h1>Reading Quest</h1>
-          <p>Welcome back, {currentUser.name}.</p>
+          <p>
+            Welcome back, {currentUser.name}!<br />
+            You have {remainingQuizzes} {remainingQuizzes === 1 ? "quiz" : "quizzes"} remaining today!
+          </p>
         </div>
         <HeroProfileActions profile={currentUser} />
       </div>

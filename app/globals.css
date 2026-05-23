@@ -684,21 +684,22 @@ button:disabled {
 
 .hero-profile-chip {
   display: inline-flex;
-  min-height: 52px;
+  min-height: 88px;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: color-mix(in srgb, var(--panel-strong) 92%, white);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
   color: var(--text);
+  font-size: 1.22rem;
   font-weight: 850;
-  padding: 6px 14px 6px 6px;
+  padding: 8px 20px 8px 8px;
 }
 
 .hero-profile-chip img {
-  width: 40px;
-  height: 40px;
+  width: 80px;
+  height: 80px;
   border-radius: 999px;
   object-fit: cover;
 }
