@@ -115,6 +115,7 @@ export async function GET() {
       readingLogsResult,
       challengesResult,
       questionPoolResult,
+      difficultyRatingsResult,
     ] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("parent_child_links").select("*"),
@@ -128,6 +129,7 @@ export async function GET() {
       adminSupabase.from("reading_logs").select("*").order("created_at", { ascending: false }).limit(500),
       adminSupabase.from("reading_challenges").select("*").order("created_at", { ascending: false }).limit(200),
       adminSupabase.from("book_question_pool").select("canonical_key,book_title,author,quiz_difficulty,question_version,active,created_at").limit(5000),
+      adminSupabase.from("book_difficulty_ratings").select("canonical_key,title,author,isbn,book_level,current_score,updated_at").limit(5000),
     ]);
 
     const firstError = [
@@ -143,6 +145,7 @@ export async function GET() {
       readingLogsResult.error,
       challengesResult.error,
       questionPoolResult.error,
+      difficultyRatingsResult.error,
     ].find(Boolean);
 
     if (firstError) {
@@ -212,6 +215,9 @@ export async function GET() {
     });
 
     const questionPoolRows = (questionPoolResult.data ?? []) as Array<Record<string, any>>;
+    const ratingsByKey = new Map(
+      ((difficultyRatingsResult.data ?? []) as Array<Record<string, any>>).map((rating) => [String(rating.canonical_key), rating]),
+    );
     const poolBooksByVersion = questionPoolRows.reduce<Record<string, Set<string>>>((counts, row: any) => {
       const version = String(row.question_version ?? "unknown");
       counts[version] = counts[version] ?? new Set<string>();
@@ -223,6 +229,47 @@ export async function GET() {
       counts[difficulty] = (counts[difficulty] ?? 0) + 1;
       return counts;
     }, {});
+    const seededBookRows = Array.from(questionPoolRows.reduce((books, row: any) => {
+      const canonicalKey = String(row.canonical_key);
+      const existing = books.get(canonicalKey) ?? {
+        canonicalKey,
+        title: row.book_title,
+        author: row.author ?? "",
+        isbn: "",
+        bookLevel: "",
+        difficultyIndex: null as number | null,
+        difficulties: {} as Record<string, number>,
+        questionCount: 0,
+        version: Number(row.question_version ?? 0),
+        firstSeededAt: row.created_at,
+        lastSeededAt: row.created_at,
+      };
+
+      existing.title = existing.title || row.book_title;
+      existing.author = existing.author || row.author || "";
+      existing.questionCount += 1;
+      existing.difficulties[String(row.quiz_difficulty)] = (existing.difficulties[String(row.quiz_difficulty)] ?? 0) + 1;
+      existing.version = Math.max(existing.version, Number(row.question_version ?? 0));
+      if (new Date(row.created_at).getTime() < new Date(existing.firstSeededAt).getTime()) {
+        existing.firstSeededAt = row.created_at;
+      }
+      if (new Date(row.created_at).getTime() > new Date(existing.lastSeededAt).getTime()) {
+        existing.lastSeededAt = row.created_at;
+      }
+
+      books.set(canonicalKey, existing);
+      return books;
+    }, new Map<string, any>()).values()).map((book: any) => {
+      const rating = ratingsByKey.get(book.canonicalKey);
+      return {
+        ...book,
+        title: rating?.title || book.title,
+        author: rating?.author || book.author,
+        isbn: rating?.isbn || "",
+        bookLevel: rating?.book_level || book.bookLevel,
+        difficultyIndex: rating?.current_score === null || rating?.current_score === undefined ? null : Number(rating.current_score),
+      };
+    }).sort((a: any, b: any) => String(a.title).localeCompare(String(b.title)));
 
     return NextResponse.json({
       profiles,
@@ -233,6 +280,7 @@ export async function GET() {
         uniqueBooks: new Set(questionPoolRows.map((row: any) => row.canonical_key)).size,
         versionCounts: Object.fromEntries(Object.entries(poolBooksByVersion).map(([version, books]) => [version, books.size])),
         difficultyCounts: poolQuestionsByDifficulty,
+        seededBooks: seededBookRows,
         recentBooks: Array.from(
           new Map(
             questionPoolRows

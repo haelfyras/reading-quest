@@ -90,6 +90,7 @@ type QuestionPoolStats = {
   uniqueBooks: number;
   versionCounts: Record<string, number>;
   difficultyCounts: Record<string, number>;
+  seededBooks: SeededBookRow[];
   recentBooks: Array<{
     title: string;
     author: string;
@@ -97,6 +98,21 @@ type QuestionPoolStats = {
     difficulty: string;
     createdAt: string;
   }>;
+};
+
+type SeededBookRow = {
+  canonicalKey: string;
+  title: string;
+  author: string;
+  isbn: string;
+  bookLevel: string;
+  difficultyIndex: number | null;
+  difficulties: Record<string, number>;
+  questionCount: number;
+  activeQuestionCount: number;
+  version: number;
+  firstSeededAt: string;
+  lastSeededAt: string;
 };
 
 type SeedResult = {
@@ -119,6 +135,8 @@ type ExistingSeedPool = {
   difficulties: string[];
   questionCount: number;
 };
+
+type SeededBookSortKey = "title" | "author" | "bookLevel" | "difficulties" | "questionCount" | "lastSeededAt";
 
 const tabs: Array<{ id: AdminTab; label: string }> = [
   { id: "overview", label: "Overview" },
@@ -296,6 +314,12 @@ export default function AdminConsole() {
     books: ReturnType<typeof parseSeedBooks>;
     difficulties: string[];
   } | null>(null);
+  const [seedTableSearch, setSeedTableSearch] = useState("");
+  const [seedDifficultyFilter, setSeedDifficultyFilter] = useState("all");
+  const [seedLevelFilter, setSeedLevelFilter] = useState("all");
+  const [seedVersionFilter, setSeedVersionFilter] = useState("all");
+  const [seedSortKey, setSeedSortKey] = useState<SeededBookSortKey>("title");
+  const [seedSortDirection, setSeedSortDirection] = useState<"asc" | "desc">("asc");
 
   const refresh = async () => {
     setProfiles(getProfiles());
@@ -684,6 +708,61 @@ export default function AdminConsole() {
     () => telemetry.filter((event) => !isExpectedTelemetry(event)),
     [telemetry],
   );
+
+  const seededBooks = questionPoolStats?.seededBooks ?? [];
+  const seedVersionOptions = useMemo(
+    () => Array.from(new Set(seededBooks.map((book) => String(book.version)).filter(Boolean))).sort((a, b) => Number(b) - Number(a)),
+    [seededBooks],
+  );
+  const filteredSeededBooks = useMemo(() => {
+    const normalizedSearch = seedTableSearch.trim().toLowerCase();
+    const rows = seededBooks
+      .filter((book) => {
+        if (!normalizedSearch) return true;
+        return [
+          book.title,
+          book.author,
+          book.isbn,
+          book.bookLevel,
+          Object.keys(book.difficulties).join(" "),
+        ].join(" ").toLowerCase().includes(normalizedSearch);
+      })
+      .filter((book) => seedDifficultyFilter === "all" || Boolean(book.difficulties[seedDifficultyFilter]))
+      .filter((book) => seedLevelFilter === "all" || book.bookLevel === seedLevelFilter)
+      .filter((book) => seedVersionFilter === "all" || String(book.version) === seedVersionFilter);
+
+    return rows.sort((a, b) => {
+      const direction = seedSortDirection === "asc" ? 1 : -1;
+      if (seedSortKey === "difficulties") {
+        return (Object.keys(a.difficulties).join(", ").localeCompare(Object.keys(b.difficulties).join(", "))) * direction;
+      }
+      if (seedSortKey === "questionCount") {
+        return (a.questionCount - b.questionCount) * direction;
+      }
+      if (seedSortKey === "lastSeededAt") {
+        return (new Date(a.lastSeededAt).getTime() - new Date(b.lastSeededAt).getTime()) * direction;
+      }
+      return String(a[seedSortKey] ?? "").localeCompare(String(b[seedSortKey] ?? "")) * direction;
+    });
+  }, [seedDifficultyFilter, seedLevelFilter, seedSortDirection, seedSortKey, seedTableSearch, seedVersionFilter, seededBooks]);
+
+  const updateSeedSort = (key: SeededBookSortKey) => {
+    if (seedSortKey === key) {
+      setSeedSortDirection((direction) => direction === "asc" ? "desc" : "asc");
+      return;
+    }
+
+    setSeedSortKey(key);
+    setSeedSortDirection(key === "lastSeededAt" || key === "questionCount" ? "desc" : "asc");
+  };
+
+  const seedSearchMissing = Boolean(seedTableSearch.trim()) && filteredSeededBooks.length === 0;
+  const queueSearchedSeedTitle = () => {
+    const title = seedTableSearch.trim();
+    if (!title) return;
+    setSeedInput((current) => current.trim() ? `${current.trim()}\n${title}` : title);
+    setMessage(`${title} was added to the seed list.`);
+  };
 
   const issueRows = useMemo<AdminIssueRow[]>(() => {
     const feedbackRows: AdminIssueRow[] = feedbackEntries.map((entry) => {
@@ -1229,6 +1308,103 @@ export default function AdminConsole() {
                   </div>
                 )) : <p>No pooled books yet.</p>}
               </div>
+            </div>
+          </div>
+
+          <div className="admin-section admin-seeded-library" aria-labelledby="seeded-library-heading">
+            <div className="section-header-row">
+              <div>
+                <h3 id="seeded-library-heading">Seeded Book Library</h3>
+                <p>A running book registry from Supabase, sorted alphabetically by default. A row appears when at least one question pool exists for that book.</p>
+              </div>
+              <span className="badge-pill">{filteredSeededBooks.length} shown / {seededBooks.length} seeded</span>
+            </div>
+
+            <div className="admin-issue-controls admin-seeded-controls">
+              <div className="field">
+                <label htmlFor="seeded-book-search">Search seeded books</label>
+                <input
+                  id="seeded-book-search"
+                  value={seedTableSearch}
+                  onChange={(event) => setSeedTableSearch(event.target.value)}
+                  placeholder="Search title, author, ISBN, level, or difficulty"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="seeded-difficulty-filter">Difficulty</label>
+                <select id="seeded-difficulty-filter" value={seedDifficultyFilter} onChange={(event) => setSeedDifficultyFilter(event.target.value)}>
+                  <option value="all">All difficulties</option>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="seeded-level-filter">Book level</label>
+                <select id="seeded-level-filter" value={seedLevelFilter} onChange={(event) => setSeedLevelFilter(event.target.value)}>
+                  <option value="all">All levels</option>
+                  <option value="beginner">Beginner</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="advanced">Advanced</option>
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="seeded-version-filter">Pool version</label>
+                <select id="seeded-version-filter" value={seedVersionFilter} onChange={(event) => setSeedVersionFilter(event.target.value)}>
+                  <option value="all">All versions</option>
+                  {seedVersionOptions.map((version) => (
+                    <option key={version} value={version}>v{version}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {seedSearchMissing ? (
+              <div className="warning-box admin-seed-missing">
+                <strong>{seedTableSearch.trim()} has not yet been seeded.</strong>
+                <span> Add it to the seed list above and run a batch when you are ready.</span>
+                <button type="button" className="secondary" onClick={queueSearchedSeedTitle}>Add to seed list</button>
+              </div>
+            ) : null}
+
+            <div className="responsive-table admin-seeded-table-wrap">
+              <table className="admin-seeded-table">
+                <thead>
+                  <tr>
+                    <th><button type="button" className="table-sort-button" onClick={() => updateSeedSort("title")}>Book {seedSortKey === "title" ? (seedSortDirection === "asc" ? "↑" : "↓") : ""}</button></th>
+                    <th><button type="button" className="table-sort-button" onClick={() => updateSeedSort("author")}>Author {seedSortKey === "author" ? (seedSortDirection === "asc" ? "↑" : "↓") : ""}</button></th>
+                    <th>ISBN</th>
+                    <th><button type="button" className="table-sort-button" onClick={() => updateSeedSort("bookLevel")}>Level {seedSortKey === "bookLevel" ? (seedSortDirection === "asc" ? "↑" : "↓") : ""}</button></th>
+                    <th><button type="button" className="table-sort-button" onClick={() => updateSeedSort("difficulties")}>Seeded quizzes {seedSortKey === "difficulties" ? (seedSortDirection === "asc" ? "↑" : "↓") : ""}</button></th>
+                    <th><button type="button" className="table-sort-button" onClick={() => updateSeedSort("questionCount")}>Questions {seedSortKey === "questionCount" ? (seedSortDirection === "asc" ? "↑" : "↓") : ""}</button></th>
+                    <th>Version</th>
+                    <th><button type="button" className="table-sort-button" onClick={() => updateSeedSort("lastSeededAt")}>Last seeded {seedSortKey === "lastSeededAt" ? (seedSortDirection === "asc" ? "↑" : "↓") : ""}</button></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSeededBooks.length > 0 ? filteredSeededBooks.map((book) => (
+                    <tr key={book.canonicalKey}>
+                      <td><strong>{book.title}</strong></td>
+                      <td>{book.author || "Not stored"}</td>
+                      <td>{book.isbn || "Not stored"}</td>
+                      <td>{book.bookLevel || "Unknown"}{book.difficultyIndex ? ` · ${book.difficultyIndex}/9.9` : ""}</td>
+                      <td>
+                        {Object.entries(book.difficulties)
+                          .sort(([a], [b]) => a.localeCompare(b))
+                          .map(([difficulty]) => difficulty)
+                          .join(", ")}
+                      </td>
+                      <td>{book.questionCount}</td>
+                      <td>v{book.version}</td>
+                      <td>{formatDate(book.lastSeededAt)}</td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={8}>No seeded books match the current filters.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
