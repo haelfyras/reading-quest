@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getBookDifficultyKey } from "../../../lib/bookDifficulty";
 import { createServiceSupabaseClient } from "../../../lib/supabase/server";
 
+const QUESTION_POOL_VERSION = 2;
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const title = url.searchParams.get("bookTitle")?.trim() ?? "";
@@ -21,6 +23,7 @@ export async function GET(request: Request) {
         .from("book_question_pool")
         .select("id")
         .eq("canonical_key", canonicalKey)
+        .eq("question_version", QUESTION_POOL_VERSION)
         .limit(1),
       supabase
         .from("quiz_results")

@@ -30,44 +30,85 @@ export type QuizDifficultyPlan = {
   }>;
 };
 
+export type QuestionTypeCount = {
+  type: QuestionType;
+  label: string;
+  count: number;
+};
+
 export const quizDifficultyPlans: Record<"easy" | "medium" | "hard", QuizDifficultyPlan> = {
   easy: {
     quizLength: 5,
     poolSize: 15,
-    purpose: "Recall and basic comprehension",
+    purpose: "Recall, basic comprehension, and one simple why question",
     questionTypes: [
-      { type: "character", label: "Characters", percent: 30 },
+      { type: "character", label: "Characters or roles", percent: 40 },
       { type: "setting", label: "Places/settings", percent: 20 },
       { type: "object", label: "Important objects/items", percent: 20 },
-      { type: "plot_event", label: "Plot events", percent: 20 },
-      { type: "simple_motive", label: "Simple emotions/motives", percent: 10 },
+      { type: "simple_motive", label: "Simple why/motive", percent: 20 },
     ],
   },
   medium: {
     quizLength: 10,
     poolSize: 30,
-    purpose: "Inference and cause/effect",
+    purpose: "Recall plus inference, cause/effect, and early symbolism",
     questionTypes: [
-      { type: "character_motivation", label: "Character motivation", percent: 25 },
-      { type: "cause_effect", label: "Cause/effect", percent: 25 },
-      { type: "problem_solution", label: "Problem/solution", percent: 20 },
-      { type: "relationship", label: "Relationships", percent: 15 },
-      { type: "prediction_inference", label: "Predictions/inference", percent: 15 },
+      { type: "character", label: "Characters, antagonists, or roles", percent: 30 },
+      { type: "setting", label: "Places/settings", percent: 10 },
+      { type: "object", label: "Important objects/items", percent: 10 },
+      { type: "plot_event", label: "Plot events or timeline/when", percent: 20 },
+      { type: "character_motivation", label: "Character motivation", percent: 10 },
+      { type: "cause_effect", label: "Cause/effect", percent: 10 },
+      { type: "symbolism", label: "Clear symbolism/theme", percent: 10 },
     ],
   },
   hard: {
     quizLength: 20,
     poolSize: 60,
-    purpose: "Themes, symbolism, and author intent",
+    purpose: "Cumulative full-book mastery",
     questionTypes: [
-      { type: "theme", label: "Themes", percent: 25 },
-      { type: "symbolism", label: "Symbolism", percent: 20 },
-      { type: "character_arc", label: "Character arcs", percent: 20 },
-      { type: "moral_analysis", label: "Moral/ethical analysis", percent: 15 },
-      { type: "tone_author_intent", label: "Tone/author intent", percent: 10 },
-      { type: "cross_story_connection", label: "Cross-story connections", percent: 10 },
+      { type: "character", label: "Characters, antagonists, real villains, or roles", percent: 25 },
+      { type: "setting", label: "Places/settings/world details", percent: 5 },
+      { type: "object", label: "Important objects/items", percent: 10 },
+      { type: "plot_event", label: "Plot events, timeline, or when questions", percent: 15 },
+      { type: "character_motivation", label: "Character motivation", percent: 10 },
+      { type: "cause_effect", label: "Cause/effect", percent: 10 },
+      { type: "problem_solution", label: "Conflict, climax, or consequence", percent: 10 },
+      { type: "symbolism", label: "Clear symbolism", percent: 5 },
+      { type: "theme", label: "Theme or lesson", percent: 5 },
+      { type: "tone_author_intent", label: "Author intent or bigger-picture meaning", percent: 5 },
     ],
   },
+};
+
+const cumulativeBlueprints: Record<"easy" | "medium" | "hard", QuestionTypeCount[]> = {
+  easy: [
+    { type: "character", label: "Characters or roles", count: 2 },
+    { type: "setting", label: "Places/settings", count: 1 },
+    { type: "object", label: "Important objects/items", count: 1 },
+    { type: "simple_motive", label: "Simple why/motive", count: 1 },
+  ],
+  medium: [
+    { type: "character", label: "Characters, antagonists, or roles", count: 3 },
+    { type: "setting", label: "Places/settings", count: 1 },
+    { type: "object", label: "Important objects/items", count: 1 },
+    { type: "plot_event", label: "Plot events or timeline/when", count: 2 },
+    { type: "character_motivation", label: "Character motivation", count: 1 },
+    { type: "cause_effect", label: "Cause/effect", count: 1 },
+    { type: "symbolism", label: "Clear symbolism/theme", count: 1 },
+  ],
+  hard: [
+    { type: "character", label: "Characters, antagonists, real villains, or roles", count: 5 },
+    { type: "setting", label: "Places/settings/world details", count: 1 },
+    { type: "object", label: "Important objects/items", count: 2 },
+    { type: "plot_event", label: "Plot events, timeline, or when questions", count: 3 },
+    { type: "character_motivation", label: "Character motivation", count: 2 },
+    { type: "cause_effect", label: "Cause/effect", count: 2 },
+    { type: "problem_solution", label: "Conflict, climax, or consequence", count: 2 },
+    { type: "symbolism", label: "Clear symbolism", count: 1 },
+    { type: "theme", label: "Theme or lesson", count: 1 },
+    { type: "tone_author_intent", label: "Author intent or bigger-picture meaning", count: 1 },
+  ],
 };
 
 export function isQuestionType(value: string): value is QuestionType {
@@ -75,7 +116,13 @@ export function isQuestionType(value: string): value is QuestionType {
 }
 
 export function getQuestionTypeCounts(difficulty: string, questionCount: number) {
-  const plan = quizDifficultyPlans[difficulty as "easy" | "medium" | "hard"] ?? quizDifficultyPlans.easy;
+  const difficultyKey = difficulty as "easy" | "medium" | "hard";
+  const blueprint = cumulativeBlueprints[difficultyKey];
+  if (blueprint && questionCount === quizDifficultyPlans[difficultyKey].quizLength) {
+    return blueprint;
+  }
+
+  const plan = quizDifficultyPlans[difficultyKey] ?? quizDifficultyPlans.easy;
   const rawCounts = plan.questionTypes.map((entry) => ({
     ...entry,
     exact: questionCount * (entry.percent / 100),
@@ -95,14 +142,18 @@ export function getQuestionTypeCounts(difficulty: string, questionCount: number)
     .filter((entry) => entry.count > 0);
 }
 
-export function getQuestionTypePrompt(difficulty: string, questionCount: number) {
-  return getQuestionTypeCounts(difficulty, questionCount)
+export function formatQuestionTypePrompt(counts: QuestionTypeCount[]) {
+  return counts
     .map((entry) => `- ${entry.count} ${entry.label} question${entry.count === 1 ? "" : "s"} with questionType "${entry.type}"`)
     .join("\n");
 }
 
+export function getQuestionTypePrompt(difficulty: string, questionCount: number) {
+  return formatQuestionTypePrompt(getQuestionTypeCounts(difficulty, questionCount));
+}
+
 export function getFallbackQuestionType(difficulty: string) {
-  if (difficulty === "hard") return "theme";
+  if (difficulty === "hard") return "plot_event";
   if (difficulty === "medium") return "cause_effect";
   return "plot_event";
 }

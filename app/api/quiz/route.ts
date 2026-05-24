@@ -9,10 +9,12 @@ import { getBookDifficultyKey } from "../../../lib/bookDifficulty";
 import { createServiceSupabaseClient } from "../../../lib/supabase/server";
 import {
   getFallbackQuestionType,
+  formatQuestionTypePrompt,
   getQuestionTypeCounts,
   getQuestionTypePrompt,
   isQuestionType,
   quizDifficultyPlans,
+  type QuestionTypeCount,
   type QuestionType,
 } from "../../../lib/quizQuestionTypes";
 
@@ -25,6 +27,7 @@ const difficultyMap = {
 };
 
 const quizModel = process.env.OPENAI_QUIZ_MODEL || "gpt-4o-mini";
+const QUESTION_POOL_VERSION = 2;
 
 type BookDetails = {
   title: string;
@@ -61,6 +64,15 @@ const themeSymbolismContract = `Theme and symbolism rules:
 - If the intended answer is symbolic, every choice must be the same kind of abstract answer and only one may be defensible.
 - Avoid "what does this symbolize" questions when the scene supports more than one reasonable interpretation; ask a clearer theme question instead.`;
 
+const cumulativeDifficultyContract = `Cumulative difficulty rules:
+- Easy, Medium, and Hard are cumulative. Higher difficulties must still ask grounded book-knowledge questions.
+- Easy should mostly ask who/what/where questions, with one simple why question.
+- Medium should include Easy-style recall plus timeline/when, cause/effect, motivation, and one clear symbolism or theme question.
+- Hard should prove full-book mastery: recall, antagonists/roles, places, objects, timeline/when, cause/effect, climax/consequences, symbolism, theme, and author intent.
+- Hard must not become only symbolism, lessons, or character growth.
+- Timeline/when questions should ask about story sequence or when something happens in the plot, not obscure publication dates.
+- Questions about villains or antagonists should distinguish primary obstacle, surface antagonist, and deeper/true antagonist only when the book clearly supports that distinction.`;
+
 const prompt = (
   book: BookDetails,
   difficulty: string,
@@ -78,7 +90,7 @@ const prompt = (
     ? `\n\nThis is section ${section.number} of ${section.total}. Create exactly ${questionCount} new questions for this section only. Do not repeat these earlier questions: ${section.previousQuestions.length ? section.previousQuestions.map((question) => `"${question}"`).join("; ") : "none"}.`
     : "";
 
-  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. The questions array must contain exactly ${questionCount} complete question objects. Do not return fewer than ${questionCount}. Each question must have: question, questionKey, questionType, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation, qualityScore, questionVersion.\n\nCanonical book to quiz: ${bookIdentity}. Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}. Long-term curated pool target for this difficulty: ${poolSize} questions.${qualityNotes ? `\n\nCritical book guardrails:\n${qualityNotes}` : ""}\n\nQuestion type plan:\n${typePlan}\n\n${answerChoiceContract}\n\n${themeSymbolismContract}\n\nRules:\n- questionKey must be a short lowercase semantic key for the question idea, like "frodo-sam-trust" or "rohan-aid-reason".\n- questionType must exactly match the requested type plan.\n- qualityScore must be a number from 0.75 to 1.0 based on answerability, clarity, and single-correct-answer confidence.\n- questionVersion must be 1.\n- Use only the exact book above, not films, soundtracks, games, adaptations, sequels, prequels, or other series installments.\n- If a fact may come from another book in the series or a movie adaptation, do not use it.\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the exact book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Avoid "what potion/item/spell" questions unless the exact book clearly names it.\n- Easy = recall/basic comprehension: names, places, objects, and obvious events.\n- Medium = inference/cause-effect: motivations, reasons, consequences, roles, setting, and conflict.\n- Hard = themes/author intent: theme, symbolism, context, subtle motivation, relationships, consequences, or comparisons, written for children through high school.\n- Choices must be plausible and fit the exact book, but only one can be correct.\n- Before returning, privately test each wrong choice by asking: "Could this also be correct?" If yes, replace it.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the exact book.\n- Use child-friendly language for ages 7-18.\n- Silently count the questions before returning JSON and make sure there are exactly ${questionCount}.${sectionInstruction}`;
+  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. The questions array must contain exactly ${questionCount} complete question objects. Do not return fewer than ${questionCount}. Each question must have: question, questionKey, questionType, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation, qualityScore, questionVersion.\n\nCanonical book to quiz: ${bookIdentity}. Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}. Long-term curated pool target for this difficulty: ${poolSize} questions.${qualityNotes ? `\n\nCritical book guardrails:\n${qualityNotes}` : ""}\n\nQuestion type plan:\n${typePlan}\n\n${answerChoiceContract}\n\n${themeSymbolismContract}\n\n${cumulativeDifficultyContract}\n\nRules:\n- questionKey must be a short lowercase semantic key for the question idea, like "frodo-sam-trust" or "rohan-aid-reason".\n- questionType must exactly match the requested type plan.\n- qualityScore must be a number from 0.75 to 1.0 based on answerability, clarity, and single-correct-answer confidence.\n- questionVersion must be ${QUESTION_POOL_VERSION}.\n- Use only the exact book above, not films, soundtracks, games, adaptations, sequels, prequels, or other series installments.\n- If a fact may come from another book in the series or a movie adaptation, do not use it.\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the exact book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Avoid "what potion/item/spell" questions unless the exact book clearly names it.\n- Choices must be plausible and fit the exact book, but only one can be correct.\n- Before returning, privately test each wrong choice by asking: "Could this also be correct?" If yes, replace it.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the exact book.\n- Use child-friendly language for ages 7-18.\n- Silently count the questions before returning JSON and make sure there are exactly ${questionCount}.${sectionInstruction}`;
 };
 
 function describeBook(book: BookDetails) {
@@ -130,13 +142,14 @@ Rules:
 - questionKey must be a short lowercase semantic key for the question idea.
 - questionType must exactly match the requested question plan.
 - qualityScore must be a number from 0.75 to 1.0.
-- questionVersion must be 1.
+- questionVersion must be ${QUESTION_POOL_VERSION}.
 - ${answerChoiceContract.replace(/\n/g, "\n- ")}
 - ${themeSymbolismContract.replace(/\n/g, "\n- ")}
+- ${cumulativeDifficultyContract.replace(/\n/g, "\n- ")}
 - Use only the exact book named above, not films, soundtracks, adaptations, sequels, prequels, or other books in a series.
 - If a fact may come from another series installment or movie adaptation, do not use it.
 - Do not repeat the same question idea, event, character focus, or theme focus.
-- Do not ask simple recall, obscure trivia, trick questions, or impossible questions.
+- Include grounded recall and timeline questions; do not ask obscure trivia, trick questions, or impossible questions.
 - Avoid "what potion/item/spell" questions unless the exact book clearly names it.
 - Each answer must be clearly correct from the book.
 - Each wrong answer must fit the exact book's world and style, but must be clearly false for this exact question.
@@ -149,13 +162,60 @@ Rules:
 - Count the questions before returning. Return JSON only.`;
 };
 
-const hardQuestionPlan = [
-  { start: 1, end: 4, count: 4, focus: "character motivation" },
-  { start: 5, end: 8, count: 4, focus: "cause and effect" },
-  { start: 9, end: 12, count: 4, focus: "theme or lesson" },
-  { start: 13, end: 15, count: 3, focus: "relationships or conflict" },
-  { start: 16, end: 18, count: 3, focus: "consequences of choices" },
-  { start: 19, end: 20, count: 2, focus: "bigger-picture meaning" },
+const hardQuestionPlan: Array<{
+  start: number;
+  end: number;
+  count: number;
+  focus: string;
+  questionTypes: QuestionTypeCount[];
+}> = [
+  {
+    start: 1,
+    end: 5,
+    count: 5,
+    focus: "characters, protagonists, antagonists, real villains, and roles",
+    questionTypes: [{ type: "character", label: "Characters, antagonists, real villains, or roles", count: 5 }],
+  },
+  {
+    start: 6,
+    end: 10,
+    count: 5,
+    focus: "important places, objects, story world details, and timeline/when events",
+    questionTypes: [
+      { type: "setting", label: "Places/settings/world details", count: 1 },
+      { type: "object", label: "Important objects/items", count: 2 },
+      { type: "plot_event", label: "Plot events, timeline, or when questions", count: 2 },
+    ],
+  },
+  {
+    start: 11,
+    end: 15,
+    count: 5,
+    focus: "why events happen, character motivation, and cause/effect",
+    questionTypes: [
+      { type: "plot_event", label: "Plot events, timeline, or when questions", count: 1 },
+      { type: "character_motivation", label: "Character motivation", count: 2 },
+      { type: "cause_effect", label: "Cause/effect", count: 2 },
+    ],
+  },
+  {
+    start: 16,
+    end: 17,
+    count: 2,
+    focus: "conflict, climax, consequences, and key dilemmas",
+    questionTypes: [{ type: "problem_solution", label: "Conflict, climax, or consequence", count: 2 }],
+  },
+  {
+    start: 18,
+    end: 20,
+    count: 3,
+    focus: "clear symbolism, theme, and bigger-picture meaning",
+    questionTypes: [
+      { type: "symbolism", label: "Clear symbolism", count: 1 },
+      { type: "theme", label: "Theme or lesson", count: 1 },
+      { type: "tone_author_intent", label: "Author intent or bigger-picture meaning", count: 1 },
+    ],
+  },
 ];
 
 const hardSectionPrompt = (
@@ -167,7 +227,7 @@ const hardSectionPrompt = (
 ) => {
   const goalDescription = goalMap[learningGoal] || goalMap.basic_recollection;
   const bookIdentity = describeBook(book);
-  const typePlan = getQuestionTypePrompt("hard", section.count);
+  const typePlan = formatQuestionTypePrompt(section.questionTypes);
 
   return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}.
 Create exactly ${section.count} hard questions for this canonical book only: ${bookIdentity}.
@@ -185,16 +245,17 @@ Rules:
 - questionKey must be a short lowercase semantic key for the question idea.
 - questionType must exactly match the requested question plan.
 - qualityScore must be a number from 0.75 to 1.0.
-- questionVersion must be 1.
+- questionVersion must be ${QUESTION_POOL_VERSION}.
 - ${answerChoiceContract.replace(/\n/g, "\n- ")}
 - ${themeSymbolismContract.replace(/\n/g, "\n- ")}
+- ${cumulativeDifficultyContract.replace(/\n/g, "\n- ")}
 - Use only the exact book named above, not films, soundtracks, adaptations, sequels, prequels, or other books in a series.
 - If a fact may come from another series installment or movie adaptation, do not use it.
 - Keep each question under 18 words.
 - Keep each choice under 7 words.
 - Keep each explanation under 14 words.
 - Do not repeat the same question idea within this section.
-- Do not ask simple recall, obscure trivia, trick questions, or impossible questions.
+- Include grounded recall when this section asks for it; do not ask obscure trivia, trick questions, or impossible questions.
 - Avoid "what potion/item/spell" questions unless the exact book clearly names it.
 - Each answer must be clearly correct from the book.
 - Each wrong answer must fit the exact book's world and style, but must be clearly false for this exact question.
@@ -227,10 +288,13 @@ type ProceduralBatch = {
   batchNumber: number;
   batchSize: number;
   focus: string;
+  questionTypes: QuestionTypeCount[];
   totalQuestions: number;
   existingQuestionKeys: string[];
   existingQuestions: string[];
 };
+
+type ProceduralPlanItem = Pick<ProceduralBatch, "batchNumber" | "batchSize" | "focus" | "questionTypes">;
 
 const colorWords = [
   "red",
@@ -338,7 +402,7 @@ function normalizeQuiz(rawQuiz: GeneratedQuiz, book: BookDetails, questionCount:
       ? generatedQuestion.questionType
       : "";
     const qualityScore = Number(generatedQuestion.qualityScore);
-    const questionVersion = Math.max(1, Math.round(Number(generatedQuestion.questionVersion) || 1));
+    const questionVersion = Math.max(QUESTION_POOL_VERSION, Math.round(Number(generatedQuestion.questionVersion) || QUESTION_POOL_VERSION));
     let answerIndex = Number(generatedQuestion.answerIndex);
 
     const answerTextIndex = answerText
@@ -450,6 +514,7 @@ async function loadStoredQuiz(details: {
       .select("*")
       .eq("canonical_key", details.canonicalKey)
       .eq("quiz_difficulty", details.difficulty as "easy" | "medium" | "hard")
+      .eq("question_version", QUESTION_POOL_VERSION)
       .eq("active", true)
       .lte("report_count", 2)
       .order("quality_score", { ascending: false })
@@ -541,7 +606,7 @@ async function storeQuestionPool(details: {
       answer_text: question.answerText ?? choices[question.answerIndex],
       explanation: question.explanation ?? "",
       quality_score: question.qualityScore ?? 0.85,
-      question_version: question.questionVersion ?? 1,
+      question_version: QUESTION_POOL_VERSION,
       updated_at: new Date().toISOString(),
     };
     });
@@ -574,11 +639,11 @@ async function reviewQuizWithModel(
       {
         role: "system",
         content:
-          "You are a strict quiz quality reviewer for children's reading quizzes. Return only a valid JSON object, with no markdown and no commentary. Fix wrong answers, impossible questions, weak distractors, answerIndex mismatches, difficulty mismatches, and any question with more than one defensible correct answer. For theme or symbolism questions, reject literal plot results as correct answers unless the question is explicitly cause/effect. If a question cannot be verified, replace it with a safer question.",
+          "You are a strict quiz quality reviewer for children's reading quizzes. Return only a valid JSON object, with no markdown and no commentary. Fix wrong answers, impossible questions, weak distractors, answerIndex mismatches, difficulty mismatches, and any question with more than one defensible correct answer. For theme or symbolism questions, reject literal plot results as correct answers unless the question is explicitly cause/effect. Preserve cumulative difficulty balance: higher-level quizzes still need grounded recall, timeline, character, place, object, and cause/effect questions. If a question cannot be verified, replace it with a safer question.",
       },
       {
         role: "user",
-        content: `Review this quiz for the exact book ${describeBook(details.book)}. Difficulty: ${details.difficulty}. Reading level: ${details.bookLevel}. Testing level: ${details.learningGoal}.${details.qualityNotes ? `\n\nCritical book guardrails:\n- ${details.qualityNotes}` : ""}\n\nIt must have exactly ${details.questionCount} questions, 4 choices per question, a valid questionType, qualityScore, questionVersion, a correct answerIndex, answerText matching choices[answerIndex], and a short explanation.\n\n${answerChoiceContract}\n\n${themeSymbolismContract}\n\nFor every question, audit all four choices. If any wrong choice is technically true, partially true, a broader category containing the correct answer, a narrower example of the correct answer, a synonym, a restatement, or otherwise defensible, replace that choice or replace the entire question. For theme/symbolism questions, verify that the correct answer is the symbolic or thematic meaning, not the literal result of the action; if the answer is literal, rewrite it as cause/effect or replace the question. Remove or replace any question that uses a movie/adaptation fact, another book in a series, a later-book fact, an impossible premise, or an unverified answer. Preserve or assign a valid questionType from the requested difficulty plan. Return only the corrected JSON object.\n\n${JSON.stringify(quizData)}`,
+        content: `Review this quiz for the exact book ${describeBook(details.book)}. Difficulty: ${details.difficulty}. Reading level: ${details.bookLevel}. Testing level: ${details.learningGoal}.${details.qualityNotes ? `\n\nCritical book guardrails:\n- ${details.qualityNotes}` : ""}\n\nIt must have exactly ${details.questionCount} questions, 4 choices per question, a valid questionType, qualityScore, questionVersion ${QUESTION_POOL_VERSION}, a correct answerIndex, answerText matching choices[answerIndex], and a short explanation.\n\n${answerChoiceContract}\n\n${themeSymbolismContract}\n\n${cumulativeDifficultyContract}\n\nFor every question, audit all four choices. If any wrong choice is technically true, partially true, a broader category containing the correct answer, a narrower example of the correct answer, a synonym, a restatement, or otherwise defensible, replace that choice or replace the entire question. For theme/symbolism questions, verify that the correct answer is the symbolic or thematic meaning, not the literal result of the action; if the answer is literal, rewrite it as cause/effect or replace the question. Remove or replace any question that uses a movie/adaptation fact, another book in a series, a later-book fact, an impossible premise, or an unverified answer. Preserve or assign a valid questionType from the requested difficulty plan. Return only the corrected JSON object.\n\n${JSON.stringify(quizData)}`,
       },
     ],
   });
@@ -704,27 +769,100 @@ async function generateHardQuiz(details: {
   return quizData;
 }
 
-function getProceduralPlan(difficulty: string) {
+function getProceduralPlan(difficulty: string): ProceduralPlanItem[] {
   if (difficulty === "hard") {
     return [
-      { batchNumber: 1, batchSize: 4, focus: "character motivation and relationships" },
-      { batchNumber: 2, batchSize: 4, focus: "cause and effect from major events" },
-      { batchNumber: 3, batchSize: 4, focus: "themes, lessons, and symbols" },
-      { batchNumber: 4, batchSize: 4, focus: "conflict, consequences, and choices" },
-      { batchNumber: 5, batchSize: 4, focus: "bigger-picture meaning and comparisons" },
+      {
+        batchNumber: 1,
+        batchSize: 5,
+        focus: "characters, protagonists, antagonists, real villains, and roles",
+        questionTypes: [{ type: "character", label: "Characters, antagonists, real villains, or roles", count: 5 }],
+      },
+      {
+        batchNumber: 2,
+        batchSize: 5,
+        focus: "important places, objects, story world details, and timeline/when events",
+        questionTypes: [
+          { type: "setting", label: "Places/settings/world details", count: 1 },
+          { type: "object", label: "Important objects/items", count: 2 },
+          { type: "plot_event", label: "Plot events, timeline, or when questions", count: 2 },
+        ],
+      },
+      {
+        batchNumber: 3,
+        batchSize: 5,
+        focus: "why events happen, character motivation, and cause/effect",
+        questionTypes: [
+          { type: "plot_event", label: "Plot events, timeline, or when questions", count: 1 },
+          { type: "character_motivation", label: "Character motivation", count: 2 },
+          { type: "cause_effect", label: "Cause/effect", count: 2 },
+        ],
+      },
+      {
+        batchNumber: 4,
+        batchSize: 2,
+        focus: "conflict, climax, consequences, and key dilemmas",
+        questionTypes: [{ type: "problem_solution", label: "Conflict, climax, or consequence", count: 2 }],
+      },
+      {
+        batchNumber: 5,
+        batchSize: 3,
+        focus: "clear symbolism, theme, and bigger-picture meaning",
+        questionTypes: [
+          { type: "symbolism", label: "Clear symbolism", count: 1 },
+          { type: "theme", label: "Theme or lesson", count: 1 },
+          { type: "tone_author_intent", label: "Author intent or bigger-picture meaning", count: 1 },
+        ],
+      },
     ];
   }
 
   if (difficulty === "medium") {
     return [
-      { batchNumber: 1, batchSize: 3, focus: "important characters, places, and clear events" },
-      { batchNumber: 2, batchSize: 4, focus: "conflict, motivations, and cause and effect" },
-      { batchNumber: 3, batchSize: 3, focus: "story details and consequences" },
+      {
+        batchNumber: 1,
+        batchSize: 4,
+        focus: "important characters, antagonists, places, and objects",
+        questionTypes: [
+          { type: "character", label: "Characters, antagonists, or roles", count: 2 },
+          { type: "setting", label: "Places/settings", count: 1 },
+          { type: "object", label: "Important objects/items", count: 1 },
+        ],
+      },
+      {
+        batchNumber: 2,
+        batchSize: 3,
+        focus: "plot events, timeline, and when things happen",
+        questionTypes: [
+          { type: "character", label: "Characters, antagonists, or roles", count: 1 },
+          { type: "plot_event", label: "Plot events or timeline/when", count: 2 },
+        ],
+      },
+      {
+        batchNumber: 3,
+        batchSize: 3,
+        focus: "why things happen, cause/effect, and one clear symbol or theme",
+        questionTypes: [
+          { type: "character_motivation", label: "Character motivation", count: 1 },
+          { type: "cause_effect", label: "Cause/effect", count: 1 },
+          { type: "symbolism", label: "Clear symbolism/theme", count: 1 },
+        ],
+      },
     ];
   }
 
   return [
-    { batchNumber: 1, batchSize: 5, focus: "simple characters, settings, and obvious story events" },
+    {
+      batchNumber: 1,
+      batchSize: 5,
+      focus: "simple characters, settings, objects, and one why question",
+      questionTypes: [
+        { type: "character", label: "Characters or roles", count: 2 },
+        { type: "setting", label: "Places/settings", count: 1 },
+        { type: "object", label: "Important objects/items", count: 1 },
+        { type: "simple_motive", label: "Simple why/motive", count: 1 },
+      ],
+    },
   ];
 }
 
@@ -755,7 +893,7 @@ function proceduralPrompt(details: {
   const existingQuestions = details.batch.existingQuestions.length
     ? details.batch.existingQuestions.map((question) => `"${question}"`).join("; ")
     : "none";
-  const batchTypePlan = getQuestionTypePrompt(details.difficulty, details.batch.batchSize);
+  const batchTypePlan = formatQuestionTypePrompt(details.batch.questionTypes);
 
   return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}.
 Create exactly ${details.batch.batchSize} questions for this canonical book only: ${bookIdentity}.
@@ -777,10 +915,11 @@ Rules:
 - questionKey must be a short lowercase semantic key for the question idea.
 - questionType must exactly match the requested type plan.
 - qualityScore must be a number from 0.75 to 1.0.
-- questionVersion must be 1.
+- questionVersion must be ${QUESTION_POOL_VERSION}.
 - Do not reuse or rephrase any used question key, question idea, event focus, or wording.
 - ${answerChoiceContract.replace(/\n/g, "\n- ")}
 - ${themeSymbolismContract.replace(/\n/g, "\n- ")}
+- ${cumulativeDifficultyContract.replace(/\n/g, "\n- ")}
 - Use only the exact book named above, not films, soundtracks, games, adaptations, sequels, prequels, or other books in a series.
 - If a fact may come from another series installment or movie adaptation, do not use it.
 - Keep each question under 18 words.
