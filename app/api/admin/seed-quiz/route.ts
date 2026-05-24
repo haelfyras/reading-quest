@@ -1,10 +1,13 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { ADMIN_COOKIE_NAME, verifyAdminSessionToken } from "../../../../lib/adminAuth";
+import { getBookDifficultyKey } from "../../../../lib/bookDifficulty";
 import { getAllowedDifficulties } from "../../../../lib/scoring";
+import { createServiceSupabaseClient } from "../../../../lib/supabase/server";
 import type { Difficulty } from "../../../../lib/user";
 
 export const maxDuration = 60;
+const QUESTION_POOL_VERSION = 2;
 
 type SeedBookInput = {
   title?: unknown;
@@ -16,12 +19,22 @@ type SeedBookInput = {
 type SeedResult = {
   title: string;
   author: string;
+  isbn: string;
   level?: string;
   difficultyIndex?: number;
   generated: string[];
   skipped: Array<{ difficulty: string; reason: string }>;
   errors: Array<{ difficulty: string; error: string }>;
   generationMs: number;
+};
+
+type ExistingPoolWarning = {
+  title: string;
+  author: string;
+  isbn: string;
+  canonicalKey: string;
+  difficulties: string[];
+  questionCount: number;
 };
 
 const allowedDifficulties = new Set(["easy", "medium", "hard"]);
@@ -56,6 +69,36 @@ async function postJson<T>(url: string, body: Record<string, unknown>): Promise<
   return data as T;
 }
 
+async function findExistingPools(books: ReturnType<typeof normalizeBook>[]) {
+  const supabase = createServiceSupabaseClient();
+  const warnings: ExistingPoolWarning[] = [];
+
+  for (const book of books) {
+    const canonicalKey = getBookDifficultyKey(book);
+    const { data, error } = await supabase
+      .from("book_question_pool")
+      .select("quiz_difficulty")
+      .eq("canonical_key", canonicalKey)
+      .eq("question_version", QUESTION_POOL_VERSION)
+      .eq("active", true);
+
+    if (error || !data || data.length === 0) {
+      continue;
+    }
+
+    warnings.push({
+      title: book.title,
+      author: book.author,
+      isbn: book.isbn,
+      canonicalKey,
+      difficulties: Array.from(new Set(data.map((row) => String(row.quiz_difficulty)))).sort(),
+      questionCount: data.length,
+    });
+  }
+
+  return warnings;
+}
+
 export async function POST(request: Request) {
   const token = cookies().get(ADMIN_COOKIE_NAME)?.value;
   if (!verifyAdminSessionToken(token)) {
@@ -64,6 +107,8 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}));
   const rawBooks = (Array.isArray(body.books) ? body.books : []) as SeedBookInput[];
+  const checkOnly = Boolean(body.checkOnly);
+  const forceReseed = Boolean(body.forceReseed);
   const selectedDifficulties = Array.isArray(body.difficulties)
     ? (body.difficulties as unknown[])
       .map((difficulty) => String(difficulty).toLowerCase())
@@ -82,12 +127,32 @@ export async function POST(request: Request) {
 
   const origin = getOrigin(request);
   const results: SeedResult[] = [];
+  const existingPools = await findExistingPools(books);
+
+  if (checkOnly) {
+    return NextResponse.json({
+      existingPools,
+      safeToSeed: existingPools.length === 0,
+      processedBooks: books.length,
+    });
+  }
+
+  if (existingPools.length > 0 && !forceReseed) {
+    return NextResponse.json(
+      {
+        error: "One or more books already have seeded question pools.",
+        existingPools,
+      },
+      { status: 409 },
+    );
+  }
 
   for (const book of books) {
     const startedAt = Date.now();
     const result: SeedResult = {
       title: book.title,
       author: book.author,
+      isbn: book.isbn,
       generated: [],
       skipped: [],
       errors: [],

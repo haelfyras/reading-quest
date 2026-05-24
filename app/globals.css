@@ -1201,6 +1201,49 @@ button:disabled {
   overflow: auto;
 }
 
+.admin-modal-shell,
+.admin-modal-scrim {
+  position: fixed;
+  inset: 0;
+}
+
+.admin-modal-shell {
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.admin-modal-scrim {
+  border: 0;
+  border-radius: 0;
+  background: rgba(3, 7, 18, 0.74);
+}
+
+.admin-modal {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 16px;
+  width: min(680px, 100%);
+  max-height: min(760px, 88vh);
+  overflow: auto;
+  border: 1px solid #38bdf8;
+  border-radius: 14px;
+  background: #0d1726;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+  padding: clamp(20px, 4vw, 30px);
+}
+
+.admin-modal h2 {
+  margin: 0;
+  color: #f8fbff;
+}
+
+.admin-modal p {
+  color: #bfd0e6;
+}
+
 .admin-usage-row span {
   width: 14px;
   height: 14px;

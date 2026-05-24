@@ -102,12 +102,22 @@ type QuestionPoolStats = {
 type SeedResult = {
   title: string;
   author: string;
+  isbn?: string;
   level?: string;
   difficultyIndex?: number;
   generated: string[];
   skipped: Array<{ difficulty: string; reason: string }>;
   errors: Array<{ difficulty: string; error: string }>;
   generationMs: number;
+};
+
+type ExistingSeedPool = {
+  title: string;
+  author: string;
+  isbn: string;
+  canonicalKey?: string;
+  difficulties: string[];
+  questionCount: number;
 };
 
 const tabs: Array<{ id: AdminTab; label: string }> = [
@@ -126,6 +136,31 @@ const seedInputPlaceholder = `Where the Wild Things Are | Maurice Sendak
 The Very Hungry Caterpillar | Eric Carle
 Don't Let the Pigeon Drive the Bus! | Mo Willems
 Frog and Toad Are Friends | Arnold Lobel`;
+const knownSeedAuthors = [
+  "Bill Martin Jr. & John Archambault",
+  "Margaret Wise Brown",
+  "Maurice Sendak",
+  "Dr. Seuss",
+  "Eric Carle",
+  "Mo Willems",
+  "Arnold Lobel",
+  "Bill Martin Jr.",
+  "Ezra Jack Keats",
+  "Sandra Boynton",
+  "Kevin Henkes",
+  "Robert Munsch",
+  "Don Freeman",
+  "P. D. Eastman",
+  "Doreen Cronin",
+  "Julia Donaldson",
+  "Oliver Jeffers",
+  "Jon Klassen",
+  "Lois Ehlert",
+  "Laura Numeroff",
+  "Anna Dewdney",
+  "Crockett Johnson",
+  "Ludwig Bemelmans",
+];
 
 const feedbackStatusLabels: Record<NonNullable<FeedbackEntry["adminStatus"]>, string> = {
   still_problem: "Still a problem",
@@ -186,12 +221,39 @@ function isExpectedTelemetry(event: TelemetryEvent) {
 }
 
 function parseSeedBooks(input: string) {
+  const splitLine = (line: string) => {
+    if (line.includes("|")) {
+      return line.split("|").map((part) => part.trim());
+    }
+
+    const byMatch = line.match(/^(.+?)\s+by\s+(.+)$/i);
+    if (byMatch) {
+      return [byMatch[1].trim(), byMatch[2].trim()];
+    }
+
+    const spacedParts = line.split(/\t+|\s{2,}/).map((part) => part.trim()).filter(Boolean);
+    if (spacedParts.length > 1) {
+      return spacedParts;
+    }
+
+    const lowerLine = line.toLowerCase();
+    const matchedAuthor = knownSeedAuthors
+      .slice()
+      .sort((a, b) => b.length - a.length)
+      .find((author) => lowerLine.endsWith(` ${author.toLowerCase()}`));
+    if (matchedAuthor) {
+      return [line.slice(0, -matchedAuthor.length).trim(), matchedAuthor];
+    }
+
+    return [line];
+  };
+
   return input
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const parts = line.split("|").map((part) => part.trim());
+      const parts = splitLine(line);
       return {
         title: parts[0] ?? "",
         author: parts[1] ?? "",
@@ -229,6 +291,11 @@ export default function AdminConsole() {
   });
   const [seedResults, setSeedResults] = useState<SeedResult[]>([]);
   const [seedLoading, setSeedLoading] = useState(false);
+  const [seedWarnings, setSeedWarnings] = useState<ExistingSeedPool[]>([]);
+  const [pendingSeedRequest, setPendingSeedRequest] = useState<{
+    books: ReturnType<typeof parseSeedBooks>;
+    difficulties: string[];
+  } | null>(null);
 
   const refresh = async () => {
     setProfiles(getProfiles());
@@ -494,6 +561,39 @@ export default function AdminConsole() {
     await refresh();
   };
 
+  const submitSeedBatch = async (
+    books: ReturnType<typeof parseSeedBooks>,
+    difficulties: string[],
+    options: { forceReseed?: boolean } = {},
+  ) => {
+    setSeedLoading(true);
+    setMessage("Seeding quiz pools. Keep this tab open until the batch finishes.");
+
+    try {
+      const response = await fetch("/api/admin/seed-quiz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ books, difficulties, forceReseed: Boolean(options.forceReseed) }),
+      });
+      const data = await response.json().catch(() => ({ error: "Unable to seed quiz pools." }));
+
+      if (!response.ok) {
+        setMessage(data.error ?? "Unable to seed quiz pools.");
+        return;
+      }
+
+      setSeedResults(data.results ?? []);
+      setSeedWarnings([]);
+      setPendingSeedRequest(null);
+      setMessage(`Seeded ${data.processedBooks ?? 0} book${data.processedBooks === 1 ? "" : "s"}.`);
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to seed quiz pools.");
+    } finally {
+      setSeedLoading(false);
+    }
+  };
+
   const runSeedBatch = async () => {
     const books = parseSeedBooks(seedInput);
     const difficulties = Object.entries(seedDifficulties)
@@ -511,29 +611,45 @@ export default function AdminConsole() {
     }
 
     setSeedLoading(true);
-    setMessage("Seeding quiz pools. Keep this tab open until the batch finishes.");
+    setMessage("Checking existing question pools before seeding.");
 
     try {
       const response = await fetch("/api/admin/seed-quiz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ books, difficulties }),
+        body: JSON.stringify({ books, difficulties, checkOnly: true }),
       });
-      const data = await response.json().catch(() => ({ error: "Unable to seed quiz pools." }));
+      const data = await response.json().catch(() => ({ error: "Unable to check existing pools." }));
 
       if (!response.ok) {
-        setMessage(data.error ?? "Unable to seed quiz pools.");
+        setMessage(data.error ?? "Unable to check existing pools.");
         return;
       }
 
-      setSeedResults(data.results ?? []);
-      setMessage(`Seeded ${data.processedBooks ?? 0} book${data.processedBooks === 1 ? "" : "s"}.`);
-      await refresh();
+      if (Array.isArray(data.existingPools) && data.existingPools.length > 0) {
+        setSeedWarnings(data.existingPools);
+        setPendingSeedRequest({ books, difficulties });
+        setMessage("One or more books already have question pools. Choose whether to re-seed.");
+        return;
+      }
+
+      await submitSeedBatch(books, difficulties);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Unable to seed quiz pools.");
+      setMessage(error instanceof Error ? error.message : "Unable to check existing pools.");
     } finally {
       setSeedLoading(false);
     }
+  };
+
+  const confirmReseed = async () => {
+    if (!pendingSeedRequest) return;
+    await submitSeedBatch(pendingSeedRequest.books, pendingSeedRequest.difficulties, { forceReseed: true });
+  };
+
+  const cancelReseed = () => {
+    setSeedWarnings([]);
+    setPendingSeedRequest(null);
+    setMessage("Re-seed cancelled. No API calls were used.");
   };
 
   const latestQuizzes = metrics.quizzes
@@ -696,6 +812,38 @@ export default function AdminConsole() {
       </nav>
 
       {message ? <div className="success-box">{message}</div> : null}
+      {seedWarnings.length > 0 ? (
+        <div className="admin-modal-shell" role="dialog" aria-modal="true" aria-labelledby="seed-warning-heading">
+          <button type="button" className="admin-modal-scrim" aria-label="Go back without re-seeding" onClick={cancelReseed} />
+          <div className="admin-modal">
+            <div className="kicker">Seed Pool Warning</div>
+            <h2 id="seed-warning-heading">Existing question pool found</h2>
+            <p>
+              {seedWarnings.length === 1
+                ? `${seedWarnings[0].title} has already been seeded.`
+                : `${seedWarnings.length} books already have seeded question pools.`}
+            </p>
+            <div className="admin-card-list">
+              {seedWarnings.map((warning) => (
+                <div key={warning.canonicalKey ?? `${warning.title}-${warning.author}`} className="nested-section">
+                  <strong>{warning.title}</strong>
+                  <small className="block-note">
+                    {warning.author || "Author not provided"}
+                    {warning.isbn ? ` - ISBN ${warning.isbn}` : ""}
+                  </small>
+                  <p>Pool found for {warning.difficulties.join(", ")} with {warning.questionCount} stored questions.</p>
+                </div>
+              ))}
+            </div>
+            <div className="button-row">
+              <button type="button" onClick={() => void confirmReseed()} disabled={seedLoading}>
+                {seedLoading ? "Re-seeding..." : "Re-seed anyway"}
+              </button>
+              <button type="button" className="secondary" onClick={cancelReseed}>Go back</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {hasNewFeedback ? (
         <div className="warning-box admin-feedback-notice">
           <div>
@@ -1102,7 +1250,10 @@ export default function AdminConsole() {
                     <tr key={`${result.title}-${result.generationMs}`}>
                       <td>
                         <strong>{result.title}</strong>
-                        <small className="block-note">{result.author || "Author not provided"}</small>
+                        <small className="block-note">
+                          {result.author || "Author not provided"}
+                          {result.isbn ? ` - ISBN ${result.isbn}` : ""}
+                        </small>
                       </td>
                       <td>{result.level ?? "Unknown"}{result.difficultyIndex ? ` · ${result.difficultyIndex}/9.9` : ""}</td>
                       <td>{result.generated.length ? result.generated.join(", ") : "None"}</td>
