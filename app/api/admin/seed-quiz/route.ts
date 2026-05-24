@@ -1,0 +1,161 @@
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
+import { ADMIN_COOKIE_NAME, verifyAdminSessionToken } from "../../../../lib/adminAuth";
+import { getAllowedDifficulties } from "../../../../lib/scoring";
+import type { Difficulty } from "../../../../lib/user";
+
+export const maxDuration = 60;
+
+type SeedBookInput = {
+  title?: unknown;
+  author?: unknown;
+  isbn?: unknown;
+  year?: unknown;
+};
+
+type SeedResult = {
+  title: string;
+  author: string;
+  level?: string;
+  difficultyIndex?: number;
+  generated: string[];
+  skipped: Array<{ difficulty: string; reason: string }>;
+  errors: Array<{ difficulty: string; error: string }>;
+  generationMs: number;
+};
+
+const allowedDifficulties = new Set(["easy", "medium", "hard"]);
+
+function normalizeBook(input: SeedBookInput) {
+  return {
+    title: String(input.title ?? "").trim(),
+    author: String(input.author ?? "").trim(),
+    isbn: String(input.isbn ?? "").trim(),
+    year: String(input.year ?? "").trim(),
+  };
+}
+
+function getOrigin(request: Request) {
+  const url = new URL(request.url);
+  return `${url.protocol}//${url.host}`;
+}
+
+async function postJson<T>(url: string, body: Record<string, unknown>): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = typeof data?.error === "string" ? data.error : `Request failed with ${response.status}.`;
+    throw new Error(message);
+  }
+
+  return data as T;
+}
+
+export async function POST(request: Request) {
+  const token = cookies().get(ADMIN_COOKIE_NAME)?.value;
+  if (!verifyAdminSessionToken(token)) {
+    return NextResponse.json({ error: "Admin session required." }, { status: 401 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const rawBooks = (Array.isArray(body.books) ? body.books : []) as SeedBookInput[];
+  const selectedDifficulties = Array.isArray(body.difficulties)
+    ? (body.difficulties as unknown[])
+      .map((difficulty) => String(difficulty).toLowerCase())
+      .filter((difficulty): difficulty is Difficulty => allowedDifficulties.has(difficulty))
+    : ["easy"];
+
+  const books = rawBooks.map(normalizeBook).filter((book) => book.title).slice(0, 5);
+
+  if (books.length === 0) {
+    return NextResponse.json({ error: "Add at least one book title to seed." }, { status: 400 });
+  }
+
+  if (selectedDifficulties.length === 0) {
+    return NextResponse.json({ error: "Choose at least one quiz difficulty." }, { status: 400 });
+  }
+
+  const origin = getOrigin(request);
+  const results: SeedResult[] = [];
+
+  for (const book of books) {
+    const startedAt = Date.now();
+    const result: SeedResult = {
+      title: book.title,
+      author: book.author,
+      generated: [],
+      skipped: [],
+      errors: [],
+      generationMs: 0,
+    };
+
+    try {
+      const levelData = await postJson<{
+        level?: string;
+        difficultyIndex?: number;
+        ratingId?: string;
+        canonicalKey?: string;
+      }>(`${origin}/api/book-level`, {
+        bookTitle: book.title,
+        author: book.author,
+        isbn: book.isbn,
+        year: book.year,
+      });
+
+      result.level = levelData.level ?? "beginner";
+      result.difficultyIndex = typeof levelData.difficultyIndex === "number" ? levelData.difficultyIndex : undefined;
+      const bookAllowed = new Set(getAllowedDifficulties(result.level));
+
+      for (const difficulty of selectedDifficulties as Difficulty[]) {
+        if (!bookAllowed.has(difficulty)) {
+          result.skipped.push({
+            difficulty,
+            reason: `${result.level} books can be seeded for ${Array.from(bookAllowed).join(", ")} only.`,
+          });
+          continue;
+        }
+
+        try {
+          await postJson(`${origin}/api/quiz`, {
+            bookTitle: book.title,
+            bookAuthor: book.author,
+            bookIsbn: book.isbn,
+            bookYear: book.year,
+            bookLevel: result.level,
+            bookDifficultyRatingId: levelData.ratingId,
+            bookDifficultyCanonicalKey: levelData.canonicalKey,
+            difficulty,
+            learningGoal: "basic_recollection",
+            mode: "full",
+          });
+          result.generated.push(difficulty);
+        } catch (error) {
+          result.errors.push({
+            difficulty,
+            error: error instanceof Error ? error.message : "Unable to seed this difficulty.",
+          });
+        }
+      }
+    } catch (error) {
+      result.errors.push({
+        difficulty: "book-level",
+        error: error instanceof Error ? error.message : "Unable to detect book level.",
+      });
+    }
+
+    result.generationMs = Date.now() - startedAt;
+    results.push(result);
+  }
+
+  return NextResponse.json({
+    results,
+    requestedBooks: rawBooks.length,
+    processedBooks: books.length,
+    note: "Seeded questions are stored in public.book_question_pool through the normal quiz pipeline.",
+  });
+}

@@ -29,7 +29,7 @@ import {
 import { COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION } from "../../lib/product";
 import { BETA_FEEDBACK_KEY } from "../../lib/beta";
 
-type AdminTab = "overview" | "accounts" | "quiz" | "safety" | "prizes" | "errors";
+type AdminTab = "overview" | "accounts" | "quiz" | "seeding" | "safety" | "prizes" | "errors";
 type IssueTypeFilter = "all" | "feedback" | "quiz_report" | "error";
 type IssueStatusFilter = "all" | "ongoing" | "resolved";
 type IssueSort = "newest" | "oldest" | "type" | "status";
@@ -84,10 +84,37 @@ type AdminIssueRow = {
   action?: ReactNode;
 };
 
+type QuestionPoolStats = {
+  totalQuestions: number;
+  activeQuestions: number;
+  uniqueBooks: number;
+  versionCounts: Record<string, number>;
+  difficultyCounts: Record<string, number>;
+  recentBooks: Array<{
+    title: string;
+    author: string;
+    version: number;
+    difficulty: string;
+    createdAt: string;
+  }>;
+};
+
+type SeedResult = {
+  title: string;
+  author: string;
+  level?: string;
+  difficultyIndex?: number;
+  generated: string[];
+  skipped: Array<{ difficulty: string; reason: string }>;
+  errors: Array<{ difficulty: string; error: string }>;
+  generationMs: number;
+};
+
 const tabs: Array<{ id: AdminTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "accounts", label: "Accounts" },
   { id: "quiz", label: "Quiz Trust" },
+  { id: "seeding", label: "Seed Pools" },
   { id: "safety", label: "Safety" },
   { id: "prizes", label: "Prizes" },
   { id: "errors", label: "Issue Center" },
@@ -95,6 +122,10 @@ const tabs: Array<{ id: AdminTab; label: string }> = [
 
 const pageUsageColors = ["#22d3ee", "#facc15", "#2f6f4e", "#c084fc", "#f97316", "#9b2c2c", "#60a5fa", "#34d399"];
 const ADMIN_FEEDBACK_SEEN_KEY = "readingQuestAdminFeedbackSeenAt";
+const seedInputPlaceholder = `Where the Wild Things Are | Maurice Sendak
+The Very Hungry Caterpillar | Eric Carle
+Don't Let the Pigeon Drive the Bus! | Mo Willems
+Frog and Toad Are Friends | Arnold Lobel`;
 
 const feedbackStatusLabels: Record<NonNullable<FeedbackEntry["adminStatus"]>, string> = {
   still_problem: "Still a problem",
@@ -154,6 +185,23 @@ function isExpectedTelemetry(event: TelemetryEvent) {
   return false;
 }
 
+function parseSeedBooks(input: string) {
+  return input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split("|").map((part) => part.trim());
+      return {
+        title: parts[0] ?? "",
+        author: parts[1] ?? "",
+        isbn: parts[2] ?? "",
+        year: parts[3] ?? "",
+      };
+    })
+    .filter((book) => book.title);
+}
+
 export default function AdminConsole() {
   const [activeTab, setActiveTab] = useState<AdminTab>("overview");
   const [profiles, setProfiles] = useState<AdminProfile[]>([]);
@@ -172,6 +220,15 @@ export default function AdminConsole() {
   const [issueSort, setIssueSort] = useState<IssueSort>("newest");
   const [message, setMessage] = useState("");
   const [pointAdjustments, setPointAdjustments] = useState<Record<string, string>>({});
+  const [questionPoolStats, setQuestionPoolStats] = useState<QuestionPoolStats | null>(null);
+  const [seedInput, setSeedInput] = useState("");
+  const [seedDifficulties, setSeedDifficulties] = useState<Record<"easy" | "medium" | "hard", boolean>>({
+    easy: true,
+    medium: false,
+    hard: false,
+  });
+  const [seedResults, setSeedResults] = useState<SeedResult[]>([]);
+  const [seedLoading, setSeedLoading] = useState(false);
 
   const refresh = async () => {
     setProfiles(getProfiles());
@@ -195,6 +252,7 @@ export default function AdminConsole() {
         parentRequests?: ParentVerificationRequest[];
         prizeAddRequests?: PrizeAddRequest[];
         challenges?: ReadingChallenge[];
+        questionPoolStats?: QuestionPoolStats;
       };
 
       setProfiles(data.profiles ?? []);
@@ -204,6 +262,7 @@ export default function AdminConsole() {
       setDatabaseParentRequests(data.parentRequests ?? []);
       setPrizeAddRequests(data.prizeAddRequests ?? []);
       setDatabaseChallenges(data.challenges ?? []);
+      setQuestionPoolStats(data.questionPoolStats ?? null);
       setDataSource("database");
     } catch {
       setDataSource("browser");
@@ -435,6 +494,48 @@ export default function AdminConsole() {
     await refresh();
   };
 
+  const runSeedBatch = async () => {
+    const books = parseSeedBooks(seedInput);
+    const difficulties = Object.entries(seedDifficulties)
+      .filter(([, enabled]) => enabled)
+      .map(([difficulty]) => difficulty);
+
+    if (books.length === 0) {
+      setMessage("Add at least one book in the seed list.");
+      return;
+    }
+
+    if (difficulties.length === 0) {
+      setMessage("Choose at least one difficulty to seed.");
+      return;
+    }
+
+    setSeedLoading(true);
+    setMessage("Seeding quiz pools. Keep this tab open until the batch finishes.");
+
+    try {
+      const response = await fetch("/api/admin/seed-quiz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ books, difficulties }),
+      });
+      const data = await response.json().catch(() => ({ error: "Unable to seed quiz pools." }));
+
+      if (!response.ok) {
+        setMessage(data.error ?? "Unable to seed quiz pools.");
+        return;
+      }
+
+      setSeedResults(data.results ?? []);
+      setMessage(`Seeded ${data.processedBooks ?? 0} book${data.processedBooks === 1 ? "" : "s"}.`);
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to seed quiz pools.");
+    } finally {
+      setSeedLoading(false);
+    }
+  };
+
   const latestQuizzes = metrics.quizzes
     .slice()
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -630,6 +731,8 @@ export default function AdminConsole() {
               <div className="stat-tile"><span>Open quiz reports</span><strong>{metrics.reportsOpen.length}</strong></div>
               <div className="stat-tile"><span>Beta feedback</span><strong>{feedbackEntries.length}</strong></div>
               <div className="stat-tile"><span>Client errors</span><strong>{actionableTelemetry.length}</strong></div>
+              <div className="stat-tile"><span>Pooled books</span><strong>{questionPoolStats?.uniqueBooks ?? 0}</strong></div>
+              <div className="stat-tile"><span>Pool questions</span><strong>{questionPoolStats?.activeQuestions ?? 0}</strong></div>
             </div>
           </section>
 
@@ -909,6 +1012,109 @@ export default function AdminConsole() {
               </tbody>
             </table>
           </div>
+        </section>
+      ) : null}
+
+      {activeTab === "seeding" ? (
+        <section className="admin-section admin-seed-section" aria-labelledby="admin-seed-heading">
+          <div className="section-header-row">
+            <div>
+              <h2 id="admin-seed-heading">Quiz Pool Seeding</h2>
+              <p>Admin-only batch generation for curated books. Run small batches, review results, then continue.</p>
+            </div>
+            <button type="button" className="secondary" onClick={() => void refresh()}>Refresh pool stats</button>
+          </div>
+
+          <div className="admin-metric-grid">
+            <div className="stat-tile"><span>Active questions</span><strong>{questionPoolStats?.activeQuestions ?? 0}</strong></div>
+            <div className="stat-tile"><span>Unique books</span><strong>{questionPoolStats?.uniqueBooks ?? 0}</strong></div>
+            <div className="stat-tile"><span>Easy</span><strong>{questionPoolStats?.difficultyCounts.easy ?? 0}</strong></div>
+            <div className="stat-tile"><span>Medium</span><strong>{questionPoolStats?.difficultyCounts.medium ?? 0}</strong></div>
+            <div className="stat-tile"><span>Hard</span><strong>{questionPoolStats?.difficultyCounts.hard ?? 0}</strong></div>
+          </div>
+
+          <div className="admin-seed-grid">
+            <div className="nested-section admin-seed-control">
+              <h3>Seed a curated batch</h3>
+              <p>One book per line. Use <strong>Title | Author | ISBN | Year</strong>. Only the title is required. The batch is capped at 5 books per run.</p>
+              <div className="field">
+                <label htmlFor="seed-books">Books to seed</label>
+                <textarea
+                  id="seed-books"
+                  value={seedInput}
+                  onChange={(event) => setSeedInput(event.target.value)}
+                  placeholder={seedInputPlaceholder}
+                  rows={9}
+                />
+              </div>
+              <div className="admin-seed-difficulty-row" aria-label="Difficulties to seed">
+                {(["easy", "medium", "hard"] as const).map((difficulty) => (
+                  <label key={difficulty} className="admin-checkbox-pill">
+                    <input
+                      type="checkbox"
+                      checked={seedDifficulties[difficulty]}
+                      onChange={(event) => setSeedDifficulties((current) => ({ ...current, [difficulty]: event.target.checked }))}
+                    />
+                    {difficulty[0].toUpperCase() + difficulty.slice(1)}
+                  </label>
+                ))}
+              </div>
+              <div className="button-row">
+                <button type="button" onClick={() => void runSeedBatch()} disabled={seedLoading}>
+                  {seedLoading ? "Seeding..." : "Seed selected books"}
+                </button>
+                <button type="button" className="secondary" onClick={() => setSeedInput(seedInputPlaceholder)}>
+                  Load sample format
+                </button>
+              </div>
+              <p className="auth-footer-note">Beginner books only seed Easy. Intermediate books seed Easy and Medium. Advanced books can seed all three.</p>
+            </div>
+
+            <div className="nested-section">
+              <h3>Recent pooled books</h3>
+              <div className="admin-card-list">
+                {questionPoolStats?.recentBooks?.length ? questionPoolStats.recentBooks.map((book) => (
+                  <div key={`${book.title}-${book.difficulty}-${book.createdAt}`} className="admin-usage-row admin-seed-row">
+                    <span />
+                    <strong>{book.title}</strong>
+                    <small>{book.difficulty} · v{book.version} · {formatDate(book.createdAt)}</small>
+                  </div>
+                )) : <p>No pooled books yet.</p>}
+              </div>
+            </div>
+          </div>
+
+          {seedResults.length > 0 ? (
+            <div className="responsive-table admin-seed-results">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Book</th>
+                    <th>Detected level</th>
+                    <th>Generated</th>
+                    <th>Skipped</th>
+                    <th>Errors</th>
+                    <th>Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {seedResults.map((result) => (
+                    <tr key={`${result.title}-${result.generationMs}`}>
+                      <td>
+                        <strong>{result.title}</strong>
+                        <small className="block-note">{result.author || "Author not provided"}</small>
+                      </td>
+                      <td>{result.level ?? "Unknown"}{result.difficultyIndex ? ` · ${result.difficultyIndex}/9.9` : ""}</td>
+                      <td>{result.generated.length ? result.generated.join(", ") : "None"}</td>
+                      <td>{result.skipped.length ? result.skipped.map((skip) => `${skip.difficulty}: ${skip.reason}`).join("; ") : "None"}</td>
+                      <td>{result.errors.length ? result.errors.map((error) => `${error.difficulty}: ${error.error}`).join("; ") : "None"}</td>
+                      <td>{Math.round(result.generationMs / 1000)}s</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </section>
       ) : null}
 

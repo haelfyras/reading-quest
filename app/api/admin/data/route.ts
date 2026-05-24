@@ -114,6 +114,7 @@ export async function GET() {
       redemptionsResult,
       readingLogsResult,
       challengesResult,
+      questionPoolResult,
     ] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("parent_child_links").select("*"),
@@ -126,6 +127,7 @@ export async function GET() {
       adminSupabase.from("prize_redemptions").select("*").order("created_at", { ascending: false }).limit(200),
       adminSupabase.from("reading_logs").select("*").order("created_at", { ascending: false }).limit(500),
       adminSupabase.from("reading_challenges").select("*").order("created_at", { ascending: false }).limit(200),
+      adminSupabase.from("book_question_pool").select("canonical_key,book_title,author,quiz_difficulty,question_version,active,created_at").limit(5000),
     ]);
 
     const firstError = [
@@ -140,6 +142,7 @@ export async function GET() {
       redemptionsResult.error,
       readingLogsResult.error,
       challengesResult.error,
+      questionPoolResult.error,
     ].find(Boolean);
 
     if (firstError) {
@@ -208,9 +211,43 @@ export async function GET() {
       return mapReport(report, profile?.real_name || profile?.screen_name || "Unknown profile");
     });
 
+    const questionPoolRows = (questionPoolResult.data ?? []) as Array<Record<string, any>>;
+    const poolBooksByVersion = questionPoolRows.reduce<Record<string, Set<string>>>((counts, row: any) => {
+      const version = String(row.question_version ?? "unknown");
+      counts[version] = counts[version] ?? new Set<string>();
+      counts[version].add(row.canonical_key);
+      return counts;
+    }, {});
+    const poolQuestionsByDifficulty = questionPoolRows.reduce<Record<string, number>>((counts, row: any) => {
+      const difficulty = String(row.quiz_difficulty ?? "unknown");
+      counts[difficulty] = (counts[difficulty] ?? 0) + 1;
+      return counts;
+    }, {});
+
     return NextResponse.json({
       profiles,
       reports,
+      questionPoolStats: {
+        totalQuestions: questionPoolRows.length,
+        activeQuestions: questionPoolRows.filter((row: any) => row.active !== false).length,
+        uniqueBooks: new Set(questionPoolRows.map((row: any) => row.canonical_key)).size,
+        versionCounts: Object.fromEntries(Object.entries(poolBooksByVersion).map(([version, books]) => [version, books.size])),
+        difficultyCounts: poolQuestionsByDifficulty,
+        recentBooks: Array.from(
+          new Map(
+            questionPoolRows
+              .slice()
+              .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+              .map((row: any) => [row.canonical_key, {
+                title: row.book_title,
+                author: row.author ?? "",
+                version: row.question_version,
+                difficulty: row.quiz_difficulty,
+                createdAt: row.created_at,
+              }]),
+          ).values(),
+        ).slice(0, 8),
+      },
       feedbackEntries: (feedbackResult.data ?? []).map((entry: any) => ({
         id: entry.id,
         profileId: entry.profile_id ?? undefined,
