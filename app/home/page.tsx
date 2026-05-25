@@ -126,6 +126,18 @@ export default function HomePage() {
       });
   }, [router]);
 
+  useEffect(() => {
+    const refreshCurrentProfile = () => {
+      const profile = getCurrentProfile();
+      if (profile && !profile.isParent) {
+        setCurrentUser(profile);
+      }
+    };
+
+    window.addEventListener("readingQuestProfileUpdated", refreshCurrentProfile);
+    return () => window.removeEventListener("readingQuestProfileUpdated", refreshCurrentProfile);
+  }, []);
+
   const currentPoints = currentUser ? getSpendablePoints(currentUser) : 0;
   const lifetimePoints = currentUser ? getLifetimePoints(currentUser) : 0;
   const effortPoints = currentUser ? getEffortPoints(currentUser) : 0;

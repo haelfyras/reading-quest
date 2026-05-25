@@ -306,7 +306,20 @@ body {
 .app-drawer-nav {
   display: grid;
   align-content: start;
+  gap: 14px;
+}
+
+.app-drawer-nav-group {
+  display: grid;
   gap: 8px;
+}
+
+.app-drawer-nav-group > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .drawer-notification {
@@ -2188,6 +2201,31 @@ button.preference-chip {
 .choice-button.incorrect {
   border-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 14%, var(--panel-strong));
+}
+
+.faq-list {
+  display: grid;
+  gap: 12px;
+}
+
+.faq-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-strong);
+  padding: 0;
+}
+
+.faq-item summary {
+  cursor: pointer;
+  padding: 16px;
+  font-weight: 900;
+}
+
+.faq-item p {
+  margin: 0;
+  border-top: 1px solid var(--border);
+  padding: 0 16px 16px;
+  color: var(--muted);
 }
 
 .answer-feedback {

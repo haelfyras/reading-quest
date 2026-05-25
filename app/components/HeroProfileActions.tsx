@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { getAvatarOption } from "../../lib/avatarOptions";
-import type { Profile } from "../../lib/user";
+import { getCurrentProfile, type Profile } from "../../lib/user";
 
 export default function HeroProfileActions({
   profile,
@@ -15,7 +16,25 @@ export default function HeroProfileActions({
   homeLabel?: string;
   children?: React.ReactNode;
 }) {
-  const avatar = getAvatarOption(profile?.avatarStyle);
+  const [liveProfile, setLiveProfile] = useState(profile ?? null);
+  const displayProfile = liveProfile?.id === profile?.id ? liveProfile : profile;
+  const avatar = getAvatarOption(displayProfile?.avatarStyle);
+
+  useEffect(() => {
+    setLiveProfile(profile ?? null);
+  }, [profile]);
+
+  useEffect(() => {
+    const refreshProfile = () => {
+      const updated = getCurrentProfile();
+      if (updated?.id === profile?.id) {
+        setLiveProfile(updated);
+      }
+    };
+
+    window.addEventListener("readingQuestProfileUpdated", refreshProfile);
+    return () => window.removeEventListener("readingQuestProfileUpdated", refreshProfile);
+  }, [profile?.id]);
 
   return (
     <div className="hero-actions">
@@ -25,10 +44,10 @@ export default function HeroProfileActions({
         </Link>
       ) : null}
       {children}
-      {profile ? (
+      {displayProfile ? (
         <Link href="/profile" className="hero-profile-chip" aria-label="Open profile">
           <img src={avatar.src} alt="" aria-hidden="true" />
-          <span>{profile.name}</span>
+          <span>{displayProfile.name}</span>
         </Link>
       ) : null}
     </div>

@@ -16,11 +16,15 @@ import { readPrizeAddRequests, readPrizes } from "../../lib/prizeData";
 import { signOutSupabase } from "../../lib/supabase/auth";
 import { isUuid } from "../../lib/ids";
 
-const sharedLinks = [
+const primaryLinks = [
   { href: "/my-books", label: "My Books" },
   { href: "/leaderboards", label: "Leaderboards" },
   { href: "/prizes", label: "Prizes" },
   { href: "/friends", label: "Friends" },
+];
+
+const supportLinks = [
+  { href: "/faq", label: "FAQ" },
   { href: "/settings", label: "Settings" },
   { href: "/profile", label: "Profile" },
 ];
@@ -153,13 +157,22 @@ export default function AppMenu() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [open]);
 
-  const links = useMemo(() => {
+  const navGroups = useMemo(() => {
     if (!profile) return [];
 
     return [
-      { href: profile.isParent ? "/parent" : "/home", label: "Home" },
-      { href: "/quiz", label: "Take a Quiz" },
-      ...sharedLinks,
+      {
+        label: "Main",
+        links: [
+          { href: profile.isParent ? "/parent" : "/home", label: "Home" },
+          { href: "/quiz", label: "Take a Quiz" },
+          ...primaryLinks,
+        ],
+      },
+      {
+        label: "Support",
+        links: supportLinks,
+      },
     ];
   }, [profile]);
 
@@ -219,15 +232,20 @@ export default function AppMenu() {
         ) : null}
 
         <nav className="app-drawer-nav" aria-label="Main navigation">
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={pathname === link.href ? "active" : ""}
-              onClick={() => setOpen(false)}
-            >
-              {link.label}
-            </Link>
+          {navGroups.map((group) => (
+            <div key={group.label} className="app-drawer-nav-group">
+              <span>{group.label}</span>
+              {group.links.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={pathname === link.href ? "active" : ""}
+                  onClick={() => setOpen(false)}
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </div>
           ))}
         </nav>
 

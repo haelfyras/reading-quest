@@ -27,7 +27,12 @@ const difficultyMap = {
 };
 
 const quizModel = process.env.OPENAI_QUIZ_MODEL || "gpt-4o-mini";
-const QUESTION_POOL_VERSION = 2;
+const QUESTION_POOL_VERSION = 3;
+const poolTopUpCounts: Record<"easy" | "medium" | "hard", number> = {
+  easy: 2,
+  medium: 3,
+  hard: 5,
+};
 
 type BookDetails = {
   title: string;
@@ -52,9 +57,20 @@ const answerChoiceContract = `Answer choice consistency rules:
 - Wrong choices may be plausible, but they cannot be partially correct, technically correct, broader categories, narrower examples, synonyms, restatements, or "also true" answers.
 - All four choices must be the same kind of answer: all characters, all places, all causes, all themes, all events, or all short claims.
 - Do not mix a specific answer with a broad category that could include it.
+- Do not mix several positive traits, feelings, motivations, or themes that are all true of the same character or scene.
 - Do not use "all of the above", "none of the above", joke answers, obviously unrelated answers, or vague answers like "a person", "a thing", "a number", "something bad", or "because of choices".
 - If more than one choice could be defended by a reasonable reader, replace the question or the choices.
 - Hard questions should be thoughtful for upper elementary, middle school, and high school readers, not graduate-level, obscure, or ambiguous.`;
+
+const youngReaderAnswerabilityContract = `Young-reader answerability rules:
+- The question must be easy to understand before looking at the answer choices.
+- Prefer concrete wording: who, what, where, when, which object, what happens next, or what directly causes an event.
+- For Easy, avoid broad questions about motivation, symbolism, theme, lessons, or feelings unless the answer is plainly stated in the book.
+- For Medium, motivation and cause/effect questions must name a specific event or action and ask for the most direct reason.
+- For Hard, theme and symbolism questions are allowed, but the answer choices must be distinct and only one can be defended from the scene.
+- Avoid broad wording like "What motivates..." when several true motives exist; ask "What most directly causes..." or "Why does the character do this specific thing?"
+- Avoid questions where a reader could say "both are true" or "that answer is also reasonable."
+- If a question depends on interpretation, make the wording narrower or replace it with a clearer book-knowledge question.`;
 
 const themeSymbolismContract = `Theme and symbolism rules:
 - If a question asks what something symbolizes, represents, suggests, reveals, means, or shows about a theme, the correct answer must be an abstract meaning, theme, trait, lesson, or idea.
@@ -90,7 +106,7 @@ const prompt = (
     ? `\n\nThis is section ${section.number} of ${section.total}. Create exactly ${questionCount} new questions for this section only. Do not repeat these earlier questions: ${section.previousQuestions.length ? section.previousQuestions.map((question) => `"${question}"`).join("; ") : "none"}.`
     : "";
 
-  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. The questions array must contain exactly ${questionCount} complete question objects. Do not return fewer than ${questionCount}. Each question must have: question, questionKey, questionType, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation, qualityScore, questionVersion.\n\nCanonical book to quiz: ${bookIdentity}. Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}. Long-term curated pool target for this difficulty: ${poolSize} questions.${qualityNotes ? `\n\nCritical book guardrails:\n${qualityNotes}` : ""}\n\nQuestion type plan:\n${typePlan}\n\n${answerChoiceContract}\n\n${themeSymbolismContract}\n\n${cumulativeDifficultyContract}\n\nRules:\n- questionKey must be a short lowercase semantic key for the question idea, like "frodo-sam-trust" or "rohan-aid-reason".\n- questionType must exactly match the requested type plan.\n- qualityScore must be a number from 0.75 to 1.0 based on answerability, clarity, and single-correct-answer confidence.\n- questionVersion must be ${QUESTION_POOL_VERSION}.\n- Use only the exact book above, not films, soundtracks, games, adaptations, sequels, prequels, or other series installments.\n- If a fact may come from another book in the series or a movie adaptation, do not use it.\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the exact book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Avoid "what potion/item/spell" questions unless the exact book clearly names it.\n- Choices must be plausible and fit the exact book, but only one can be correct.\n- Before returning, privately test each wrong choice by asking: "Could this also be correct?" If yes, replace it.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the exact book.\n- Use child-friendly language for ages 7-18.\n- Silently count the questions before returning JSON and make sure there are exactly ${questionCount}.${sectionInstruction}`;
+  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. The questions array must contain exactly ${questionCount} complete question objects. Do not return fewer than ${questionCount}. Each question must have: question, questionKey, questionType, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation, qualityScore, questionVersion.\n\nCanonical book to quiz: ${bookIdentity}. Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}. Long-term curated pool target for this difficulty: ${poolSize} questions.${qualityNotes ? `\n\nCritical book guardrails:\n${qualityNotes}` : ""}\n\nQuestion type plan:\n${typePlan}\n\n${answerChoiceContract}\n\n${youngReaderAnswerabilityContract}\n\n${themeSymbolismContract}\n\n${cumulativeDifficultyContract}\n\nRules:\n- questionKey must be a short lowercase semantic key for the question idea, like "frodo-sam-trust" or "rohan-aid-reason".\n- questionType must exactly match the requested type plan.\n- qualityScore must be a number from 0.75 to 1.0 based on answerability, clarity, and single-correct-answer confidence.\n- questionVersion must be ${QUESTION_POOL_VERSION}.\n- Use only the exact book above, not films, soundtracks, games, adaptations, sequels, prequels, or other series installments.\n- If a fact may come from another book in the series or a movie adaptation, do not use it.\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the exact book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Avoid "what potion/item/spell" questions unless the exact book clearly names it.\n- Choices must be plausible and fit the exact book, but only one can be correct.\n- Before returning, privately test each wrong choice by asking: "Could this also be correct, partly correct, or reasonable?" If yes, replace it.\n- For Easy and Medium, prefer clear book facts over debatable interpretation.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the exact book.\n- Use child-friendly language for ages 7-18.\n- Silently count the questions before returning JSON and make sure there are exactly ${questionCount}.${sectionInstruction}`;
 };
 
 function describeBook(book: BookDetails) {
@@ -144,6 +160,7 @@ Rules:
 - qualityScore must be a number from 0.75 to 1.0.
 - questionVersion must be ${QUESTION_POOL_VERSION}.
 - ${answerChoiceContract.replace(/\n/g, "\n- ")}
+- ${youngReaderAnswerabilityContract.replace(/\n/g, "\n- ")}
 - ${themeSymbolismContract.replace(/\n/g, "\n- ")}
 - ${cumulativeDifficultyContract.replace(/\n/g, "\n- ")}
 - Use only the exact book named above, not films, soundtracks, adaptations, sequels, prequels, or other books in a series.
@@ -154,6 +171,7 @@ Rules:
 - Each answer must be clearly correct from the book.
 - Each wrong answer must fit the exact book's world and style, but must be clearly false for this exact question.
 - Before returning, privately test each wrong choice by asking: "Could this also be correct?" If yes, replace it.
+- Also ask: "Could a young reader reasonably defend this wrong answer from the story?" If yes, replace it.
 - Keep each question under 18 words.
 - Keep each answer choice under 7 words.
 - Keep each explanation under 14 words.
@@ -247,6 +265,7 @@ Rules:
 - qualityScore must be a number from 0.75 to 1.0.
 - questionVersion must be ${QUESTION_POOL_VERSION}.
 - ${answerChoiceContract.replace(/\n/g, "\n- ")}
+- ${youngReaderAnswerabilityContract.replace(/\n/g, "\n- ")}
 - ${themeSymbolismContract.replace(/\n/g, "\n- ")}
 - ${cumulativeDifficultyContract.replace(/\n/g, "\n- ")}
 - Use only the exact book named above, not films, soundtracks, adaptations, sequels, prequels, or other books in a series.
@@ -260,6 +279,7 @@ Rules:
 - Each answer must be clearly correct from the book.
 - Each wrong answer must fit the exact book's world and style, but must be clearly false for this exact question.
 - Before returning, privately test each wrong choice by asking: "Could this also be correct?" If yes, replace it.
+- Also ask: "Could a young reader reasonably defend this wrong answer from the story?" If yes, replace it.
 - answerIndex must point to answerText exactly.
 - Use child-friendly language for ages 7-18.
 - Return JSON only.`;
@@ -622,6 +642,151 @@ async function storeQuestionPool(details: {
   }
 }
 
+async function getPoolSnapshot(details: {
+  canonicalKey: string;
+  difficulty: string;
+}) {
+  const supabase = createServiceSupabaseClient();
+  const { data, error } = await supabase
+    .from("book_question_pool")
+    .select("question_key,question")
+    .eq("canonical_key", details.canonicalKey)
+    .eq("quiz_difficulty", details.difficulty as "easy" | "medium" | "hard")
+    .eq("question_version", QUESTION_POOL_VERSION)
+    .eq("active", true)
+    .lte("report_count", 2)
+    .limit(200);
+
+  if (error || !data) {
+    return { count: 0, questionKeys: [] as string[], questions: [] as string[] };
+  }
+
+  return {
+    count: data.length,
+    questionKeys: data.map((question) => String(question.question_key ?? "")).filter(Boolean),
+    questions: data.map((question) => String(question.question ?? "")).filter(Boolean),
+  };
+}
+
+function schedulePoolTopUp(details: {
+  book: BookDetails;
+  difficulty: string;
+  bookLevel: string;
+  learningGoal: string;
+  canonicalKey: string;
+  bookDifficultyRatingId?: string;
+  qualityNotes: string;
+}) {
+  void topUpQuestionPool(details).catch(() => undefined);
+}
+
+async function generateTopUpQuiz(details: {
+  book: BookDetails;
+  difficulty: string;
+  bookLevel: string;
+  learningGoal: string;
+  questionCount: number;
+  qualityNotes: string;
+  previousQuestions: string[];
+}) {
+  const response = await openai.chat.completions.create({
+    model: quizModel,
+    max_tokens: Math.max(1300, details.questionCount * 380),
+    messages: [
+      {
+        role: "system",
+        content: "You are a careful reading teacher. Create accurate supplemental quiz-pool questions for the exact named book only. Return only valid JSON.",
+      },
+      {
+        role: "user",
+        content: prompt(
+          details.book,
+          details.difficulty,
+          details.bookLevel,
+          details.learningGoal,
+          details.questionCount,
+          { number: 1, total: 1, previousQuestions: details.previousQuestions.slice(0, 60) },
+          details.qualityNotes,
+        ),
+      },
+    ],
+  });
+
+  const text = response.choices?.[0]?.message?.content ?? "";
+  return normalizeQuiz(parseJsonObject(text.trim()), details.book, details.questionCount, details.difficulty);
+}
+
+async function topUpQuestionPool(details: {
+  book: BookDetails;
+  difficulty: string;
+  bookLevel: string;
+  learningGoal: string;
+  canonicalKey: string;
+  bookDifficultyRatingId?: string;
+  qualityNotes: string;
+}) {
+  const difficultyKey = details.difficulty as "easy" | "medium" | "hard";
+  const target = quizDifficultyPlans[difficultyKey]?.poolSize;
+  const topUpLimit = poolTopUpCounts[difficultyKey];
+  if (!target || !topUpLimit) {
+    return;
+  }
+
+  const snapshot = await getPoolSnapshot({
+    canonicalKey: details.canonicalKey,
+    difficulty: details.difficulty,
+  });
+  const needed = Math.min(topUpLimit, Math.max(0, target - snapshot.count));
+  if (needed <= 0) {
+    return;
+  }
+
+  const quiz = await generateTopUpQuiz({
+    book: details.book,
+    difficulty: details.difficulty,
+    bookLevel: details.bookLevel,
+    learningGoal: details.learningGoal,
+    questionCount: needed,
+    qualityNotes: details.qualityNotes,
+    previousQuestions: snapshot.questions,
+  });
+  const reviewedQuiz = await reviewQuizWithModel(quiz, {
+    book: details.book,
+    difficulty: details.difficulty,
+    bookLevel: details.bookLevel,
+    learningGoal: details.learningGoal,
+    questionCount: needed,
+    qualityNotes: details.qualityNotes,
+  });
+
+  const existingKeys = new Set(snapshot.questionKeys.map(toQuestionKey));
+  const existingQuestionText = new Set(snapshot.questions.map(normalizeText));
+  const filteredQuiz = {
+    ...reviewedQuiz,
+    questions: reviewedQuiz.questions.filter((question) => {
+      const key = toQuestionKey(String(question.questionKey ?? ""));
+      const textKey = normalizeText(String(question.question ?? ""));
+      if (!key || existingKeys.has(key) || existingQuestionText.has(textKey)) {
+        return false;
+      }
+      existingKeys.add(key);
+      existingQuestionText.add(textKey);
+      return true;
+    }).slice(0, needed),
+  };
+
+  if (filteredQuiz.questions.length > 0 && isValidQuiz(filteredQuiz, filteredQuiz.questions.length)) {
+    await storeQuestionPool({
+      book: details.book,
+      difficulty: details.difficulty,
+      bookLevel: details.bookLevel,
+      canonicalKey: details.canonicalKey,
+      bookDifficultyRatingId: details.bookDifficultyRatingId,
+      quizData: filteredQuiz,
+    });
+  }
+}
+
 async function reviewQuizWithModel(
   quizData: ReturnType<typeof normalizeQuiz>,
   details: {
@@ -639,11 +804,11 @@ async function reviewQuizWithModel(
       {
         role: "system",
         content:
-          "You are a strict quiz quality reviewer for children's reading quizzes. Return only a valid JSON object, with no markdown and no commentary. Fix wrong answers, impossible questions, weak distractors, answerIndex mismatches, difficulty mismatches, and any question with more than one defensible correct answer. For theme or symbolism questions, reject literal plot results as correct answers unless the question is explicitly cause/effect. Preserve cumulative difficulty balance: higher-level quizzes still need grounded recall, timeline, character, place, object, and cause/effect questions. If a question cannot be verified, replace it with a safer question.",
+          "You are a strict quiz quality reviewer for children's reading quizzes. Return only a valid JSON object, with no markdown and no commentary. Fix wrong answers, impossible questions, weak distractors, answerIndex mismatches, difficulty mismatches, and any question with more than one defensible correct answer. Reject questions where a thoughtful young reader could reasonably defend more than one choice. For theme or symbolism questions, reject literal plot results as correct answers unless the question is explicitly cause/effect. Preserve cumulative difficulty balance: higher-level quizzes still need grounded recall, timeline, character, place, object, and cause/effect questions. If a question cannot be verified, replace it with a safer question.",
       },
       {
         role: "user",
-        content: `Review this quiz for the exact book ${describeBook(details.book)}. Difficulty: ${details.difficulty}. Reading level: ${details.bookLevel}. Testing level: ${details.learningGoal}.${details.qualityNotes ? `\n\nCritical book guardrails:\n- ${details.qualityNotes}` : ""}\n\nIt must have exactly ${details.questionCount} questions, 4 choices per question, a valid questionType, qualityScore, questionVersion ${QUESTION_POOL_VERSION}, a correct answerIndex, answerText matching choices[answerIndex], and a short explanation.\n\n${answerChoiceContract}\n\n${themeSymbolismContract}\n\n${cumulativeDifficultyContract}\n\nFor every question, audit all four choices. If any wrong choice is technically true, partially true, a broader category containing the correct answer, a narrower example of the correct answer, a synonym, a restatement, or otherwise defensible, replace that choice or replace the entire question. For theme/symbolism questions, verify that the correct answer is the symbolic or thematic meaning, not the literal result of the action; if the answer is literal, rewrite it as cause/effect or replace the question. Remove or replace any question that uses a movie/adaptation fact, another book in a series, a later-book fact, an impossible premise, or an unverified answer. Preserve or assign a valid questionType from the requested difficulty plan. Return only the corrected JSON object.\n\n${JSON.stringify(quizData)}`,
+        content: `Review this quiz for the exact book ${describeBook(details.book)}. Difficulty: ${details.difficulty}. Reading level: ${details.bookLevel}. Testing level: ${details.learningGoal}.${details.qualityNotes ? `\n\nCritical book guardrails:\n- ${details.qualityNotes}` : ""}\n\nIt must have exactly ${details.questionCount} questions, 4 choices per question, a valid questionType, qualityScore, questionVersion ${QUESTION_POOL_VERSION}, a correct answerIndex, answerText matching choices[answerIndex], and a short explanation.\n\n${answerChoiceContract}\n\n${youngReaderAnswerabilityContract}\n\n${themeSymbolismContract}\n\n${cumulativeDifficultyContract}\n\nFor every question, audit all four choices. If any wrong choice is technically true, emotionally true, partially true, a broader category containing the correct answer, a narrower example of the correct answer, a synonym, a restatement, a second valid motive, a second valid theme, or otherwise defensible, replace that choice or replace the entire question. Reject broad motive questions such as "What motivates..." when several answer choices are true traits or reasons; rewrite them around a specific action and the most direct cause. For Easy and Medium, prefer concrete, plainly answerable book facts over debatable interpretation. For theme/symbolism questions, verify that the correct answer is the symbolic or thematic meaning, not the literal result of the action; if the answer is literal, rewrite it as cause/effect or replace the question. Remove or replace any question that uses a movie/adaptation fact, another book in a series, a later-book fact, an impossible premise, or an unverified answer. Preserve or assign a valid questionType from the requested difficulty plan. Return only the corrected JSON object.\n\n${JSON.stringify(quizData)}`,
       },
     ],
   });
@@ -918,6 +1083,7 @@ Rules:
 - questionVersion must be ${QUESTION_POOL_VERSION}.
 - Do not reuse or rephrase any used question key, question idea, event focus, or wording.
 - ${answerChoiceContract.replace(/\n/g, "\n- ")}
+- ${youngReaderAnswerabilityContract.replace(/\n/g, "\n- ")}
 - ${themeSymbolismContract.replace(/\n/g, "\n- ")}
 - ${cumulativeDifficultyContract.replace(/\n/g, "\n- ")}
 - Use only the exact book named above, not films, soundtracks, games, adaptations, sequels, prequels, or other books in a series.
@@ -930,6 +1096,7 @@ Rules:
 - Each answer must be clearly correct from the book.
 - Each wrong answer must fit the exact book's world and style, but must be clearly false for this exact question.
 - Before returning, privately test each wrong choice by asking: "Could this also be correct?" If yes, replace it.
+- Also ask: "Could a young reader reasonably defend this wrong answer from the story?" If yes, replace it.
 - answerIndex must point to answerText exactly.
 - Use child-friendly language for ages 7-18.
 - Return JSON only.`;
@@ -1072,6 +1239,15 @@ export async function POST(request: Request) {
           canonicalKey,
         });
         if (storedQuiz && isValidQuiz(storedQuiz, questionCount)) {
+          schedulePoolTopUp({
+            book,
+            difficulty,
+            bookLevel,
+            learningGoal,
+            canonicalKey,
+            bookDifficultyRatingId,
+            qualityNotes,
+          });
           return NextResponse.json({
             quiz: storedQuiz,
             totalQuestions: questionCount,
@@ -1101,6 +1277,15 @@ export async function POST(request: Request) {
         bookDifficultyRatingId,
         quizData: batchData.quiz,
       });
+      schedulePoolTopUp({
+        book,
+        difficulty,
+        bookLevel,
+        learningGoal,
+        canonicalKey,
+        bookDifficultyRatingId,
+        qualityNotes,
+      });
       return NextResponse.json({
         ...batchData,
         totalQuestions: questionCount,
@@ -1125,6 +1310,15 @@ export async function POST(request: Request) {
       canonicalKey,
     });
     if (storedQuiz && isValidQuiz(storedQuiz, questionCount)) {
+      schedulePoolTopUp({
+        book,
+        difficulty,
+        bookLevel,
+        learningGoal,
+        canonicalKey,
+        bookDifficultyRatingId,
+        qualityNotes,
+      });
       return NextResponse.json({ quiz: storedQuiz, fromQuestionPool: true });
     }
 
@@ -1156,12 +1350,39 @@ export async function POST(request: Request) {
     });
     if (!isValidQuiz(reviewedQuiz, questionCount)) {
       await storeQuestionPool({ book, difficulty, bookLevel, canonicalKey, bookDifficultyRatingId, quizData });
+      schedulePoolTopUp({
+        book,
+        difficulty,
+        bookLevel,
+        learningGoal,
+        canonicalKey,
+        bookDifficultyRatingId,
+        qualityNotes,
+      });
       return NextResponse.json({ quiz: quizData });
     }
     await storeQuestionPool({ book, difficulty, bookLevel, canonicalKey, bookDifficultyRatingId, quizData: reviewedQuiz });
+    schedulePoolTopUp({
+      book,
+      difficulty,
+      bookLevel,
+      learningGoal,
+      canonicalKey,
+      bookDifficultyRatingId,
+      qualityNotes,
+    });
     return NextResponse.json({ quiz: reviewedQuiz });
   } catch {
     await storeQuestionPool({ book, difficulty, bookLevel, canonicalKey, bookDifficultyRatingId, quizData });
+    schedulePoolTopUp({
+      book,
+      difficulty,
+      bookLevel,
+      learningGoal,
+      canonicalKey,
+      bookDifficultyRatingId,
+      qualityNotes,
+    });
     return NextResponse.json({ quiz: quizData });
   }
 }

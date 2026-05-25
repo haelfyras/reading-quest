@@ -196,6 +196,7 @@ const pageLabels: Record<string, string> = {
   "/prizes": "Prizes",
   "/friends": "Friends",
   "/settings": "Settings",
+  "/faq": "FAQ",
   "/profile": "Profile",
   "/review": "Reviews",
   "/dashboard": "Dashboard",
