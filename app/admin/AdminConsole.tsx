@@ -303,17 +303,11 @@ export default function AdminConsole() {
   const [pointAdjustments, setPointAdjustments] = useState<Record<string, string>>({});
   const [questionPoolStats, setQuestionPoolStats] = useState<QuestionPoolStats | null>(null);
   const [seedInput, setSeedInput] = useState("");
-  const [seedDifficulties, setSeedDifficulties] = useState<Record<"easy" | "medium" | "hard", boolean>>({
-    easy: true,
-    medium: false,
-    hard: false,
-  });
   const [seedResults, setSeedResults] = useState<SeedResult[]>([]);
   const [seedLoading, setSeedLoading] = useState(false);
   const [seedWarnings, setSeedWarnings] = useState<ExistingSeedPool[]>([]);
   const [pendingSeedRequest, setPendingSeedRequest] = useState<{
     books: ReturnType<typeof parseSeedBooks>;
-    difficulties: string[];
   } | null>(null);
   const [seedTableSearch, setSeedTableSearch] = useState("");
   const [seedDifficultyFilter, setSeedDifficultyFilter] = useState("all");
@@ -586,19 +580,15 @@ export default function AdminConsole() {
     await refresh();
   };
 
-  const submitSeedBatch = async (
-    books: ReturnType<typeof parseSeedBooks>,
-    difficulties: string[],
-    options: { forceReseed?: boolean } = {},
-  ) => {
+  const submitSeedBatch = async (books: ReturnType<typeof parseSeedBooks>, options: { forceReseed?: boolean } = {}) => {
     setSeedLoading(true);
-    setMessage("Seeding quiz pools. Keep this tab open until the batch finishes.");
+    setMessage("Detecting book levels and seeding the appropriate quiz pools. Keep this tab open until the batch finishes.");
 
     try {
       const response = await fetch("/api/admin/seed-quiz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ books, difficulties, forceReseed: Boolean(options.forceReseed) }),
+        body: JSON.stringify({ books, forceReseed: Boolean(options.forceReseed) }),
       });
       const data = await response.json().catch(() => ({ error: "Unable to seed quiz pools." }));
 
@@ -621,17 +611,9 @@ export default function AdminConsole() {
 
   const runSeedBatch = async () => {
     const books = parseSeedBooks(seedInput);
-    const difficulties = Object.entries(seedDifficulties)
-      .filter(([, enabled]) => enabled)
-      .map(([difficulty]) => difficulty);
 
     if (books.length === 0) {
       setMessage("Add at least one book in the seed list.");
-      return;
-    }
-
-    if (difficulties.length === 0) {
-      setMessage("Choose at least one difficulty to seed.");
       return;
     }
 
@@ -642,7 +624,7 @@ export default function AdminConsole() {
       const response = await fetch("/api/admin/seed-quiz", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ books, difficulties, checkOnly: true }),
+        body: JSON.stringify({ books, checkOnly: true }),
       });
       const data = await response.json().catch(() => ({ error: "Unable to check existing pools." }));
 
@@ -653,12 +635,12 @@ export default function AdminConsole() {
 
       if (Array.isArray(data.existingPools) && data.existingPools.length > 0) {
         setSeedWarnings(data.existingPools);
-        setPendingSeedRequest({ books, difficulties });
+        setPendingSeedRequest({ books });
         setMessage("One or more books already have question pools. Choose whether to re-seed.");
         return;
       }
 
-      await submitSeedBatch(books, difficulties);
+      await submitSeedBatch(books);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to check existing pools.");
     } finally {
@@ -668,7 +650,7 @@ export default function AdminConsole() {
 
   const confirmReseed = async () => {
     if (!pendingSeedRequest) return;
-    await submitSeedBatch(pendingSeedRequest.books, pendingSeedRequest.difficulties, { forceReseed: true });
+    await submitSeedBatch(pendingSeedRequest.books, { forceReseed: true });
   };
 
   const cancelReseed = () => {
@@ -1265,6 +1247,9 @@ export default function AdminConsole() {
             <div className="nested-section admin-seed-control">
               <h3>Seed a curated batch</h3>
               <p>One book per line. Use <strong>Title | Author | ISBN | Year</strong>. Only the title is required. The batch is capped at 5 books per run.</p>
+              <div className="notice">
+                Reading Quest detects each book level and seeds the full allowed cumulative pool: Beginner seeds Easy, Intermediate seeds Easy and Medium, and Advanced seeds Easy, Medium, and Hard.
+              </div>
               <div className="field">
                 <label htmlFor="seed-books">Books to seed</label>
                 <textarea
@@ -1275,27 +1260,15 @@ export default function AdminConsole() {
                   rows={9}
                 />
               </div>
-              <div className="admin-seed-difficulty-row" aria-label="Difficulties to seed">
-                {(["easy", "medium", "hard"] as const).map((difficulty) => (
-                  <label key={difficulty} className="admin-checkbox-pill">
-                    <input
-                      type="checkbox"
-                      checked={seedDifficulties[difficulty]}
-                      onChange={(event) => setSeedDifficulties((current) => ({ ...current, [difficulty]: event.target.checked }))}
-                    />
-                    {difficulty[0].toUpperCase() + difficulty.slice(1)}
-                  </label>
-                ))}
-              </div>
               <div className="button-row">
                 <button type="button" onClick={() => void runSeedBatch()} disabled={seedLoading}>
-                  {seedLoading ? "Seeding..." : "Seed selected books"}
+                  {seedLoading ? "Seeding..." : "Seed book pools"}
                 </button>
                 <button type="button" className="secondary" onClick={() => setSeedInput(seedInputPlaceholder)}>
                   Load sample format
                 </button>
               </div>
-              <p className="auth-footer-note">Beginner books only seed Easy. Intermediate books seed Easy and Medium. Advanced books can seed all three.</p>
+              <p className="auth-footer-note">Quiz difficulty is cumulative, so higher pools still include grounded recall, timeline, cause/effect, and comprehension checks.</p>
             </div>
 
             <div className="nested-section">

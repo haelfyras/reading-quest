@@ -4,10 +4,9 @@ import { ADMIN_COOKIE_NAME, verifyAdminSessionToken } from "../../../../lib/admi
 import { getBookDifficultyKey } from "../../../../lib/bookDifficulty";
 import { getAllowedDifficulties } from "../../../../lib/scoring";
 import { createServiceSupabaseClient } from "../../../../lib/supabase/server";
-import type { Difficulty } from "../../../../lib/user";
 
 export const maxDuration = 60;
-const QUESTION_POOL_VERSION = 2;
+const QUESTION_POOL_VERSION = 3;
 
 type SeedBookInput = {
   title?: unknown;
@@ -36,8 +35,6 @@ type ExistingPoolWarning = {
   difficulties: string[];
   questionCount: number;
 };
-
-const allowedDifficulties = new Set(["easy", "medium", "hard"]);
 
 function normalizeBook(input: SeedBookInput) {
   return {
@@ -109,20 +106,11 @@ export async function POST(request: Request) {
   const rawBooks = (Array.isArray(body.books) ? body.books : []) as SeedBookInput[];
   const checkOnly = Boolean(body.checkOnly);
   const forceReseed = Boolean(body.forceReseed);
-  const selectedDifficulties = Array.isArray(body.difficulties)
-    ? (body.difficulties as unknown[])
-      .map((difficulty) => String(difficulty).toLowerCase())
-      .filter((difficulty): difficulty is Difficulty => allowedDifficulties.has(difficulty))
-    : ["easy"];
 
   const books = rawBooks.map(normalizeBook).filter((book) => book.title).slice(0, 5);
 
   if (books.length === 0) {
     return NextResponse.json({ error: "Add at least one book title to seed." }, { status: 400 });
-  }
-
-  if (selectedDifficulties.length === 0) {
-    return NextResponse.json({ error: "Choose at least one quiz difficulty." }, { status: 400 });
   }
 
   const origin = getOrigin(request);
@@ -174,17 +162,9 @@ export async function POST(request: Request) {
 
       result.level = levelData.level ?? "beginner";
       result.difficultyIndex = typeof levelData.difficultyIndex === "number" ? levelData.difficultyIndex : undefined;
-      const bookAllowed = new Set(getAllowedDifficulties(result.level));
+      const seedDifficulties = getAllowedDifficulties(result.level);
 
-      for (const difficulty of selectedDifficulties as Difficulty[]) {
-        if (!bookAllowed.has(difficulty)) {
-          result.skipped.push({
-            difficulty,
-            reason: `${result.level} books can be seeded for ${Array.from(bookAllowed).join(", ")} only.`,
-          });
-          continue;
-        }
-
+      for (const difficulty of seedDifficulties) {
         try {
           await postJson(`${origin}/api/quiz`, {
             bookTitle: book.title,
