@@ -116,6 +116,7 @@ export async function GET() {
       challengesResult,
       questionPoolResult,
       difficultyRatingsResult,
+      seedFailuresResult,
     ] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       supabase.from("parent_child_links").select("*"),
@@ -130,6 +131,7 @@ export async function GET() {
       adminSupabase.from("reading_challenges").select("*").order("created_at", { ascending: false }).limit(200),
       adminSupabase.from("book_question_pool").select("canonical_key,book_title,author,quiz_difficulty,question_version,active,created_at").limit(5000),
       adminSupabase.from("book_difficulty_ratings").select("canonical_key,title,author,isbn,book_level,current_score,updated_at").limit(5000),
+      adminSupabase.from("telemetry_events").select("*").eq("event_name", "seed_pool_failure").order("created_at", { ascending: false }).limit(500),
     ]);
 
     const firstError = [
@@ -146,6 +148,7 @@ export async function GET() {
       challengesResult.error,
       questionPoolResult.error,
       difficultyRatingsResult.error,
+      seedFailuresResult.error,
     ].find(Boolean);
 
     if (firstError) {
@@ -270,6 +273,27 @@ export async function GET() {
         difficultyIndex: rating?.current_score === null || rating?.current_score === undefined ? null : Number(rating.current_score),
       };
     }).sort((a: any, b: any) => String(a.title).localeCompare(String(b.title)));
+    const seedFailures = ((seedFailuresResult.data ?? []) as Array<Record<string, any>>)
+      .map((event) => ({
+        id: event.id,
+        title: event.metadata?.title || "Unknown title",
+        author: event.metadata?.author || "",
+        isbn: event.metadata?.isbn || "",
+        level: event.metadata?.level || "",
+        difficultyIndex: event.metadata?.difficultyIndex === null || event.metadata?.difficultyIndex === undefined
+          ? null
+          : Number(event.metadata.difficultyIndex),
+        generated: Array.isArray(event.metadata?.generated) ? event.metadata.generated.map(String) : [],
+        errors: Array.isArray(event.metadata?.errors)
+          ? event.metadata.errors.map((error: any) => ({
+              difficulty: String(error?.difficulty ?? "unknown"),
+              error: String(error?.error ?? event.metadata?.message ?? "Seed failed."),
+            }))
+          : [{ difficulty: "unknown", error: String(event.metadata?.message ?? "Seed failed.") }],
+        reason: event.metadata?.message || "Seed failed.",
+        version: Number(event.metadata?.questionPoolVersion ?? 0),
+        date: event.created_at,
+      }));
 
     return NextResponse.json({
       profiles,
@@ -281,6 +305,7 @@ export async function GET() {
         versionCounts: Object.fromEntries(Object.entries(poolBooksByVersion).map(([version, books]) => [version, books.size])),
         difficultyCounts: poolQuestionsByDifficulty,
         seededBooks: seededBookRows,
+        seedFailures,
         recentBooks: Array.from(
           new Map(
             questionPoolRows

@@ -1214,6 +1214,24 @@ button:disabled {
   overflow: auto;
 }
 
+.admin-seeded-table-wrap {
+  max-height: min(620px, 64vh);
+  overflow: auto;
+  border: 1px solid #263954;
+  border-radius: 12px;
+}
+
+.admin-seeded-table-wrap table {
+  min-width: 1120px;
+}
+
+.admin-seeded-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #132033;
+}
+
 .admin-modal-shell,
 .admin-modal-scrim {
   position: fixed;

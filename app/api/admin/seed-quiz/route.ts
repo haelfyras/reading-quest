@@ -7,6 +7,7 @@ import { createServiceSupabaseClient } from "../../../../lib/supabase/server";
 
 export const maxDuration = 60;
 const QUESTION_POOL_VERSION = 3;
+const MAX_SEED_BOOKS_PER_RUN = 5;
 
 type SeedBookInput = {
   title?: unknown;
@@ -96,6 +97,38 @@ async function findExistingPools(books: ReturnType<typeof normalizeBook>[]) {
   return warnings;
 }
 
+async function logSeedFailure(details: {
+  book: ReturnType<typeof normalizeBook>;
+  level?: string;
+  difficultyIndex?: number;
+  generated?: string[];
+  errors: Array<{ difficulty: string; error: string }>;
+  reason: string;
+}) {
+  try {
+    const supabase = createServiceSupabaseClient();
+    await supabase.from("telemetry_events").insert({
+      profile_id: null,
+      page: "/admin/seeding",
+      event_name: "seed_pool_failure",
+      metadata: {
+        message: details.reason,
+        title: details.book.title,
+        author: details.book.author,
+        isbn: details.book.isbn,
+        year: details.book.year,
+        level: details.level,
+        difficultyIndex: details.difficultyIndex,
+        generated: details.generated ?? [],
+        errors: details.errors,
+        questionPoolVersion: QUESTION_POOL_VERSION,
+      },
+    } as any);
+  } catch {
+    // Seed failure logging should never block the admin from seeing the batch result.
+  }
+}
+
 export async function POST(request: Request) {
   const token = cookies().get(ADMIN_COOKIE_NAME)?.value;
   if (!verifyAdminSessionToken(token)) {
@@ -107,10 +140,20 @@ export async function POST(request: Request) {
   const checkOnly = Boolean(body.checkOnly);
   const forceReseed = Boolean(body.forceReseed);
 
-  const books = rawBooks.map(normalizeBook).filter((book) => book.title).slice(0, 5);
+  const normalizedBooks = rawBooks.map(normalizeBook).filter((book) => book.title);
+  const books = normalizedBooks.slice(0, MAX_SEED_BOOKS_PER_RUN);
+  const overflowBooks = normalizedBooks.slice(MAX_SEED_BOOKS_PER_RUN);
 
   if (books.length === 0) {
     return NextResponse.json({ error: "Add at least one book title to seed." }, { status: 400 });
+  }
+
+  if (!checkOnly) {
+    await Promise.allSettled(overflowBooks.map((book) => logSeedFailure({
+      book,
+      errors: [{ difficulty: "not-run", error: `Batch capped at ${MAX_SEED_BOOKS_PER_RUN} books per run.` }],
+      reason: `Batch capped at ${MAX_SEED_BOOKS_PER_RUN} books per run; this book was not processed.`,
+    })));
   }
 
   const origin = getOrigin(request);
@@ -194,6 +237,20 @@ export async function POST(request: Request) {
     }
 
     result.generationMs = Date.now() - startedAt;
+    if (result.errors.length > 0 || result.generated.length === 0) {
+      await logSeedFailure({
+        book,
+        level: result.level,
+        difficultyIndex: result.difficultyIndex,
+        generated: result.generated,
+        errors: result.errors.length > 0
+          ? result.errors
+          : [{ difficulty: "all", error: "No quiz pools were generated for this book." }],
+        reason: result.errors.length > 0
+          ? result.errors.map((error) => `${error.difficulty}: ${error.error}`).join("; ")
+          : "No quiz pools were generated for this book.",
+      });
+    }
     results.push(result);
   }
 
@@ -201,6 +258,7 @@ export async function POST(request: Request) {
     results,
     requestedBooks: rawBooks.length,
     processedBooks: books.length,
+    unprocessedBooks: overflowBooks.length,
     note: "Seeded questions are stored in public.book_question_pool through the normal quiz pipeline.",
   });
 }

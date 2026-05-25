@@ -91,6 +91,7 @@ type QuestionPoolStats = {
   versionCounts: Record<string, number>;
   difficultyCounts: Record<string, number>;
   seededBooks: SeededBookRow[];
+  seedFailures: SeedFailureRow[];
   recentBooks: Array<{
     title: string;
     author: string;
@@ -113,6 +114,20 @@ type SeededBookRow = {
   version: number;
   firstSeededAt: string;
   lastSeededAt: string;
+};
+
+type SeedFailureRow = {
+  id: string;
+  title: string;
+  author: string;
+  isbn: string;
+  level: string;
+  difficultyIndex: number | null;
+  generated: string[];
+  errors: Array<{ difficulty: string; error: string }>;
+  reason: string;
+  version: number;
+  date: string;
 };
 
 type SeedResult = {
@@ -600,7 +615,7 @@ export default function AdminConsole() {
       setSeedResults(data.results ?? []);
       setSeedWarnings([]);
       setPendingSeedRequest(null);
-      setMessage(`Seeded ${data.processedBooks ?? 0} book${data.processedBooks === 1 ? "" : "s"}.`);
+      setMessage(`Seeded ${data.processedBooks ?? 0} book${data.processedBooks === 1 ? "" : "s"}${data.unprocessedBooks ? `; ${data.unprocessedBooks} over the batch cap were logged for review` : ""}.`);
       await refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to seed quiz pools.");
@@ -745,6 +760,16 @@ export default function AdminConsole() {
     if (!title) return;
     setSeedInput((current) => current.trim() ? `${current.trim()}\n${title}` : title);
     setMessage(`${title} was added to the seed list.`);
+  };
+  const reseedBook = async (book: Pick<SeededBookRow | SeedFailureRow, "title" | "author" | "isbn">) => {
+    await submitSeedBatch([
+      {
+        title: book.title,
+        author: book.author,
+        isbn: book.isbn,
+        year: "",
+      },
+    ], { forceReseed: true });
   };
 
   const issueRows = useMemo<AdminIssueRow[]>(() => {
@@ -1341,7 +1366,7 @@ export default function AdminConsole() {
               </div>
             ) : null}
 
-            <div className="responsive-table admin-seeded-table-wrap">
+            <div className="responsive-table admin-seeded-table-wrap" tabIndex={0}>
               <table className="admin-seeded-table">
                 <thead>
                   <tr>
@@ -1353,6 +1378,7 @@ export default function AdminConsole() {
                     <th><button type="button" className="table-sort-button" onClick={() => updateSeedSort("questionCount")}>Questions {seedSortKey === "questionCount" ? (seedSortDirection === "asc" ? "↑" : "↓") : ""}</button></th>
                     <th>Version</th>
                     <th><button type="button" className="table-sort-button" onClick={() => updateSeedSort("lastSeededAt")}>Last seeded {seedSortKey === "lastSeededAt" ? (seedSortDirection === "asc" ? "↑" : "↓") : ""}</button></th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1371,10 +1397,65 @@ export default function AdminConsole() {
                       <td>{book.questionCount}</td>
                       <td>v{book.version}</td>
                       <td>{formatDate(book.lastSeededAt)}</td>
+                      <td>
+                        <button type="button" className="secondary action-button small" onClick={() => void reseedBook(book)} disabled={seedLoading}>
+                          Re-seed
+                        </button>
+                      </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan={8}>No seeded books match the current filters.</td>
+                      <td colSpan={9}>No seeded books match the current filters.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="admin-section admin-seed-failures" aria-labelledby="seed-failures-heading">
+            <div className="section-header-row">
+              <div>
+                <h3 id="seed-failures-heading">Seed Attempts Needing Review</h3>
+                <p>Books that were submitted for seeding but did not fully generate a pool. Reasons are logged from the seed process.</p>
+              </div>
+              <span className="badge-pill">{questionPoolStats?.seedFailures?.length ?? 0} logged</span>
+            </div>
+            <div className="responsive-table admin-seeded-table-wrap" tabIndex={0}>
+              <table className="admin-seeded-table">
+                <thead>
+                  <tr>
+                    <th>Book</th>
+                    <th>Author</th>
+                    <th>ISBN</th>
+                    <th>Detected level</th>
+                    <th>Generated</th>
+                    <th>Reason</th>
+                    <th>Version</th>
+                    <th>Logged</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {questionPoolStats?.seedFailures?.length ? questionPoolStats.seedFailures.map((failure) => (
+                    <tr key={failure.id}>
+                      <td><strong>{failure.title}</strong></td>
+                      <td>{failure.author || "Not provided"}</td>
+                      <td>{failure.isbn || "Not provided"}</td>
+                      <td>{failure.level || "Unknown"}{failure.difficultyIndex ? ` · ${failure.difficultyIndex}/9.9` : ""}</td>
+                      <td>{failure.generated.length ? failure.generated.join(", ") : "None"}</td>
+                      <td>{failure.errors.length ? failure.errors.map((error) => `${error.difficulty}: ${error.error}`).join("; ") : failure.reason}</td>
+                      <td>{failure.version ? `v${failure.version}` : "Unknown"}</td>
+                      <td>{formatDate(failure.date)}</td>
+                      <td>
+                        <button type="button" className="secondary action-button small" onClick={() => void reseedBook(failure)} disabled={seedLoading}>
+                          Re-seed
+                        </button>
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={9}>No failed seed attempts have been logged yet.</td>
                     </tr>
                   )}
                 </tbody>
