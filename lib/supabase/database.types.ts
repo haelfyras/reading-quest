@@ -169,6 +169,7 @@ export type Database = {
           choices: Json;
           answer_index: number;
           selected_choice: number;
+          pool_question_id: string | null;
           question_value: number | null;
           correction_points_awarded: boolean;
           correction_points: number | null;

@@ -315,6 +315,7 @@ export default function AdminConsole() {
   const [issueStatusFilter, setIssueStatusFilter] = useState<IssueStatusFilter>("all");
   const [issueSort, setIssueSort] = useState<IssueSort>("newest");
   const [message, setMessage] = useState("");
+  const [removingQuestionIds, setRemovingQuestionIds] = useState<Record<string, boolean>>({});
   const [pointAdjustments, setPointAdjustments] = useState<Record<string, string>>({});
   const [questionPoolStats, setQuestionPoolStats] = useState<QuestionPoolStats | null>(null);
   const [seedInput, setSeedInput] = useState("");
@@ -468,6 +469,43 @@ export default function AdminConsole() {
 
     setMessage(status === "accepted" ? "Report marked for correction." : "Report dismissed.");
     await refresh();
+  };
+
+  const removePooledQuestion = async (report: QuizIssueReport & { source?: "supabase" | "local" }) => {
+    if (report.source !== "supabase") {
+      setMessage("Only database-backed reports can remove pooled questions.");
+      return;
+    }
+
+    const confirmed = window.confirm("Remove this question from future quizzes? The report stays available for QA history.");
+    if (!confirmed) return;
+
+    setRemovingQuestionIds((current) => ({ ...current, [report.id]: true }));
+    try {
+      const response = await fetch("/api/admin/question-pool", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reportId: report.id,
+          poolQuestionId: report.poolQuestionId,
+        }),
+      });
+      const data = await response.json().catch(() => ({ error: "Unable to remove question." }));
+
+      if (!response.ok) {
+        setMessage(data.error ?? "Unable to remove question.");
+        return;
+      }
+
+      setMessage("Question removed from future quizzes. QA history was preserved.");
+      await refresh();
+    } finally {
+      setRemovingQuestionIds((current) => {
+        const next = { ...current };
+        delete next[report.id];
+        return next;
+      });
+    }
   };
 
   const clearTelemetry = () => {
@@ -833,6 +871,14 @@ export default function AdminConsole() {
           <div className="feedback-status-controls compact">
             <button type="button" className="secondary" onClick={() => void resolveReport(report.id, "accepted")}>Accept</button>
             <button type="button" className="secondary" onClick={() => void resolveReport(report.id, "dismissed")}>Dismiss</button>
+            <button
+              type="button"
+              className="secondary danger-button"
+              disabled={Boolean(removingQuestionIds[report.id])}
+              onClick={() => void removePooledQuestion(report)}
+            >
+              {removingQuestionIds[report.id] ? "Removing..." : "Remove Question"}
+            </button>
           </div>
         ),
       };
@@ -872,7 +918,7 @@ export default function AdminConsole() {
         if (issueSort === "status") return a.status.localeCompare(b.status) || new Date(b.date).getTime() - new Date(a.date).getTime();
         return new Date(b.date).getTime() - new Date(a.date).getTime();
       });
-  }, [actionableTelemetry, feedbackEntries, issueSearch, issueSort, issueStatusFilter, issueTypeFilter, reports]);
+  }, [actionableTelemetry, feedbackEntries, issueSearch, issueSort, issueStatusFilter, issueTypeFilter, removingQuestionIds, reports]);
 
   return (
     <main className="admin-shell">
@@ -1218,6 +1264,14 @@ export default function AdminConsole() {
                 <div className="button-row">
                   <button type="button" className="secondary" onClick={() => void resolveReport(report.id, "accepted")}>Mark needs correction</button>
                   <button type="button" className="secondary" onClick={() => void resolveReport(report.id, "dismissed")}>Dismiss report</button>
+                  <button
+                    type="button"
+                    className="secondary danger-button"
+                    disabled={Boolean(removingQuestionIds[report.id])}
+                    onClick={() => void removePooledQuestion(report)}
+                  >
+                    {removingQuestionIds[report.id] ? "Removing..." : "Remove Question"}
+                  </button>
                 </div>
               </article>
             )) : <p>No quiz reports yet.</p>}

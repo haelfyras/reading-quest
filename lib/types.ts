@@ -63,6 +63,7 @@ export type QuizIssueReport = {
   choices: string[];
   answerIndex: number;
   selectedChoice: number;
+  poolQuestionId?: string;
   questionValue?: number;
   correctionPointsAwarded?: boolean;
   correctionPoints?: number;

@@ -846,6 +846,7 @@ function QuizPageContent() {
       choices: question.choices,
       answerIndex: question.answerIndex,
       selectedChoice: selectedAnswers[questionIndex] ?? -1,
+      poolQuestionId: question.poolQuestionId,
       questionValue,
       reason,
     });

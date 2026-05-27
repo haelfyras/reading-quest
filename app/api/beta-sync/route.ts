@@ -215,6 +215,7 @@ export async function POST(request: Request) {
         choices: Array.isArray(payload.choices) ? payload.choices : [],
         answer_index: Math.round(Number(payload.answerIndex ?? 0)),
         selected_choice: Math.round(Number(payload.selectedChoice ?? -1)),
+        pool_question_id: isUuid(payload.poolQuestionId) ? payload.poolQuestionId : null,
         question_value: payload.questionValue ?? null,
         correction_points_awarded: Boolean(payload.correctionPointsAwarded),
         correction_points: payload.correctionPoints ?? null,
@@ -230,6 +231,24 @@ export async function POST(request: Request) {
       const { error } = await supabase.from("quiz_issue_reports").upsert(insertPayload);
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      if (isUuid(insertPayload.pool_question_id)) {
+        const { data: pooledQuestion } = await supabase
+          .from("book_question_pool")
+          .select("report_count")
+          .eq("id", insertPayload.pool_question_id)
+          .maybeSingle();
+
+        if (pooledQuestion) {
+          await supabase
+            .from("book_question_pool")
+            .update({
+              report_count: Number(pooledQuestion.report_count ?? 0) + 1,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", insertPayload.pool_question_id);
+        }
       }
     }
 

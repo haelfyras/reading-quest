@@ -81,6 +81,7 @@ function mapReport(row: Record<string, any>, profileName: string): QuizIssueRepo
     choices: Array.isArray(row.choices) ? row.choices : [],
     answerIndex: Number(row.answer_index ?? 0),
     selectedChoice: Number(row.selected_choice ?? -1),
+    poolQuestionId: row.pool_question_id ?? undefined,
     questionValue: row.question_value ?? undefined,
     correctionPointsAwarded: Boolean(row.correction_points_awarded),
     correctionPoints: row.correction_points ?? undefined,
