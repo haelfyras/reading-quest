@@ -88,7 +88,10 @@ export async function POST(request: Request) {
 
     if (existing) {
       if (isAppDeleted(existing)) {
-        return NextResponse.json({ error: "This account is no longer active in Reading Quest." }, { status: 403 });
+        return NextResponse.json(
+          { error: "This Reading Quest account has been removed from the app. Contact the admin for help reactivating it, or use a different account." },
+          { status: 403 },
+        );
       }
 
       if (!realName && existing.real_name) {
@@ -130,7 +133,10 @@ export async function POST(request: Request) {
 
       if (existingByEmail) {
         if (isAppDeleted(existingByEmail)) {
-          return NextResponse.json({ error: "This account is no longer active in Reading Quest." }, { status: 403 });
+          return NextResponse.json(
+            { error: "This Reading Quest account has been removed from the app. Contact the admin for help reactivating it, or use a different account." },
+            { status: 403 },
+          );
         }
 
         const { data: reclaimed, error: reclaimError } = await supabase

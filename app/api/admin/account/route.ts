@@ -25,7 +25,7 @@ export async function PATCH(request: Request) {
     const supabase = createServiceSupabaseClient() as any;
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("id, points, lifetime_points, leaderboard_private, parent_controls")
+      .select("id, account_type, points, lifetime_points, leaderboard_private, parent_controls")
       .eq("id", profileId)
       .maybeSingle();
 
@@ -75,6 +75,30 @@ export async function PATCH(request: Request) {
 
       if (error || !updated) {
         return NextResponse.json({ error: error?.message || "Unable to remove profile from the app." }, { status: 500 });
+      }
+
+      return NextResponse.json({ profile: updated });
+    }
+
+    if (action === "reactivate") {
+      const controls = getProfileControls(profile);
+      const nextControls = { ...controls };
+      delete nextControls.appDeletedAt;
+      delete nextControls.appDeletedReason;
+
+      const { data: updated, error } = await supabase
+        .from("profiles")
+        .update({
+          can_add_friends: profile.account_type === "parent",
+          leaderboard_private: Boolean(controls.testAccountAt) ? true : Boolean(profile.leaderboard_private),
+          parent_controls: nextControls,
+        })
+        .eq("id", profileId)
+        .select("*")
+        .single();
+
+      if (error || !updated) {
+        return NextResponse.json({ error: error?.message || "Unable to reactivate profile." }, { status: 500 });
       }
 
       return NextResponse.json({ profile: updated });

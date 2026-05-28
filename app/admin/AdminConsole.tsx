@@ -603,6 +603,28 @@ export default function AdminConsole() {
     await refresh();
   };
 
+  const reactivateAccount = async (profile: AdminProfile) => {
+    const confirmed = window.confirm(`Reactivate ${profile.realName || profile.name}? They will be able to sign in again with their existing credentials.`);
+    if (!confirmed) {
+      return;
+    }
+
+    const response = await fetch("/api/admin/account", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reactivate", profileId: profile.id }),
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({ error: "Unable to reactivate account." }));
+      setMessage(data.error ?? "Unable to reactivate account.");
+      return;
+    }
+
+    setMessage(`${profile.realName || profile.name} was reactivated. They can sign in again with their existing credentials.`);
+    await refresh();
+  };
+
   const toggleTestAccount = async (profile: AdminProfile) => {
     const enabled = !profile.testAccountAt;
     const confirmed = window.confirm(
@@ -1217,9 +1239,15 @@ export default function AdminConsole() {
                           placeholder="+ points"
                         />
                         <button type="button" className="secondary" onClick={() => void addManualPoints(profile)}>Add</button>
-                        <button type="button" className="secondary danger-button" disabled={Boolean(profile.appDeletedAt)} onClick={() => void softDeleteAccount(profile)}>
-                          {profile.appDeletedAt ? "Removed" : "Delete"}
-                        </button>
+                        {profile.appDeletedAt ? (
+                          <button type="button" className="secondary" onClick={() => void reactivateAccount(profile)}>
+                            Reactivate
+                          </button>
+                        ) : (
+                          <button type="button" className="secondary danger-button" onClick={() => void softDeleteAccount(profile)}>
+                            Delete
+                          </button>
+                        )}
                         <button type="button" className="secondary" disabled={Boolean(profile.appDeletedAt)} onClick={() => void toggleTestAccount(profile)}>
                           {profile.testAccountAt ? "Test Off" : "Test On"}
                         </button>

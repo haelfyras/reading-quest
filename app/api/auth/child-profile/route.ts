@@ -110,7 +110,10 @@ export async function POST(request: Request) {
     }
 
     if (isAppDeleted(existingProfile)) {
-      return NextResponse.json({ error: "This account is no longer active in Reading Quest." }, { status: 403 });
+      return NextResponse.json(
+        { error: "This Reading Quest account has been removed from the app. Contact the admin for help reactivating it, or use a different account." },
+        { status: 403 },
+      );
     }
 
     if (!existingProfile || !verifyPassword(password, existingProfile.child_password_hash)) {

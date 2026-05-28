@@ -83,13 +83,45 @@ function saveLocalMirror(profile: Profile) {
 }
 
 function getErrorMessage(error: unknown) {
+  const removedAccountMessage = "This Reading Quest account has been removed from the app. Contact the admin for help reactivating it, or use a different account.";
   if (error instanceof Error) {
+    if (/no longer active|removed from the app|removed/i.test(error.message)) {
+      return removedAccountMessage;
+    }
+    if (/invalid login credentials|invalid user credentials/i.test(error.message)) {
+      return "That email or password did not match. If this account was removed during beta testing, contact the admin for help reactivating it.";
+    }
     return error.message;
   }
   if (typeof error === "object" && error && "message" in error) {
-    return String((error as { message?: unknown }).message || "Unknown error");
+    const message = String((error as { message?: unknown }).message || "Unknown error");
+    if (/no longer active|removed from the app|removed/i.test(message)) {
+      return removedAccountMessage;
+    }
+    if (/invalid login credentials|invalid user credentials/i.test(message)) {
+      return "That email or password did not match. If this account was removed during beta testing, contact the admin for help reactivating it.";
+    }
+    return message;
   }
   return typeof error === "string" ? error : "Unknown error";
+}
+
+async function getAccountStatus(details: { accountType: "parent"; email: string } | { accountType: "child"; screenName: string }) {
+  const response = await fetch("/api/auth/account-status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(details),
+  });
+
+  if (!response.ok) return null;
+  return response.json().catch(() => null) as Promise<{ exists?: boolean; appRemoved?: boolean } | null>;
+}
+
+async function assertAccountIsAvailable(details: { accountType: "parent"; email: string } | { accountType: "child"; screenName: string }) {
+  const status = await getAccountStatus(details);
+  if (status?.appRemoved) {
+    throw new Error("This Reading Quest account has been removed from the app. Contact the admin for help reactivating it, or use a different account.");
+  }
 }
 
 async function ensureParentProfile(accessToken: string, realName?: string) {
@@ -115,6 +147,8 @@ async function accessChildProfile(action: "create" | "signIn", screenName: strin
   if (!isSupabaseConfigured()) {
     return null;
   }
+
+  await assertAccountIsAvailable({ accountType: "child", screenName });
 
   const response = await fetch("/api/auth/child-profile", {
     method: "POST",
@@ -144,6 +178,8 @@ export async function signInParentWithSupabase(email: string, password: string) 
   if (!isSupabaseConfigured()) {
     return null;
   }
+
+  await assertAccountIsAvailable({ accountType: "parent", email: email.trim() });
 
   const supabase = createBrowserSupabaseClient();
   const { data, error } = await supabase.auth.signInWithPassword({
@@ -182,6 +218,8 @@ export async function createParentWithSupabase(details: {
   if (!isSupabaseConfigured()) {
     return null;
   }
+
+  await assertAccountIsAvailable({ accountType: "parent", email: details.email.trim() });
 
   const supabase = createBrowserSupabaseClient();
   const redirectTo = getAuthRedirectUrl();
