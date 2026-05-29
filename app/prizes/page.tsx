@@ -182,7 +182,7 @@ export default function PrizesPage() {
     if (!user || user.isParent) return;
     const tier = getEffectiveSubscriptionTier(user);
     if (!canRequestPrizeIdeasForTier(tier)) {
-      setClaimMessage("Talk to your parent about our ad-free experience and more ways to request prizes.");
+      setClaimMessage("Ask your parent to update your prize list. They can change prizes or add more prize request options.");
       return;
     }
 
@@ -736,7 +736,7 @@ export default function PrizesPage() {
           </>
         ) : (
           <div className="notice">
-            Talk to your parent about our ad-free experience and more ways to celebrate your reading.
+            Want different prizes? Ask your parent nicely. They can change your prize list and decide which rewards fit your reading goals.
           </div>
         )}
       </section>

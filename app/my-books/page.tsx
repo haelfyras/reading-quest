@@ -480,9 +480,6 @@ export default function MyBooksPage() {
             <h2 id="favorite-shelf-heading">Favorite Shelf</h2>
             <p>Choose up to {MAX_FAVORITES} stories that really matter to you.</p>
           </div>
-          <button type="button" className="secondary" disabled={favoriteBooks.length >= MAX_FAVORITES} onClick={() => openSearchModal("favorites")}>
-            Add Favorite
-          </button>
         </div>
         {favoriteSaveMessage ? <div className={favoriteSaveMessage.includes("full") ? "warning-box" : "success-box"}>{favoriteSaveMessage}</div> : null}
         {favoriteBooks.length > 0 ? (
@@ -500,8 +497,11 @@ export default function MyBooksPage() {
             })}
           </div>
         ) : (
-          <p>No favorites yet. Add one when a book earns a special place on your shelf.</p>
+          <p className="favorite-shelf-empty">No favorites yet. Add one when a book earns a special place on your shelf.</p>
         )}
+        <button type="button" className="secondary favorite-shelf-action" disabled={favoriteBooks.length >= MAX_FAVORITES} onClick={() => openSearchModal("favorites")}>
+          Add Favorite
+        </button>
       </section>
 
       <section className="home-section library-section" aria-labelledby="recommendations-heading">

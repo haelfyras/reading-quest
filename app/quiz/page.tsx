@@ -1298,6 +1298,9 @@ function QuizPageContent() {
       {completed ? (
         <div className="output">
           <h2>{score === maxScore ? "Book Mastered!" : "Challenge complete!"}</h2>
+          <p className="completed-challenge-title">
+            {bookTitle} - {getQuizDifficultyLabel(difficulty)}
+          </p>
           <div className="success-box quiz-encouragement quest-complete-celebration">
             <strong>{encouragementMessage}</strong>
           </div>
@@ -1309,13 +1312,22 @@ function QuizPageContent() {
               Base points: {basePoints}. Accuracy and first-time book bonuses are included in the points earned below.
             </p>
           ) : null}
-          <p>
-            {isFriendlyChallenge ? (
-              <>Friendly challenge complete. No points were awarded to your account.</>
-            ) : (
-              <>You earned <strong className="earned-points-pop">{earnedPoints}</strong> new points. You now have <strong>{getSpendablePoints(user)}</strong> points available.</>
-            )}
-          </p>
+          {isFriendlyChallenge ? (
+            <p>Friendly challenge complete. No points were awarded to your account.</p>
+          ) : (
+            <div className="quiz-points-summary" aria-label="Challenge points summary">
+              <div>
+                <span>Earned</span>
+                <strong className="earned-points-pop">{earnedPoints}</strong>
+                <small>new points</small>
+              </div>
+              <div>
+                <span>Total Ready</span>
+                <strong>{getSpendablePoints(user)}</strong>
+                <small>points available</small>
+              </div>
+            </div>
+          )}
           {isFriendlyChallenge ? (
             <div className="notice">
               {challengeSavedMessage || `Compare your score with ${challengeFriendName} in Friends.`}
