@@ -132,7 +132,7 @@ export default function LeaderboardsPage() {
       <div className="hero-panel">
         <div>
           <div className="kicker">Reading Ranks</div>
-          <h1>Leaderboards</h1>
+          <h1>Hall of Legends</h1>
           <p>See how readers stack up across children, adults, and everyone.</p>
         </div>
         <HeroProfileActions profile={currentUser} homeHref={currentUser?.isParent ? "/parent" : "/home"} />
@@ -146,13 +146,13 @@ export default function LeaderboardsPage() {
 
       {renderLeaderboard(
         "children",
-        "Children Leaderboard",
+        "Child Legends",
         "Only child profiles are ranked here.",
       )}
 
       {renderLeaderboard(
         "adults",
-        "Adults Leaderboard",
+        "Adult Legends",
         "Only parent profiles are ranked here.",
       )}
 

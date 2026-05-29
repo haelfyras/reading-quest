@@ -64,7 +64,7 @@ export default function FaqPage() {
       <div className="hero-panel app-hero">
         <div>
           <div className="kicker">Parent Guide</div>
-          <h1>FAQ</h1>
+          <h1>Guidebook</h1>
           <p>Clear answers about prizes, quizzes, safety, accounts, and reading progress.</p>
         </div>
         <HeroProfileActions profile={profile} homeHref={homeHref} />

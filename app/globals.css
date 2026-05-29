@@ -2017,6 +2017,618 @@ button:disabled {
   font-size: 1.08rem;
 }
 
+.quest-hub-hero {
+  min-height: 0;
+  align-items: center;
+}
+
+.quest-hub-copy {
+  display: grid;
+  gap: 12px;
+}
+
+.quest-hub-copy h1 {
+  margin-bottom: 0;
+}
+
+.quest-hero-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quest-hero-metrics span,
+.knowledge-streak {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 78%, var(--accent-soft));
+  color: var(--text);
+  font-weight: 850;
+  padding: 7px 10px;
+}
+
+.streak-chip {
+  gap: 6px;
+  color: var(--reward);
+}
+
+.streak-chip img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.quest-cta {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--reward) 42%, var(--accent)));
+  animation: quest-cta-breathe 2.6s ease-in-out infinite;
+}
+
+.quest-cta::after {
+  position: absolute;
+  inset: -40%;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 18% 20%, rgba(255, 255, 255, 0.5) 0 2px, transparent 3px),
+    radial-gradient(circle at 78% 34%, rgba(255, 255, 255, 0.38) 0 2px, transparent 3px),
+    radial-gradient(circle at 55% 76%, rgba(255, 255, 255, 0.44) 0 1px, transparent 3px);
+  opacity: 0.7;
+  content: "";
+  animation: quest-sparkle-drift 5s linear infinite;
+}
+
+@keyframes quest-cta-breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 24%, transparent);
+  }
+
+  50% {
+    transform: translateY(-1px) scale(1.015);
+    box-shadow: 0 16px 34px color-mix(in srgb, var(--reward) 34%, transparent);
+  }
+}
+
+@keyframes quest-sparkle-drift {
+  to {
+    transform: translate3d(18px, -12px, 0);
+  }
+}
+
+.quest-now-section {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(220px, 0.65fr);
+  gap: 16px;
+}
+
+.mascot-callout,
+.next-reward-card,
+.adventure-found-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 84%, white);
+  padding: 16px;
+}
+
+.mascot-callout {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  grid-row: span 2;
+  gap: 14px;
+}
+
+.mascot-callout img {
+  width: 72px;
+  height: 72px;
+  border: 2px solid color-mix(in srgb, var(--reward) 65%, var(--border));
+  border-radius: 999px;
+  background: var(--panel);
+  object-fit: cover;
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--reward) 24%, transparent);
+}
+
+.next-reward-card,
+.adventure-found-card {
+  display: grid;
+  gap: 4px;
+}
+
+.next-reward-card {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.next-reward-card strong,
+.adventure-found-card strong {
+  color: var(--reward);
+}
+
+.next-reward-card span:not(.treasure-icon),
+.adventure-found-card span {
+  display: block;
+  color: var(--text);
+  font-weight: 900;
+}
+
+.treasure-chest-image {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--reward) 25%, transparent));
+}
+
+.treasure-chest-image.small {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+}
+
+.home-accordion-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.quest-accordion {
+  padding: 0;
+}
+
+.quest-accordion > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 18px 22px;
+  color: var(--text);
+  font-size: 1.1rem;
+  font-weight: 950;
+}
+
+.quest-accordion > summary::-webkit-details-marker {
+  display: none;
+}
+
+.quest-accordion > summary::after {
+  float: right;
+  color: var(--muted);
+  content: "Open";
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+.quest-accordion[open] > summary::after {
+  content: "Close";
+}
+
+.quest-accordion > :not(summary) {
+  margin: 0 22px 22px;
+}
+
+.adventure-path-steps {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.adventure-path-steps .path-step {
+  position: relative;
+  min-height: 112px;
+  overflow: hidden;
+}
+
+.adventure-path-steps .path-step.done {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--success) 58%, transparent);
+}
+
+.treasure-track .progress-fill {
+  animation: treasure-fill-glow 2.8s ease-in-out infinite;
+}
+
+@keyframes treasure-fill-glow {
+  50% {
+    filter: brightness(1.12);
+    box-shadow: 0 0 18px color-mix(in srgb, var(--reward) 42%, transparent);
+  }
+}
+
+.treasure-milestones span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.treasure-milestones .next-milestone {
+  border-color: color-mix(in srgb, var(--reward) 82%, var(--border));
+  color: var(--text);
+  animation: next-reward-glow 2.3s ease-in-out infinite;
+}
+
+@keyframes next-reward-glow {
+  50% {
+    box-shadow: 0 0 22px color-mix(in srgb, var(--reward) 32%, transparent);
+  }
+}
+
+.achievement-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.achievement-card {
+  display: grid;
+  gap: 10px;
+  min-height: 160px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 88%, white);
+  padding: 16px;
+}
+
+.achievement-card.earned {
+  border-color: color-mix(in srgb, var(--reward) 68%, var(--border));
+  background: color-mix(in srgb, var(--reward) 13%, var(--panel));
+}
+
+.achievement-medal {
+  display: inline-grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-strong);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.achievement-card.earned .achievement-medal {
+  border-color: color-mix(in srgb, var(--reward) 72%, var(--border));
+  background: var(--reward);
+  color: var(--text);
+}
+
+.library-section {
+  position: relative;
+  overflow: hidden;
+}
+
+.library-section::after {
+  position: absolute;
+  right: 18px;
+  bottom: 10px;
+  width: 120px;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--reward) 54%, transparent), transparent);
+  content: "";
+  opacity: 0.5;
+}
+
+.library-stats-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-top: 16px;
+}
+
+.library-streak-card,
+.library-stat-card {
+  display: grid;
+  min-height: 112px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 84%, white);
+  padding: 16px;
+}
+
+.library-streak-card {
+  grid-template-columns: 64px 1fr;
+  align-items: center;
+  gap: 14px;
+}
+
+.library-streak-card img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 18px color-mix(in srgb, var(--reward) 42%, transparent));
+  animation: streak-flame-flicker 2.2s ease-in-out infinite;
+}
+
+.library-streak-card:hover img {
+  transform: scale(1.08);
+}
+
+@keyframes streak-flame-flicker {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 12px color-mix(in srgb, var(--reward) 32%, transparent));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 22px color-mix(in srgb, var(--reward) 56%, transparent));
+  }
+}
+
+.library-streak-card strong,
+.library-stat-card strong {
+  color: var(--reward);
+  font-size: 0.86rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.library-streak-card span,
+.library-stat-card span {
+  display: block;
+  color: var(--text);
+  font-size: 1.6rem;
+  font-weight: 950;
+}
+
+.book-shelf-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.book-shelf-grid.compact-bookshelf {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.shelf-book-card,
+.favorite-book-card,
+.recommendation-book-card,
+.finished-book-card,
+.empty-library-shelf {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 92%, white), var(--panel)),
+    linear-gradient(90deg, color-mix(in srgb, var(--reward) 24%, transparent), transparent);
+  padding: 16px;
+  box-shadow: inset 0 -8px 0 color-mix(in srgb, var(--reward) 11%, transparent);
+}
+
+.shelf-book-card {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 82px 1fr;
+}
+
+.shelf-book-card .button-row {
+  grid-column: 1 / -1;
+}
+
+.shelf-book-card.compact {
+  grid-template-columns: 68px 1fr;
+}
+
+.shelf-book-card h3,
+.favorite-book-card h3,
+.recommendation-book-card h3 {
+  margin-bottom: 4px;
+}
+
+.shelf-book-card p,
+.favorite-book-card p,
+.recommendation-book-card p {
+  color: var(--muted);
+}
+
+.shelf-book-cover {
+  width: 82px;
+  height: 116px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent-soft) 58%, var(--panel));
+  object-fit: cover;
+  box-shadow: 0 12px 18px color-mix(in srgb, black 18%, transparent);
+}
+
+.shelf-book-card.compact .shelf-book-cover {
+  width: 68px;
+  height: 96px;
+}
+
+.shelf-book-cover.placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  font-size: 1.15rem;
+  font-weight: 950;
+  text-align: center;
+}
+
+.favorite-shelf-row,
+.recommendation-scroll-row {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+  scroll-snap-type: x proximity;
+}
+
+.favorite-shelf-section {
+  position: relative;
+  display: flex;
+  min-height: clamp(360px, 48vw, 620px);
+  flex-direction: column;
+  overflow: hidden;
+  border-color: color-mix(in srgb, #3b2412 74%, var(--border));
+  background: var(--favorite-shelf-image) center / cover no-repeat;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 219, 137, 0.2),
+    0 18px 36px color-mix(in srgb, black 22%, transparent);
+  color: #fff4d2;
+  text-align: center;
+  text-shadow: 0 2px 4px rgba(35, 18, 4, 0.95), 0 0 14px rgba(0, 0, 0, 0.64);
+}
+
+[data-theme-style] .favorite-shelf-section {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.favorite-shelf-section::after {
+  display: none;
+}
+
+.favorite-shelf-section > .section-header-row,
+.favorite-shelf-section > p,
+.favorite-shelf-section .success-box,
+.favorite-shelf-section .warning-box {
+  position: relative;
+  z-index: 1;
+}
+
+.favorite-shelf-section .section-header-row {
+  position: static;
+  display: grid;
+  justify-items: center;
+  margin-bottom: 0;
+  padding-inline: clamp(12px, 5vw, 72px);
+}
+
+.favorite-shelf-section .section-header-row h2,
+.favorite-shelf-section .section-header-row p,
+.favorite-shelf-section > p {
+  color: #fff4d2;
+}
+
+.favorite-shelf-section .section-header-row h2 {
+  font-size: clamp(2rem, 4.2vw, 3.3rem);
+}
+
+.favorite-shelf-section .section-header-row p,
+.favorite-shelf-section > p {
+  font-weight: 850;
+}
+
+.favorite-shelf-section .section-header-row > button {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(16px, 3vw, 34px);
+  z-index: 2;
+  border-color: rgba(255, 230, 181, 0.74);
+  background: rgba(255, 244, 213, 0.94);
+  color: #2f1808;
+  text-shadow: none;
+  transform: translateX(-50%);
+}
+
+.favorite-shelf-section .favorite-shelf-row {
+  position: relative;
+  z-index: 1;
+  align-items: flex-end;
+  justify-content: center;
+  margin-top: auto;
+  padding: clamp(24px, 5vw, 64px) 0 clamp(72px, 8vw, 104px);
+}
+
+.favorite-shelf-section .favorite-book-card {
+  border-color: rgba(255, 230, 181, 0.42);
+  background: rgba(44, 22, 7, 0.76);
+  color: #fff4d2;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  text-align: left;
+  text-shadow: none;
+}
+
+.favorite-shelf-section .favorite-book-card p {
+  color: #f5d79f;
+}
+
+.favorite-book-card,
+.recommendation-book-card {
+  display: grid;
+  flex: 0 0 min(230px, 78vw);
+  gap: 10px;
+  justify-items: start;
+  scroll-snap-align: start;
+}
+
+.favorite-book-card .shelf-book-cover,
+.recommendation-book-card .shelf-book-cover {
+  width: 104px;
+  height: 148px;
+}
+
+.finished-book-card {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  align-items: start;
+  gap: 12px;
+  color: var(--text);
+  text-align: left;
+}
+
+.finished-book-card .shelf-book-cover {
+  width: 76px;
+  height: 108px;
+}
+
+.finished-book-card span,
+.finished-book-card small {
+  display: block;
+}
+
+.finished-book-card small {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.empty-library-shelf {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+
+.book-search-modal-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.book-search-modal-scrim {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.48);
+  box-shadow: none;
+}
+
+.book-search-modal {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: min(880px, 100%);
+  max-height: min(86vh, 860px);
+  gap: 16px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel-strong);
+  padding: 22px;
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.34);
+}
+
+.library-detail-grid {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 16px;
+}
+
 .summary-section {
   display: grid;
   gap: 14px;
@@ -2333,11 +2945,99 @@ button.preference-chip {
 .choice-button.correct {
   border-color: var(--success);
   background: color-mix(in srgb, var(--success) 18%, var(--panel-strong));
+  animation: correct-answer-pop 0.42s ease;
 }
 
 .choice-button.incorrect {
   border-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 14%, var(--panel-strong));
+  animation: gentle-answer-pulse 0.42s ease;
+}
+
+.question-category {
+  display: inline-flex;
+  width: fit-content;
+  margin-bottom: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 52%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  color: var(--accent);
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.correct-praise,
+.retry-praise {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-weight: 800;
+}
+
+.correct-praise {
+  background: color-mix(in srgb, var(--success) 13%, transparent);
+  color: var(--success);
+}
+
+.retry-praise {
+  background: color-mix(in srgb, var(--reward) 13%, transparent);
+  color: var(--text);
+}
+
+.knowledge-streak {
+  border-color: color-mix(in srgb, var(--reward) 70%, var(--border));
+  background: color-mix(in srgb, var(--reward) 18%, var(--panel));
+  color: var(--text);
+  animation: next-reward-glow 2.4s ease-in-out infinite;
+}
+
+.quest-complete-celebration {
+  position: relative;
+  overflow: hidden;
+}
+
+.quest-complete-celebration::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 10%, rgba(255, 255, 255, 0.34) 45%, transparent 72%);
+  content: "";
+  transform: translateX(-100%);
+  animation: celebration-shine 2.2s ease-in-out infinite;
+}
+
+.earned-points-pop {
+  display: inline-block;
+  color: var(--reward);
+  font-size: 1.35em;
+  animation: points-pop 0.72s ease;
+}
+
+@keyframes correct-answer-pop {
+  50% {
+    transform: translateY(-2px) scale(1.018);
+    box-shadow: 0 0 22px color-mix(in srgb, var(--success) 34%, transparent);
+  }
+}
+
+@keyframes gentle-answer-pulse {
+  50% {
+    transform: translateY(1px);
+    box-shadow: 0 0 16px color-mix(in srgb, var(--danger) 18%, transparent);
+  }
+}
+
+@keyframes celebration-shine {
+  55%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes points-pop {
+  40% {
+    transform: scale(1.18);
+  }
 }
 
 .faq-list {
@@ -2381,6 +3081,12 @@ button.preference-chip {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--panel);
+}
+
+.quiz-review-item summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 950;
 }
 
 .quiz-review-item h4 {
@@ -2672,15 +3378,19 @@ tr:hover {
 
 .prize-icon {
   display: grid;
-  width: 58px;
-  height: 58px;
+  width: 82px;
+  height: 82px;
   place-items: center;
   margin: 0 auto 12px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--reward) 18%, var(--panel));
-  color: var(--reward);
-  font-weight: 900;
+  border: 0;
+  background: transparent;
+}
+
+.prize-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--reward) 24%, transparent));
 }
 
 .prize-points,
@@ -3236,6 +3946,43 @@ pre {
 
   .hero-stats {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .quest-now-section {
+    grid-template-columns: 1fr;
+  }
+
+  .mascot-callout {
+    grid-row: auto;
+    grid-template-columns: 58px 1fr;
+  }
+
+  .mascot-callout img {
+    width: 58px;
+    height: 58px;
+  }
+
+  .adventure-path-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .quest-hero-metrics {
+    align-items: stretch;
+  }
+
+  .library-streak-card,
+  .shelf-book-card,
+  .finished-book-card,
+  .library-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .shelf-book-card .button-row {
+    grid-column: auto;
+  }
+
+  .book-search-modal {
+    padding: 16px;
   }
 
   .menu-grid,

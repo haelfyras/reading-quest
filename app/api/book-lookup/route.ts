@@ -259,7 +259,7 @@ function authorOverlap(requestedAuthor: string, foundAuthor: string) {
   return shared / Math.max(requestedWords.size, foundWords.size);
 }
 
-function scoreBook(book: BookMatch, requestedTitle: string, requestedAuthor = "") {
+function scoreBook(book: BookMatch, requestedTitle: string, requestedAuthor = "", requestedYear?: number) {
   let score = requestedTitle ? titleOverlap(requestedTitle, book.title) * 100 : 35;
   if (requestedTitle && comparableTitle(book.title) === comparableTitle(requestedTitle)) score += 80;
   if (requestedAuthor) {
@@ -270,13 +270,18 @@ function scoreBook(book: BookMatch, requestedTitle: string, requestedAuthor = ""
   if (book.isbn) score += 12;
   if (book.coverUrl) score += 8;
   if (book.year && book.year >= 1450 && book.year <= new Date().getFullYear()) score += 6;
+  if (requestedYear) {
+    if (book.year === requestedYear) score += 40;
+    else if (book.year && Math.abs(book.year - requestedYear) <= 1) score += 16;
+    else if (book.year) score -= 30;
+  }
   if (/composer|soundtrack|score|music|film|movie/i.test(book.author)) score -= 60;
   if (/soundtrack|score|movie|film|screenplay/i.test(book.title)) score -= 60;
   if (book.author === "Unknown author") score -= 15;
   return score + (book.confidence ?? 0) * 100;
 }
 
-async function lookupBySearch(bookTitle: string, author: string) {
+async function lookupBySearch(bookTitle: string, author: string, requestedYear?: number) {
   const canonicalMatches = bookTitle ? getCanonicalMatches(bookTitle) : [];
   const requestedTitle = comparableTitle(bookTitle);
   const exactCanonical = bookTitle
@@ -337,7 +342,7 @@ async function lookupBySearch(bookTitle: string, author: string) {
       const authorMatches = !author || authorOverlap(author, book.author) >= 0.45;
       return titleMatches && authorMatches;
     })
-    .sort((a, b) => scoreBook(b, bookTitle, author) - scoreBook(a, bookTitle, author))
+    .sort((a, b) => scoreBook(b, bookTitle, author, requestedYear) - scoreBook(a, bookTitle, author, requestedYear))
     .slice(0, 10);
 
   const exact = bookTitle ? books.find((book) => comparableTitle(book.title) === requestedTitle && (!author || authorOverlap(author, book.author) >= 0.75)) : null;
@@ -421,6 +426,10 @@ export async function POST(request: Request) {
     const bookTitle = String(body.bookTitle || "").trim();
     const author = String(body.author || "").trim();
     const isbn = String(body.isbn || "").trim();
+    const parsedYear = Number(String(body.year || "").trim());
+    const year = Number.isInteger(parsedYear) && parsedYear >= 1450 && parsedYear <= new Date().getFullYear()
+      ? parsedYear
+      : undefined;
 
     if (isbn) {
       return lookupByIsbn(isbn, bookTitle, author);
@@ -430,7 +439,7 @@ export async function POST(request: Request) {
       return new NextResponse("Enter a title, author, or ISBN.", { status: 400 });
     }
 
-    return lookupBySearch(bookTitle, author);
+    return lookupBySearch(bookTitle, author, year);
   } catch {
     return new NextResponse("Failed to look up book.", { status: 500 });
   }

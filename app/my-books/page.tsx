@@ -1,89 +1,130 @@
 "use client";
 
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import HeroProfileActions from "../components/HeroProfileActions";
 import {
-  addReadingLog,
-  BookAccessType,
-  defaultParentControls,
+  getBadges,
   getCurrentProfile,
-  getRetakeStatus,
+  getForgivingStreak,
+  getLifetimePoints,
+  getReviewsForBook,
+  getSpendablePoints,
   Profile,
-  saveBookAccess,
   saveReadingNow,
   updateProfile,
 } from "../../lib/user";
 import { getBookRecommendations } from "../../lib/recommendations";
 import type { BookMatch } from "../../lib/books";
 import { lookupBook as lookupBookFromApi, type BookLookupPayload } from "../../lib/bookClient";
-import { betaConfig } from "../../lib/beta";
-import { emptyReadingPreferences, preferencePrompts, type PreferenceKey } from "../../lib/readingPreferences";
+import { getHotStreakImageSrc, getShelfImageSrc, getStoredThemeStyle, type ThemeStyle } from "../../lib/themeAssets";
 
-type NearbyBookPlace = {
-  id: string;
-  name: string;
-  type: "Library" | "Bookstore";
-  distanceMiles: number;
-  address: string;
-  mapUrl: string;
+type BookShelfTarget = "readLibrary" | "currentlyReading" | "wantToRead" | "favorites";
+
+type StoredBookMeta = {
+  title: string;
+  author?: string;
+  coverUrl?: string;
+  isbn?: string;
+  completedAt?: string;
 };
 
-type OverpassElement = {
-  id: number;
-  lat?: number;
-  lon?: number;
-  center?: {
-    lat: number;
-    lon: number;
-  };
-  tags?: Record<string, string>;
-};
+const MAX_FAVORITES = 5;
 
-function distanceInMiles(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const toRadians = (value: number) => (value * Math.PI) / 180;
-  const earthRadiusMiles = 3958.8;
-  const dLat = toRadians(lat2 - lat1);
-  const dLon = toRadians(lon2 - lon1);
-  const a = Math.sin(dLat / 2) ** 2
-    + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
-  return earthRadiusMiles * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+function normalizeBookKey(title: string) {
+  return title.trim().toLowerCase();
 }
 
-function formatAddress(tags: Record<string, string> = {}) {
-  const street = [tags["addr:housenumber"], tags["addr:street"]].filter(Boolean).join(" ");
-  const locality = [tags["addr:city"], tags["addr:state"], tags["addr:postcode"]].filter(Boolean).join(", ");
-  return [street, locality].filter(Boolean).join(" - ") || "Address not listed";
+function getBookMetaStorageKey(profileId: string) {
+  return `readingQuestBookMeta_${profileId}`;
+}
+
+function getWantToReadStorageKey(profileId: string) {
+  return `readingQuestWantToRead_${profileId}`;
+}
+
+function getReadLibraryStorageKey(profileId: string) {
+  return `readingQuestReadLibrary_${profileId}`;
+}
+
+function readJson<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) as T : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJson<T>(key: string, value: T) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function buildBookMeta(book: BookMatch): StoredBookMeta {
+  return {
+    title: book.title,
+    author: book.author === "Unknown author" ? "" : book.author,
+    coverUrl: book.coverUrl,
+    isbn: book.isbn,
+  };
+}
+
+function findLatestQuiz(profile: Profile, title: string) {
+  const key = normalizeBookKey(title);
+  return profile.quizzes
+    .filter((quiz) => normalizeBookKey(quiz.bookTitle) === key)
+    .slice()
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+}
+
+function formatDate(value?: string) {
+  if (!value) return "Recently";
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+}
+
+function getRatingForBook(title: string) {
+  const reviews = getReviewsForBook(title);
+  if (!reviews.length) return 0;
+  return Math.round(reviews.reduce((total, review) => total + review.rating, 0) / reviews.length);
+}
+
+function BookCover({ meta, title }: { meta?: StoredBookMeta; title: string }) {
+  if (meta?.coverUrl) {
+    return <img className="shelf-book-cover" src={meta.coverUrl} alt="" />;
+  }
+
+  const initials = title
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase())
+    .join("");
+
+  return <div className="shelf-book-cover placeholder" aria-hidden="true">{initials || "RQ"}</div>;
 }
 
 export default function MyBooksPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
-  const [favoriteBooks, setFavoriteBooks] = useState(["", "", ""]);
-  const [favoriteAuthors, setFavoriteAuthors] = useState(["", "", ""]);
-  const [confirmedFavorites, setConfirmedFavorites] = useState<Array<BookMatch | null>>([null, null, null]);
-  const [favoriteOptions, setFavoriteOptions] = useState<BookMatch[][]>([[], [], []]);
-  const [favoriteIsbns, setFavoriteIsbns] = useState(["", "", ""]);
-  const [favoriteLookupMessages, setFavoriteLookupMessages] = useState(["", "", ""]);
-  const [showFavoriteIsbnFallback, setShowFavoriteIsbnFallback] = useState([false, false, false]);
-  const [checkingFavoriteIndex, setCheckingFavoriteIndex] = useState<number | null>(null);
+  const [bookMeta, setBookMeta] = useState<Record<string, StoredBookMeta>>({});
+  const [readLibrary, setReadLibrary] = useState<string[]>([]);
+  const [wantToRead, setWantToRead] = useState<string[]>([]);
   const [favoriteSaveMessage, setFavoriteSaveMessage] = useState("");
-  const [editingFavorites, setEditingFavorites] = useState(false);
-  const [readingPreferences, setReadingPreferences] = useState(emptyReadingPreferences);
-  const [preferenceMessage, setPreferenceMessage] = useState("");
+  const [shelfMessage, setShelfMessage] = useState("");
   const [suggestionRotation, setSuggestionRotation] = useState(0);
-  const [readingNow, setReadingNow] = useState("");
-  const [logBookTitle, setLogBookTitle] = useState("");
-  const [logMinutes, setLogMinutes] = useState(20);
-  const [logChapters, setLogChapters] = useState(0);
-  const [logAccess, setLogAccess] = useState<BookAccessType>("owned");
-  const [logAssisted, setLogAssisted] = useState(false);
-  const [readingMessage, setReadingMessage] = useState("");
-  const [locationEnabled, setLocationEnabled] = useState(false);
-  const [nearbyPlaces, setNearbyPlaces] = useState<NearbyBookPlace[]>([]);
-  const [locationMessage, setLocationMessage] = useState("");
-  const [isFindingPlaces, setIsFindingPlaces] = useState(false);
+  const [modalTarget, setModalTarget] = useState<BookShelfTarget | null>(null);
+  const [searchTitle, setSearchTitle] = useState("");
+  const [searchAuthor, setSearchAuthor] = useState("");
+  const [searchIsbn, setSearchIsbn] = useState("");
+  const [searchMessage, setSearchMessage] = useState("");
+  const [searchOptions, setSearchOptions] = useState<BookMatch[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedBookTitle, setSelectedBookTitle] = useState<string | null>(null);
+  const [themeStyle, setThemeStyle] = useState<ThemeStyle>("library");
 
   useEffect(() => {
     const profile = getCurrentProfile();
@@ -93,712 +134,594 @@ export default function MyBooksPage() {
     }
 
     setCurrentUser(profile);
-    if (profile.favoriteBooks?.length === 3) {
-      setFavoriteBooks(profile.favoriteBooks);
-      setConfirmedFavorites(profile.favoriteBooks.map((title) => ({
-        id: title,
-        title,
-        author: "Saved favorite",
-      })));
-    }
-    setReadingPreferences({
-      ...emptyReadingPreferences,
-      ...(profile.readingPreferences ?? {}),
-    });
-    setReadingNow(profile.readingNow?.join("\n") ?? "");
-    setLogBookTitle(profile.readingNow?.[0] ?? "");
+    setThemeStyle(getStoredThemeStyle());
+    setBookMeta(readJson<Record<string, StoredBookMeta>>(getBookMetaStorageKey(profile.id), {}));
+    setReadLibrary(readJson<string[]>(getReadLibraryStorageKey(profile.id), []));
+    setWantToRead(readJson<string[]>(getWantToReadStorageKey(profile.id), []));
   }, [router]);
 
-  const handleFavoriteBookChange = (index: number, value: string) => {
-    setFavoriteBooks((current) => current.map((title, idx) => idx === index ? value : title));
-    resetFavoriteLookup(index);
-  };
-
-  const handleFavoriteAuthorChange = (index: number, value: string) => {
-    setFavoriteAuthors((current) => current.map((author, idx) => idx === index ? value : author));
-    resetFavoriteLookup(index);
-  };
-
-  const handleFavoriteIsbnChange = (index: number, value: string) => {
-    setFavoriteIsbns((current) => current.map((isbn, idx) => idx === index ? value : isbn));
-    resetFavoriteLookup(index);
-  };
-
-  const resetFavoriteLookup = (index: number) => {
-    setConfirmedFavorites((current) => current.map((book, idx) => idx === index ? null : book));
-    setFavoriteOptions((current) => current.map((options, idx) => idx === index ? [] : options));
-    setFavoriteLookupMessages((current) => current.map((message, idx) => idx === index ? "" : message));
-    setShowFavoriteIsbnFallback((current) => current.map((show, idx) => idx === index ? false : show));
-    setFavoriteSaveMessage("");
-  };
-
-  const getFavoriteLookupPayload = (index: number): BookLookupPayload | null => {
-    const payload = {
-      bookTitle: favoriteBooks[index].trim(),
-      author: favoriteAuthors[index].trim(),
-      isbn: favoriteIsbns[index].trim(),
+  useEffect(() => {
+    const refreshTheme = () => setThemeStyle(getStoredThemeStyle());
+    window.addEventListener("storage", refreshTheme);
+    window.addEventListener("readingQuestProfileUpdated", refreshTheme);
+    return () => {
+      window.removeEventListener("storage", refreshTheme);
+      window.removeEventListener("readingQuestProfileUpdated", refreshTheme);
     };
-    if (!payload.bookTitle && !payload.author && !payload.isbn) {
-      return null;
-    }
-    return payload;
-  };
+  }, []);
 
-  const applyFavoriteBook = (index: number, book: BookMatch) => {
-    setFavoriteBooks((current) => current.map((title, idx) => idx === index ? book.title : title));
-    setFavoriteAuthors((current) => current.map((author, idx) => idx === index ? (book.author === "Unknown author" ? "" : book.author) : author));
-    setConfirmedFavorites((current) => current.map((item, idx) => idx === index ? book : item));
-    setFavoriteOptions((current) => current.map((options, idx) => idx === index ? [] : options));
-    setFavoriteLookupMessages((current) => current.map((message, idx) => idx === index ? "" : message));
-    setShowFavoriteIsbnFallback((current) => current.map((show, idx) => idx === index ? false : show));
-    setFavoriteIsbns((current) => current.map((value, idx) => idx === index ? book.isbn ?? "" : value));
-  };
-
-  const lookupFavoriteBook = async (index: number, payload: BookLookupPayload) => {
-    setCheckingFavoriteIndex(index);
-    setFavoriteSaveMessage("");
-
-    try {
-      const data = await lookupBookFromApi(payload);
-      if ((data.status === "exact" || data.status === "options") && data.books.length > 0) {
-        setConfirmedFavorites((current) => current.map((book, idx) => idx === index ? null : book));
-        setFavoriteOptions((current) => current.map((options, idx) => idx === index ? data.books : options));
-        setShowFavoriteIsbnFallback((current) => current.map((show, idx) => idx === index ? false : show));
-        setFavoriteLookupMessages((current) => current.map((message, idx) => idx === index
-          ? data.status === "exact"
-            ? "Please confirm this is the book you want."
-            : "We found a few possible matches. Which book did you mean?"
-          : message));
-        return null;
-      }
-
-      setConfirmedFavorites((current) => current.map((book, idx) => idx === index ? null : book));
-      setFavoriteOptions((current) => current.map((options, idx) => idx === index ? [] : options));
-      setShowFavoriteIsbnFallback((current) => current.map((show, idx) => idx === index ? !payload.isbn : show));
-      setFavoriteLookupMessages((current) => current.map((message, idx) => idx === index
-        ? payload.isbn
-          ? "Sorry, we still could not find that book. Please try another book title."
-          : "We could not find that book. Try a title, author, ISBN, or another combination."
-        : message));
-      return null;
-    } catch (err) {
-      setFavoriteSaveMessage(err instanceof Error ? err.message : "Failed to look up favorite book.");
-      return null;
-    } finally {
-      setCheckingFavoriteIndex(null);
-    }
-  };
-
-  const ensureFavoriteConfirmed = async (index: number) => {
-    const title = favoriteBooks[index].trim();
-    const confirmed = confirmedFavorites[index];
-    if (confirmed && confirmed.title === title) {
-      return confirmed;
-    }
-    const payload = getFavoriteLookupPayload(index);
-    return payload ? lookupFavoriteBook(index, payload) : null;
-  };
-
-  const saveFavoriteBooks = async () => {
-    if (!currentUser) return;
-
-    const books = favoriteBooks.map((book) => book.trim()).filter(Boolean);
-    if (books.length < 3) {
-      setFavoriteSaveMessage("Please enter three favorite books.");
-      return;
-    }
-
-    const confirmedBooks: string[] = [];
-    for (let index = 0; index < 3; index += 1) {
-      const book = await ensureFavoriteConfirmed(index);
-      if (!book) {
-        setFavoriteSaveMessage(`Please choose a matching book for favorite book ${index + 1}.`);
-        return;
-      }
-      confirmedBooks.push(book.title);
-    }
-
-    const updated = updateProfile({ ...currentUser, favoriteBooks: confirmedBooks });
-    setCurrentUser(updated);
-    setFavoriteBooks(confirmedBooks);
-    setFavoriteSaveMessage("Saved your reading interests!");
-    setEditingFavorites(false);
-  };
-
-  const updateReadingPreference = (key: PreferenceKey, value: string) => {
-    setReadingPreferences((current) => ({ ...current, [key]: value }));
-    setPreferenceMessage("");
-  };
-
-  const addPreferenceSuggestion = (key: PreferenceKey, suggestion: string) => {
-    setReadingPreferences((current) => {
-      const existing = current[key].split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
-      if (existing.includes(suggestion.toLowerCase())) {
-        return current;
-      }
-      return {
-        ...current,
-        [key]: current[key].trim() ? `${current[key].trim()}, ${suggestion}` : suggestion,
-      };
-    });
-    setPreferenceMessage("");
-  };
-
-  const saveReadingPreferences = () => {
-    if (!currentUser) return;
-    const cleaned = {
-      storyKinds: readingPreferences.storyKinds.trim(),
-      characters: readingPreferences.characters.trim(),
-      places: readingPreferences.places.trim(),
-      feelings: readingPreferences.feelings.trim(),
-      topics: readingPreferences.topics.trim(),
-    };
-    const answeredCount = Object.values(cleaned).filter(Boolean).length;
-    if (answeredCount < 3) {
-      setPreferenceMessage("Answer at least three questions so Reading Quest has enough to work with.");
-      return;
-    }
-
-    const updated = updateProfile({
-      ...currentUser,
-      readingPreferences: {
-        ...cleaned,
-        updatedAt: new Date().toISOString(),
-      },
-    });
-    setCurrentUser(updated);
-    setPreferenceMessage("Saved your reading taste quiz!");
-  };
-
-  const saveReadingList = () => {
-    if (!currentUser) return;
-    const updated = saveReadingNow(currentUser, readingNow.split("\n"));
-    setCurrentUser(updated);
-    setReadingMessage("Saved your read-first list.");
-  };
-
-  const logReading = () => {
-    if (!logBookTitle.trim()) {
-      setReadingMessage("Choose or enter the book you read.");
-      return;
-    }
-    const updated = addReadingLog({
-      bookTitle: logBookTitle,
-      minutes: logMinutes,
-      chaptersFinished: logChapters,
-      accessType: logAccess,
-      assisted: logAssisted,
-    });
-    if (updated) {
-      setCurrentUser(updated);
-      setReadingNow(updated.readingNow?.join("\n") ?? "");
-      setReadingMessage("Reading logged. Effort points were added.");
-    }
-  };
-
-  const updateAccess = (title: string, accessType: BookAccessType) => {
-    if (!currentUser) return;
-    const updated = saveBookAccess(currentUser, title, accessType);
-    setCurrentUser(updated);
-  };
-
-  const findNearbyBookPlaces = () => {
-    if (!currentUser) return;
-
-    const controls = { ...defaultParentControls, ...(currentUser.parentControls ?? {}) };
-    const canUseLocation = currentUser.isParent || controls.allowLocationLookup;
-    if (!canUseLocation) {
-      setLocationMessage("Ask your parent to turn on nearby libraries and bookstores first.");
-      return;
-    }
-
-    if (!navigator.geolocation) {
-      setLocationMessage("Location is not available in this browser.");
-      return;
-    }
-
-    setIsFindingPlaces(true);
-    setLocationMessage("Finding nearby libraries and bookstores...");
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        const query = `
-          [out:json][timeout:25];
-          (
-            node["amenity"="library"](around:16000,${latitude},${longitude});
-            way["amenity"="library"](around:16000,${latitude},${longitude});
-            relation["amenity"="library"](around:16000,${latitude},${longitude});
-            node["shop"="books"](around:16000,${latitude},${longitude});
-            way["shop"="books"](around:16000,${latitude},${longitude});
-            relation["shop"="books"](around:16000,${latitude},${longitude});
-          );
-          out center tags;
-        `;
-
-        try {
-          const response = await fetch("https://overpass-api.de/api/interpreter", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-            body: new URLSearchParams({ data: query }),
-          });
-
-          if (!response.ok) {
-            throw new Error("Nearby place search is temporarily unavailable.");
-          }
-
-          const data = await response.json() as { elements?: OverpassElement[] };
-          const places = (data.elements ?? [])
-            .map((place) => {
-              const lat = place.lat ?? place.center?.lat;
-              const lon = place.lon ?? place.center?.lon;
-              if (!lat || !lon) return null;
-              const tags = place.tags ?? {};
-              const type = tags.amenity === "library" ? "Library" : "Bookstore";
-              return {
-                id: `${place.id}`,
-                name: tags.name || type,
-                type,
-                distanceMiles: distanceInMiles(latitude, longitude, lat, lon),
-                address: formatAddress(tags),
-                mapUrl: `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}`,
-              } satisfies NearbyBookPlace;
-            })
-            .filter((place): place is NearbyBookPlace => Boolean(place))
-            .sort((a, b) => a.distanceMiles - b.distanceMiles)
-            .slice(0, 5);
-
-          setNearbyPlaces(places);
-          setLocationMessage(places.length ? "Showing the 5 nearest book places we found." : "No nearby libraries or bookstores were found.");
-        } catch (err) {
-          setNearbyPlaces([]);
-          setLocationMessage(err instanceof Error ? err.message : "Unable to find nearby book places.");
-        } finally {
-          setIsFindingPlaces(false);
-        }
-      },
-      () => {
-        setIsFindingPlaces(false);
-        setNearbyPlaces([]);
-        setLocationMessage("Location permission was not granted.");
-      },
-      { enableHighAccuracy: false, timeout: 12000, maximumAge: 10 * 60 * 1000 },
-    );
-  };
-
-  const recommendationData = useMemo(() => {
-    const favorites = currentUser?.favoriteBooks?.length === 3 ? currentUser.favoriteBooks : favoriteBooks.filter(Boolean);
-    const profileWithDraftPreferences = currentUser
-      ? {
-          ...currentUser,
-          readingPreferences: {
-            storyKinds: readingPreferences.storyKinds,
-            characters: readingPreferences.characters,
-            places: readingPreferences.places,
-            feelings: readingPreferences.feelings,
-            topics: readingPreferences.topics,
-            updatedAt: currentUser.readingPreferences?.updatedAt,
-          },
-        }
-      : currentUser;
-    return getBookRecommendations({
-      profile: profileWithDraftPreferences,
-      favoriteBooks: favorites,
-      rotationOffset: suggestionRotation,
-      limit: 5,
-    });
-  }, [currentUser, favoriteBooks, suggestionRotation, readingPreferences]);
-
-  const recentBooks = useMemo(() => {
+  const homeHref = currentUser?.isParent ? "/parent" : "/home";
+  const favoriteBooks = currentUser?.favoriteBooks ?? [];
+  const currentlyReading = currentUser?.readingNow ?? [];
+  const finishedBooks = useMemo(() => {
     if (!currentUser) return [];
-
     const latestByBook = new Map<string, typeof currentUser.quizzes[0]>();
     currentUser.quizzes
       .slice()
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .forEach((quiz) => {
-        const key = quiz.bookTitle.trim().toLowerCase();
-        if (!latestByBook.has(key)) {
-          latestByBook.set(key, quiz);
-        }
+        const key = normalizeBookKey(quiz.bookTitle);
+        if (!latestByBook.has(key)) latestByBook.set(key, quiz);
       });
-
     return Array.from(latestByBook.values());
   }, [currentUser]);
+
+  const recommendationData = useMemo(() => {
+    return getBookRecommendations({
+      profile: currentUser,
+      favoriteBooks,
+      rotationOffset: suggestionRotation,
+      limit: 8,
+    });
+  }, [currentUser, favoriteBooks, suggestionRotation]);
+
+  const streak = currentUser ? getForgivingStreak(currentUser) : { activeDaysThisWeek: 0, goalDays: 4, metThisWeek: false };
+  const badges = currentUser ? getBadges(currentUser) : [];
+  const totalPassed = currentUser?.quizzes.filter((quiz) => quiz.score / Math.max(quiz.maxScore, 1) >= 0.6).length ?? 0;
+  const totalEarned = currentUser ? getLifetimePoints(currentUser) : 0;
+  const selectedBookQuiz = selectedBookTitle && currentUser ? findLatestQuiz(currentUser, selectedBookTitle) : null;
+  const selectedBookReviews = selectedBookTitle ? getReviewsForBook(selectedBookTitle) : [];
+  const conqueredBookKeys = useMemo(() => new Set(finishedBooks.map((quiz) => normalizeBookKey(quiz.bookTitle))), [finishedBooks]);
+  const libraryBooks = useMemo(() => {
+    return readLibrary.filter((title) => !conqueredBookKeys.has(normalizeBookKey(title)));
+  }, [conqueredBookKeys, readLibrary]);
+
+  const persistBookMeta = (nextMeta: Record<string, StoredBookMeta>) => {
+    if (!currentUser) return;
+    setBookMeta(nextMeta);
+    writeJson(getBookMetaStorageKey(currentUser.id), nextMeta);
+  };
+
+  const persistWantToRead = (nextBooks: string[]) => {
+    if (!currentUser) return;
+    const deduped = Array.from(new Set(nextBooks.map((title) => title.trim()).filter(Boolean)));
+    setWantToRead(deduped);
+    writeJson(getWantToReadStorageKey(currentUser.id), deduped);
+  };
+
+  const persistReadLibrary = (nextBooks: string[]) => {
+    if (!currentUser) return;
+    const deduped = Array.from(new Set(nextBooks.map((title) => title.trim()).filter(Boolean)));
+    setReadLibrary(deduped);
+    writeJson(getReadLibraryStorageKey(currentUser.id), deduped);
+  };
+
+  const saveMetaForBook = (book: BookMatch) => {
+    persistBookMeta({
+      ...bookMeta,
+      [normalizeBookKey(book.title)]: buildBookMeta(book),
+    });
+  };
+
+  const openSearchModal = (target: BookShelfTarget) => {
+    setModalTarget(target);
+    setSearchTitle("");
+    setSearchAuthor("");
+    setSearchIsbn("");
+    setSearchMessage("");
+    setSearchOptions([]);
+  };
+
+  const closeSearchModal = () => {
+    setModalTarget(null);
+    setSearchOptions([]);
+    setSearchMessage("");
+  };
+
+  const getLookupPayload = (): BookLookupPayload | null => {
+    const payload = {
+      bookTitle: searchTitle.trim(),
+      author: searchAuthor.trim(),
+      isbn: searchIsbn.trim(),
+    };
+    return payload.bookTitle || payload.author || payload.isbn ? payload : null;
+  };
+
+  const searchLibrary = async () => {
+    const payload = getLookupPayload();
+    if (!payload) {
+      setSearchMessage("Enter a title, author, ISBN, or any combination.");
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchMessage("");
+    setSearchOptions([]);
+
+    try {
+      const data = await lookupBookFromApi(payload);
+      if ((data.status === "exact" || data.status === "options") && data.books.length > 0) {
+        setSearchOptions(data.books);
+        setSearchMessage(data.status === "exact" ? "Adventure found. Confirm the book below." : "Choose the book you meant.");
+      } else {
+        setSearchMessage("We could not find that book. Try a different title or author.");
+      }
+    } catch (error) {
+      setSearchMessage(error instanceof Error ? error.message : "Book search failed.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const addBookToShelf = (book: BookMatch, target: BookShelfTarget = modalTarget ?? "currentlyReading") => {
+    if (!currentUser) return;
+    saveMetaForBook(book);
+
+    if (target === "readLibrary") {
+      persistReadLibrary([book.title, ...readLibrary]);
+      setShelfMessage(`${book.title} added to My Library.`);
+    }
+
+    if (target === "currentlyReading") {
+      const updated = saveReadingNow(currentUser, [book.title, ...currentlyReading]);
+      if (updated) {
+        setCurrentUser(updated);
+        setShelfMessage(`${book.title} added to Currently Reading.`);
+      }
+    }
+
+    if (target === "wantToRead") {
+      persistWantToRead([book.title, ...wantToRead]);
+      setShelfMessage(`${book.title} saved for later.`);
+    }
+
+    if (target === "favorites") {
+      if (favoriteBooks.some((title) => normalizeBookKey(title) === normalizeBookKey(book.title))) {
+        setFavoriteSaveMessage(`${book.title} is already on your Favorite Shelf.`);
+      } else if (favoriteBooks.length >= MAX_FAVORITES) {
+        setFavoriteSaveMessage(`Favorite Shelf is full. Remove one book before adding ${book.title}.`);
+      } else {
+        const updated = updateProfile({ ...currentUser, favoriteBooks: [...favoriteBooks, book.title] });
+        setCurrentUser(updated);
+        setFavoriteSaveMessage(`${book.title} added to Favorite Shelf.`);
+      }
+    }
+
+    closeSearchModal();
+  };
+
+  const removeCurrentlyReading = (title: string) => {
+    if (!currentUser) return;
+    const updated = saveReadingNow(currentUser, currentlyReading.filter((book) => normalizeBookKey(book) !== normalizeBookKey(title)));
+    if (updated) {
+      setCurrentUser(updated);
+      setShelfMessage(`${title} removed from Currently Reading.`);
+    }
+  };
+
+  const moveToLibrary = (title: string) => {
+    if (!currentUser) return;
+    const updated = saveReadingNow(currentUser, currentlyReading.filter((book) => normalizeBookKey(book) !== normalizeBookKey(title)));
+    if (updated) {
+      setCurrentUser(updated);
+      persistReadLibrary([title, ...readLibrary]);
+      setShelfMessage(`${title} moved to My Library. Begin a quest when you are ready to conquer it.`);
+    }
+  };
+
+  const removeFavorite = (title: string) => {
+    if (!currentUser) return;
+    const updated = updateProfile({
+      ...currentUser,
+      favoriteBooks: favoriteBooks.filter((book) => normalizeBookKey(book) !== normalizeBookKey(title)),
+    });
+    setCurrentUser(updated);
+    setFavoriteSaveMessage(`${title} removed from Favorite Shelf.`);
+  };
+
+  const startReading = (title: string) => {
+    if (!currentUser) return;
+    const updated = saveReadingNow(currentUser, [title, ...currentlyReading]);
+    if (updated) {
+      setCurrentUser(updated);
+      persistWantToRead(wantToRead.filter((book) => normalizeBookKey(book) !== normalizeBookKey(title)));
+      setShelfMessage(`${title} moved to Currently Reading.`);
+    }
+  };
+
+  const saveRecommendationForLater = (title: string) => {
+    persistWantToRead([title, ...wantToRead]);
+    setShelfMessage(`${title} saved to Want To Read.`);
+  };
+
+  const addRecommendationToLibrary = (title: string) => {
+    persistReadLibrary([title, ...readLibrary]);
+    setShelfMessage(`${title} added to My Library.`);
+  };
+
+  const removeFromLibrary = (title: string) => {
+    persistReadLibrary(readLibrary.filter((book) => normalizeBookKey(book) !== normalizeBookKey(title)));
+    setShelfMessage(`${title} removed from My Library.`);
+  };
 
   if (!currentUser) {
     return <main><p>Loading...</p></main>;
   }
 
-  const hasFavoriteBooks = currentUser.favoriteBooks?.length === 3;
-  const hasReadingPreferences = Boolean(currentUser.readingPreferences && Object.values(currentUser.readingPreferences).some(Boolean));
-  const favoriteList = hasFavoriteBooks ? currentUser.favoriteBooks ?? [] : favoriteBooks.filter(Boolean);
-  const homeHref = currentUser.isParent ? "/parent" : "/home";
-  const controls = { ...defaultParentControls, ...(currentUser.parentControls ?? {}) };
-  const canUseLocation = betaConfig.locationLookupEnabled && (currentUser.isParent || controls.allowLocationLookup);
-
   return (
     <main className="app-screen">
       <div className="hero-panel app-hero">
         <div>
-          <div className="kicker">Library</div>
-          <h1>My Books</h1>
-          <p>Reading taste, next books, reading effort, and quiz history.</p>
+          <div className="kicker">Personal Library</div>
+          <h1>Book Bag</h1>
+          <p>Track your adventures, favorite stories, and books you&apos;ve conquered.</p>
         </div>
         <HeroProfileActions profile={currentUser} homeHref={homeHref} />
       </div>
 
-      <section className="home-section" aria-labelledby="favorite-books-heading">
-        <h2 id="favorite-books-heading">Reading Taste</h2>
-        {hasFavoriteBooks && !editingFavorites ? (
-          <>
-            <ul className="favorite-books-list">
-              {favoriteList.map((title, index) => (
-                <li key={index}>{title}</li>
-              ))}
-            </ul>
-            <button type="button" className="secondary" onClick={() => setEditingFavorites(true)}>
-              Update favorites
-            </button>
-          </>
-        ) : (
-          <>
-            <p>Choose three favorite books so Reading Quest can recommend more. If you are still finding favorites, answer the quick reading taste quiz below instead.</p>
-            {favoriteBooks.map((book, index) => (
-              <div key={index} className="field">
-                <label htmlFor={`favoriteBook-${index}`}>Favorite book {index + 1} title</label>
-                <input
-                  id={`favoriteBook-${index}`}
-                  value={book}
-                  onChange={(event) => handleFavoriteBookChange(index, event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      const payload = getFavoriteLookupPayload(index);
-                      if (payload) void lookupFavoriteBook(index, payload);
-                    }
-                  }}
-                  placeholder="Book title"
-                />
-                <label htmlFor={`favoriteAuthor-${index}`}>Author</label>
-                <input
-                  id={`favoriteAuthor-${index}`}
-                  value={favoriteAuthors[index]}
-                  onChange={(event) => handleFavoriteAuthorChange(index, event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      const payload = getFavoriteLookupPayload(index);
-                      if (payload) void lookupFavoriteBook(index, payload);
-                    }
-                  }}
-                  placeholder="Author name"
-                />
-                <label htmlFor={`favoriteIsbn-${index}`}>ISBN</label>
-                <input
-                  id={`favoriteIsbn-${index}`}
-                  value={favoriteIsbns[index]}
-                  onChange={(event) => handleFavoriteIsbnChange(index, event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      const payload = getFavoriteLookupPayload(index);
-                      if (payload) void lookupFavoriteBook(index, payload);
-                    }
-                  }}
-                  placeholder="9780064404990"
-                />
-                <p className="setting-description">Fill in a title, author, ISBN, or any combination. Press Enter to search.</p>
-                <div className="button-row">
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => {
-                      const payload = getFavoriteLookupPayload(index);
-                      if (payload) void lookupFavoriteBook(index, payload);
-                    }}
-                    disabled={checkingFavoriteIndex !== null || !getFavoriteLookupPayload(index)}
-                  >
-                    {checkingFavoriteIndex === index ? "Checking..." : "Check book"}
-                  </button>
-                </div>
-
-                {confirmedFavorites[index] ? (
-                  <div className="confirmed-book">
-                    <strong>Using: {confirmedFavorites[index]?.title}</strong>
-                    <span>{confirmedFavorites[index]?.author}</span>
-                  </div>
-                ) : null}
-
-                {favoriteLookupMessages[index] ? (
-                  <div className={showFavoriteIsbnFallback[index] ? "warning-box" : "notice"}>
-                    {favoriteLookupMessages[index]}
-                  </div>
-                ) : null}
-
-                {favoriteOptions[index].length > 0 ? (
-                  <div className="book-option-grid">
-                    {favoriteOptions[index].map((option) => (
-                      <button key={option.id} type="button" className="book-option" onClick={() => applyFavoriteBook(index, option)}>
-                        {option.coverUrl ? <img className="book-cover" src={option.coverUrl} alt="" /> : <span className="book-cover-placeholder">No cover</span>}
-                        <span>
-                          <strong>{option.title}</strong>
-                          <span>{option.author}{option.year ? ` - ${option.year}` : ""}</span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-
-                {showFavoriteIsbnFallback[index] ? (
-                  <div className="nested-section">
-                    <p className="setting-description">Tip: ISBN is often the most accurate search. Look near the barcode or on the copyright page, then enter it above.</p>
-                  </div>
-                ) : null}
-              </div>
-            ))}
-            <div className="button-row">
-              <button type="button" onClick={saveFavoriteBooks} disabled={checkingFavoriteIndex !== null}>
-                Save interests
-              </button>
-              {hasFavoriteBooks ? (
-                <button type="button" className="secondary" onClick={() => setEditingFavorites(false)}>
-                  Cancel
-                </button>
-              ) : null}
-            </div>
-          </>
-        )}
-        {favoriteSaveMessage ? <div className={favoriteSaveMessage.includes("Saved") ? "success-box" : "error-box"}>{favoriteSaveMessage}</div> : null}
-
-        <div className="nested-section preference-quiz" aria-labelledby="preference-quiz-heading">
-          <div className="section-header-row">
-            <div>
-              <h3 id="preference-quiz-heading">Reading Taste Quiz</h3>
-              <p>Five quick answers can guide recommendations when favorite books are hard to name.</p>
-            </div>
-            {hasReadingPreferences ? <span className="badge-pill">Saved</span> : null}
-          </div>
-          <div className="preference-grid">
-            {preferencePrompts.map((prompt) => (
-              <div key={prompt.key} className="field preference-question">
-                <label htmlFor={`preference-${prompt.key}`}>{prompt.label}</label>
-                <input
-                  id={`preference-${prompt.key}`}
-                  value={readingPreferences[prompt.key]}
-                  onChange={(event) => updateReadingPreference(prompt.key, event.target.value)}
-                  placeholder={prompt.placeholder}
-                  list={`preference-options-${prompt.key}`}
-                />
-                <datalist id={`preference-options-${prompt.key}`}>
-                  {prompt.suggestions.map((suggestion) => (
-                    <option key={suggestion} value={suggestion} />
-                  ))}
-                </datalist>
-                <div className="preference-suggestions" aria-label={`Suggestions for ${prompt.label}`}>
-                  {prompt.suggestions.map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      type="button"
-                      className="preference-chip"
-                      onClick={() => addPreferenceSuggestion(prompt.key, suggestion)}
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-          <button type="button" className="secondary" onClick={saveReadingPreferences}>
-            Save taste quiz
-          </button>
-          {preferenceMessage ? (
-            <div className={preferenceMessage.includes("Saved") ? "success-box" : "warning-box"}>{preferenceMessage}</div>
-          ) : null}
-        </div>
-      </section>
-
-      <section className="home-section" aria-labelledby="recommended-heading">
+      <section className="home-section library-section" aria-labelledby="my-library-heading">
         <div className="section-header-row">
           <div>
-            <h2 id="recommended-heading">Recommended Reads</h2>
-            <p className="setting-description">{recommendationData.updatedLabel}</p>
+            <h2 id="my-library-heading">My Library</h2>
+            <p>Books you have read and are ready to challenge.</p>
+          </div>
+          <button type="button" onClick={() => openSearchModal("readLibrary")}>Add Book</button>
+        </div>
+        {shelfMessage ? <div className="success-box">{shelfMessage}</div> : null}
+
+        <div className="library-stats-grid">
+          <article className="library-streak-card">
+            <img src={getHotStreakImageSrc()} alt="" />
+            <div>
+              <strong>Reading Streak</strong>
+              <span>{streak.activeDaysThisWeek} / {streak.goalDays} days this week</span>
+              <small>{streak.metThisWeek ? "Weekly goal complete." : "Keep your reading fire going."}</small>
+            </div>
+          </article>
+          <article className="library-stat-card">
+            <strong>Books Conquered</strong>
+            <span>{finishedBooks.length}</span>
+          </article>
+          <article className="library-stat-card">
+            <strong>Quests Passed</strong>
+            <span>{totalPassed}</span>
+          </article>
+          <article className="library-stat-card">
+            <strong>Points Earned</strong>
+            <span>{totalEarned}</span>
+          </article>
+        </div>
+        {libraryBooks.length > 0 ? (
+          <div className="book-shelf-grid">
+            {libraryBooks.map((title) => {
+              const meta = bookMeta[normalizeBookKey(title)];
+              return (
+                <article key={title} className="shelf-book-card">
+                  <BookCover title={title} meta={meta} />
+                  <div>
+                    <h3>{title}</h3>
+                    <p>{meta?.author || "Read and ready for a quest"}</p>
+                    <span className="badge-pill">Ready to conquer</span>
+                  </div>
+                  <div className="button-row">
+                    <Link href={`/quiz?bookTitle=${encodeURIComponent(title)}`}>
+                      <button type="button">Begin Quest</button>
+                    </Link>
+                    <button type="button" className="secondary danger-button" onClick={() => removeFromLibrary(title)}>Remove</button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="empty-library-shelf">
+            <p>Add books you have already read. When you are ready, begin a quest to move them into Books Conquered.</p>
+            <button type="button" onClick={() => openSearchModal("readLibrary")}>Add Book</button>
+          </div>
+        )}
+      </section>
+
+      <section className="home-section library-section" aria-labelledby="currently-reading-heading">
+        <div className="section-header-row">
+          <div>
+            <h2 id="currently-reading-heading">Currently Reading</h2>
+            <p>Books you are exploring right now.</p>
+          </div>
+          <button type="button" className="secondary" onClick={() => openSearchModal("currentlyReading")}>Add Book</button>
+        </div>
+        {currentlyReading.length > 0 ? (
+          <div className="book-shelf-grid">
+            {currentlyReading.map((title) => {
+              const meta = bookMeta[normalizeBookKey(title)];
+              return (
+                <article key={title} className="shelf-book-card">
+                  <BookCover title={title} meta={meta} />
+                  <div>
+                    <h3>{title}</h3>
+                    <p>{meta?.author || "Author can be added by searching again."}</p>
+                    <span className="badge-pill">In progress</span>
+                  </div>
+                  <div className="button-row">
+                    <Link href={`/quiz?bookTitle=${encodeURIComponent(title)}`}>
+                      <button type="button">Begin Quest</button>
+                    </Link>
+                    <button type="button" className="secondary" onClick={() => moveToLibrary(title)}>Move to Library</button>
+                    <button type="button" className="secondary danger-button" onClick={() => removeCurrentlyReading(title)}>Remove</button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="empty-library-shelf">
+            <p>Your active shelf is waiting for its first book.</p>
+            <button type="button" onClick={() => openSearchModal("currentlyReading")}>Add Book</button>
+          </div>
+        )}
+      </section>
+
+      <section
+        className="home-section library-section favorite-shelf-section"
+        aria-labelledby="favorite-shelf-heading"
+        style={{ "--favorite-shelf-image": `url(${getShelfImageSrc(themeStyle)})` } as CSSProperties}
+      >
+        <div className="section-header-row">
+          <div>
+            <h2 id="favorite-shelf-heading">Favorite Shelf</h2>
+            <p>Choose up to {MAX_FAVORITES} stories that really matter to you.</p>
+          </div>
+          <button type="button" className="secondary" disabled={favoriteBooks.length >= MAX_FAVORITES} onClick={() => openSearchModal("favorites")}>
+            Add Favorite
+          </button>
+        </div>
+        {favoriteSaveMessage ? <div className={favoriteSaveMessage.includes("full") ? "warning-box" : "success-box"}>{favoriteSaveMessage}</div> : null}
+        {favoriteBooks.length > 0 ? (
+          <div className="favorite-shelf-row">
+            {favoriteBooks.map((title) => {
+              const meta = bookMeta[normalizeBookKey(title)];
+              return (
+                <article key={title} className="favorite-book-card">
+                  <BookCover title={title} meta={meta} />
+                  <h3>{title}</h3>
+                  <p>{meta?.author || "Favorite story"}</p>
+                  <button type="button" className="secondary" onClick={() => removeFavorite(title)}>Remove</button>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <p>No favorites yet. Add one when a book earns a special place on your shelf.</p>
+        )}
+      </section>
+
+      <section className="home-section library-section" aria-labelledby="recommendations-heading">
+        <div className="section-header-row">
+          <div>
+            <h2 id="recommendations-heading">Quest Recommendations</h2>
+            <p>{recommendationData.summary}</p>
           </div>
           <button type="button" className="secondary" onClick={() => setSuggestionRotation((current) => current + 1)}>
-            New picks
+            New Picks
           </button>
         </div>
-        <p>{recommendationData.summary}</p>
-        <ul className="small-list">
+        <div className="recommendation-scroll-row">
           {recommendationData.suggestions.map((title) => (
-            <li key={title}>
-              <strong>{title}</strong>
-              <span className="block-note">{recommendationData.reasons[title]}</span>
-            </li>
+            <article key={title} className="recommendation-book-card">
+              <BookCover title={title} meta={bookMeta[normalizeBookKey(title)]} />
+              <h3>{title}</h3>
+              <p>{recommendationData.reasons[title] || "Because of your reading adventures."}</p>
+              <div className="button-row">
+                <button type="button" onClick={() => addRecommendationToLibrary(title)}>Add to Library</button>
+                <button type="button" className="secondary" onClick={() => saveRecommendationForLater(title)}>Save for Later</button>
+              </div>
+            </article>
           ))}
-        </ul>
+        </div>
       </section>
 
-      <section className="home-section" aria-labelledby="nearby-book-places-heading">
+      <section className="home-section library-section" aria-labelledby="want-to-read-heading">
         <div className="section-header-row">
           <div>
-            <h2 id="nearby-book-places-heading">Nearby Book Places</h2>
-            <p>Optional location lookup for libraries and bookstores near you.</p>
+            <h2 id="want-to-read-heading">Want To Read</h2>
+            <p>Stories saved for future adventures.</p>
           </div>
-          <span className={canUseLocation ? "badge-pill" : "badge-pill muted-pill"}>
-            {betaConfig.locationLookupEnabled ? (canUseLocation ? "Allowed" : "Parent approval needed") : "Paused for beta"}
-          </span>
+          <button type="button" className="secondary" onClick={() => openSearchModal("wantToRead")}>Add Book</button>
         </div>
-        {canUseLocation ? (
-          <>
-            <label className="setting-label">
-              <input
-                type="checkbox"
-                checked={locationEnabled}
-                onChange={(event) => {
-                  setLocationEnabled(event.target.checked);
-                  setNearbyPlaces([]);
-                  setLocationMessage("");
-                }}
-              />
-              <span>Choose my location</span>
-            </label>
-            {locationEnabled ? (
-              <div className="nested-section">
-                <p>Reading Quest will ask this browser for your location and use it once to find nearby libraries and bookstores.</p>
-                <button type="button" className="secondary" onClick={findNearbyBookPlaces} disabled={isFindingPlaces}>
-                  {isFindingPlaces ? "Finding places..." : "Find nearby book places"}
+        {wantToRead.length > 0 ? (
+          <div className="book-shelf-grid compact-bookshelf">
+            {wantToRead.map((title) => (
+              <article key={title} className="shelf-book-card compact">
+                <BookCover title={title} meta={bookMeta[normalizeBookKey(title)]} />
+                <div>
+                  <h3>{title}</h3>
+                  <p>{bookMeta[normalizeBookKey(title)]?.author || "Saved for later"}</p>
+                </div>
+                <div className="button-row">
+                  <button type="button" onClick={() => startReading(title)}>Start Reading</button>
+                  <button type="button" className="secondary danger-button" onClick={() => persistWantToRead(wantToRead.filter((book) => normalizeBookKey(book) !== normalizeBookKey(title)))}>
+                    Remove
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p>Your future adventure shelf is empty.</p>
+        )}
+      </section>
+
+      <section className="home-section library-section" aria-labelledby="books-conquered-heading">
+        <h2 id="books-conquered-heading">Books Conquered</h2>
+        <p>Books move here after you complete a reading quest.</p>
+        {finishedBooks.length > 0 ? (
+          <div className="book-shelf-grid">
+            {finishedBooks.map((quiz) => {
+              const meta = bookMeta[normalizeBookKey(quiz.bookTitle)];
+              const rating = getRatingForBook(quiz.bookTitle);
+              return (
+                <button key={quiz.bookTitle} type="button" className="finished-book-card" onClick={() => setSelectedBookTitle(quiz.bookTitle)}>
+                  <BookCover title={quiz.bookTitle} meta={meta} />
+                  <span>
+                    <strong>{quiz.bookTitle}</strong>
+                    <small>Conquered {formatDate(quiz.date)}</small>
+                    <small>Score {quiz.score} / {quiz.maxScore}</small>
+                    <small>{rating ? `${rating} star rating` : "No rating yet"}</small>
+                  </span>
                 </button>
-                {locationMessage ? <div className={nearbyPlaces.length ? "success-box" : "notice"}>{locationMessage}</div> : null}
-                {nearbyPlaces.length > 0 ? (
-                  <div className="nearby-place-list">
-                    {nearbyPlaces.map((place) => (
-                      <a key={place.id} className="nearby-place-card" href={place.mapUrl} target="_blank" rel="noreferrer">
-                        <strong>{place.name}</strong>
-                        <span>{place.type} - {place.distanceMiles.toFixed(1)} miles away</span>
-                        <small>{place.address}</small>
-                      </a>
-                    ))}
-                  </div>
-                ) : null}
+              );
+            })}
+          </div>
+        ) : (
+          <p>Begin a quest from My Library to start your conquered bookshelf.</p>
+        )}
+        <div className="achievement-grid">
+          <article className="achievement-card earned">
+            <div className="achievement-medal" aria-hidden="true">Book</div>
+            <h3>{finishedBooks.length} Books Conquered</h3>
+            <p>Total completed books in your adventure journal.</p>
+          </article>
+          <article className="achievement-card earned">
+            <div className="achievement-medal" aria-hidden="true">Quest</div>
+            <h3>{currentUser.quizzes.length} Quests Taken</h3>
+            <p>{totalPassed} passed so far.</p>
+          </article>
+          <article className="achievement-card earned">
+            <div className="achievement-medal" aria-hidden="true">Star</div>
+            <h3>{getSpendablePoints(currentUser)} Points Ready</h3>
+            <p>{totalEarned} lifetime points earned.</p>
+          </article>
+        </div>
+        {badges.length > 0 ? (
+          <div className="badge-row">
+            {badges.slice(0, 8).map((badge) => <span key={badge} className="badge-pill">{badge}</span>)}
+          </div>
+        ) : (
+          <p>Achievements will appear as you complete more reading quests.</p>
+        )}
+      </section>
+
+      {modalTarget ? (
+        <div className="book-search-modal-shell" role="dialog" aria-modal="true" aria-labelledby="book-search-title">
+          <button type="button" className="book-search-modal-scrim" aria-label="Close book search" onClick={closeSearchModal} />
+          <section className="book-search-modal">
+            <div className="section-header-row">
+              <div>
+                <div className="kicker">Search the Library</div>
+                <h2 id="book-search-title">Add a Book</h2>
+                <p>Use a title, author, ISBN, or any combination.</p>
+              </div>
+              <button type="button" className="secondary" onClick={closeSearchModal}>Close</button>
+            </div>
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor="bookSearchTitle">Book Title</label>
+                <input id="bookSearchTitle" value={searchTitle} onChange={(event) => setSearchTitle(event.target.value)} onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void searchLibrary();
+                  }
+                }} />
+              </div>
+              <div className="field">
+                <label htmlFor="bookSearchAuthor">Author</label>
+                <input id="bookSearchAuthor" value={searchAuthor} onChange={(event) => setSearchAuthor(event.target.value)} onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void searchLibrary();
+                  }
+                }} />
+              </div>
+              <div className="field">
+                <label htmlFor="bookSearchIsbn">ISBN</label>
+                <input id="bookSearchIsbn" value={searchIsbn} onChange={(event) => setSearchIsbn(event.target.value)} onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void searchLibrary();
+                  }
+                }} />
+              </div>
+            </div>
+            <button type="button" onClick={() => void searchLibrary()} disabled={isSearching || !getLookupPayload()}>
+              {isSearching ? "Searching..." : "Search the Library"}
+            </button>
+            {searchMessage ? <div className={searchOptions.length ? "success-box" : "notice"}>{searchMessage}</div> : null}
+            {searchOptions.length > 0 ? (
+              <div className="book-option-grid">
+                {searchOptions.map((book) => (
+                  <button key={book.id} type="button" className="book-option" onClick={() => addBookToShelf(book)}>
+                    {book.coverUrl ? <img className="book-cover" src={book.coverUrl} alt="" /> : <span className="book-cover-placeholder">No cover</span>}
+                    <span>
+                      <strong>{book.title}</strong>
+                      <span>{book.author}{book.year ? ` - ${book.year}` : ""}</span>
+                    </span>
+                  </button>
+                ))}
               </div>
             ) : null}
-          </>
-        ) : (
-          <div className="warning-box">
-            {betaConfig.locationLookupEnabled
-              ? "Ask a verified parent to allow nearby libraries and bookstores for this child account."
-              : "Nearby library and bookstore lookup is visible but paused during private beta."}
-          </div>
-        )}
-      </section>
-
-      <section className="home-section" aria-labelledby="reading-now-heading">
-        <h2 id="reading-now-heading">Read First, Quiz Later</h2>
-        <p>Save books you are reading now. Audiobooks, ebooks, library books, and read-aloud books all count.</p>
-        <div className="field">
-          <label htmlFor="readingNow">Books I am reading</label>
-          <textarea
-            id="readingNow"
-            rows={5}
-            value={readingNow}
-            onChange={(event) => setReadingNow(event.target.value)}
-            placeholder={"One book per line\nExample: The Wild Robot"}
-          />
+          </section>
         </div>
-        <button type="button" className="secondary" onClick={saveReadingList}>Save reading list</button>
+      ) : null}
 
-        <div className="nested-section">
-          <h3>Log Reading Effort</h3>
-          <div className="field">
-            <label htmlFor="logBookTitle">Book</label>
-            <input id="logBookTitle" value={logBookTitle} onChange={(event) => setLogBookTitle(event.target.value)} />
-          </div>
-          <div className="form-grid">
-            <div className="field">
-              <label htmlFor="logMinutes">Minutes read</label>
-              <input id="logMinutes" type="number" min="0" max="240" value={logMinutes} onChange={(event) => setLogMinutes(Number(event.target.value))} />
+      {selectedBookTitle ? (
+        <div className="book-search-modal-shell" role="dialog" aria-modal="true" aria-labelledby="book-detail-title">
+          <button type="button" className="book-search-modal-scrim" aria-label="Close book details" onClick={() => setSelectedBookTitle(null)} />
+          <section className="book-search-modal">
+            <div className="section-header-row">
+              <div>
+                <div className="kicker">Adventure Journal</div>
+                <h2 id="book-detail-title">{selectedBookTitle}</h2>
+              </div>
+              <button type="button" className="secondary" onClick={() => setSelectedBookTitle(null)}>Close</button>
             </div>
-            <div className="field">
-              <label htmlFor="logChapters">Chapters finished</label>
-              <input id="logChapters" type="number" min="0" max="20" value={logChapters} onChange={(event) => setLogChapters(Number(event.target.value))} />
+            {selectedBookQuiz ? (
+              <div className="library-detail-grid">
+                <BookCover title={selectedBookTitle} meta={bookMeta[normalizeBookKey(selectedBookTitle)]} />
+                <div>
+                  <p><strong>Latest score:</strong> {selectedBookQuiz.score} / {selectedBookQuiz.maxScore}</p>
+                  <p><strong>Challenge path:</strong> {selectedBookQuiz.difficulty}</p>
+                  <p><strong>Completed:</strong> {formatDate(selectedBookQuiz.date)}</p>
+                  <p><strong>Rating:</strong> {getRatingForBook(selectedBookTitle) || "Not rated yet"}</p>
+                  <p><strong>Favorite:</strong> {favoriteBooks.some((title) => normalizeBookKey(title) === normalizeBookKey(selectedBookTitle)) ? "On your shelf" : "Not yet"}</p>
+                </div>
+              </div>
+            ) : null}
+            <h3>Quiz History</h3>
+            <div className="compact-list">
+              {currentUser.quizzes
+                .filter((quiz) => normalizeBookKey(quiz.bookTitle) === normalizeBookKey(selectedBookTitle))
+                .map((quiz) => (
+                  <div key={`${quiz.date}-${quiz.difficulty}`} className="review-queue-item">
+                    <strong>{formatDate(quiz.date)}</strong>
+                    <span>{quiz.score} / {quiz.maxScore} on {quiz.difficulty}</span>
+                  </div>
+                ))}
             </div>
-            <div className="field">
-              <label htmlFor="logAccess">Book format</label>
-              <select id="logAccess" value={logAccess} onChange={(event) => setLogAccess(event.target.value as BookAccessType)}>
-                <option value="owned">Owned book</option>
-                <option value="library">Library book</option>
-                <option value="audiobook">Audiobook</option>
-                <option value="ebook">Ebook</option>
-                <option value="read_aloud">Read aloud</option>
-                <option value="borrowed">Borrowed book</option>
-              </select>
-            </div>
-          </div>
-          <label className="setting-label">
-            <input type="checkbox" checked={logAssisted} onChange={(event) => setLogAssisted(event.target.checked)} />
-            <span>This was assisted reading</span>
-          </label>
-          <button type="button" onClick={logReading}>Log reading</button>
+            <h3>Reviews</h3>
+            {selectedBookReviews.length > 0 ? (
+              <div className="compact-list">
+                {selectedBookReviews.map((review) => (
+                  <div key={review.id} className="review-queue-item">
+                    <strong>{review.rating} stars</strong>
+                    <span>{review.reviewText || "No written review."}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p>No reviews yet.</p>
+            )}
+          </section>
         </div>
-        {readingMessage ? <div className={readingMessage.includes("Choose") ? "error-box" : "success-box"}>{readingMessage}</div> : null}
-      </section>
-
-      <section className="home-section" aria-labelledby="tested-heading">
-        <h2 id="tested-heading">Books Tested</h2>
-        {recentBooks.length > 0 ? (
-          <div className="responsive-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Book</th>
-                  <th>Score</th>
-                  <th>Difficulty</th>
-                  <th>Format</th>
-                  <th>Retake</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentBooks.map((quiz) => {
-                  const retakeStatus = getRetakeStatus(currentUser, quiz.bookTitle);
-                  return (
-                    <tr key={quiz.bookTitle}>
-                      <td>{quiz.bookTitle}</td>
-                      <td>{quiz.score} / {quiz.maxScore}</td>
-                      <td>{quiz.difficulty}</td>
-                      <td>
-                        <select
-                          aria-label={`Book format for ${quiz.bookTitle}`}
-                          value={currentUser.bookAccess?.[quiz.bookTitle] ?? "owned"}
-                          onChange={(event) => updateAccess(quiz.bookTitle, event.target.value as BookAccessType)}
-                        >
-                          <option value="owned">Owned</option>
-                          <option value="library">Library</option>
-                          <option value="audiobook">Audio</option>
-                          <option value="ebook">Ebook</option>
-                          <option value="read_aloud">Read aloud</option>
-                          <option value="borrowed">Borrowed</option>
-                        </select>
-                      </td>
-                      <td>
-                        {retakeStatus.available && retakeStatus.nextDifficulty ? (
-                          <Link href={`/quiz?bookTitle=${encodeURIComponent(quiz.bookTitle)}&difficulty=${encodeURIComponent(retakeStatus.nextDifficulty)}&bookLevel=${encodeURIComponent(quiz.bookLevel)}`}>
-                            <button type="button" className="action-button small secondary">{retakeStatus.waitText}</button>
-                          </Link>
-                        ) : (
-                          <span>{retakeStatus.waitText}</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p>No books tested yet.</p>
-        )}
-      </section>
+      ) : null}
     </main>
   );
 }

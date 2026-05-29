@@ -17,17 +17,31 @@ import { signOutSupabase } from "../../lib/supabase/auth";
 import { isUuid } from "../../lib/ids";
 
 const primaryLinks = [
-  { href: "/my-books", label: "My Books" },
-  { href: "/leaderboards", label: "Leaderboards" },
-  { href: "/prizes", label: "Prizes" },
-  { href: "/friends", label: "Friends" },
+  { href: "/my-books", label: "Book Bag" },
+  { href: "/leaderboards", label: "Hall of Legends" },
+  { href: "/prizes", label: "Treasure Chest" },
+  { href: "/friends", label: "Fellowship" },
+  { href: "/badges", label: "Treasure Trove" },
 ];
 
 const supportLinks = [
-  { href: "/faq", label: "FAQ" },
-  { href: "/settings", label: "Settings" },
-  { href: "/profile", label: "Profile" },
+  { href: "/faq", label: "Guidebook" },
+  { href: "/settings", label: "Camp Setup" },
+  { href: "/profile", label: "Adventurer Card" },
 ];
+
+function getQuestActionLabel(profile: Profile | null) {
+  if (!profile) return "Begin Quest";
+  if (profile.isParent) return "Take a Quiz";
+  return profile.quizzes.length > 0 ? "Continue Quest" : "Start Reading Quest";
+}
+
+const notificationRelevantPaths = new Set(["/home", "/parent", "/profile", "/prizes"]);
+const notificationPollMs = 120000;
+
+function shouldRefreshNotifications(pathname: string, drawerOpen: boolean) {
+  return drawerOpen || notificationRelevantPaths.has(pathname);
+}
 
 export default function AppMenu() {
   const router = useRouter();
@@ -57,17 +71,26 @@ export default function AppMenu() {
       return;
     }
 
+    const shouldRefresh = shouldRefreshNotifications(pathname, open);
+    if (!shouldRefresh) {
+      return;
+    }
+
     let active = true;
+    const profileId = profile.id;
+    const isParent = Boolean(profile.isParent);
+    const linkedChildren = profile.linkedChildren ?? [];
+    const quizCount = profile.quizzes.length;
     const loadNotifications = async () => {
       const notifications: Array<{ text: string; href: string }> = [];
       try {
-        const response = await fetch(`/api/family-verification?profileId=${encodeURIComponent(profile.id)}`);
+        const response = await fetch(`/api/family-verification?profileId=${encodeURIComponent(profileId)}`);
         if (response.ok) {
           const data = await response.json() as { requests?: ParentVerificationRequest[] };
           const requests = data.requests ?? [];
-          const needsChildApproval = !profile.isParent && requests.some((request) => request.status === "child_pending");
-          const needsParentCode = profile.isParent && requests.some((request) => request.status === "code_pending" && !request.parentCodeEntered);
-          const needsChildCode = !profile.isParent && requests.some((request) => request.status === "code_pending" && !request.childCodeEntered);
+          const needsChildApproval = !isParent && requests.some((request) => request.status === "child_pending");
+          const needsParentCode = isParent && requests.some((request) => request.status === "code_pending" && !request.parentCodeEntered);
+          const needsChildCode = !isParent && requests.some((request) => request.status === "code_pending" && !request.childCodeEntered);
           if (needsChildApproval) notifications.push({ text: "Parent verification waiting", href: "/profile" });
           if (needsParentCode || needsChildCode) notifications.push({ text: "Verification code needed", href: "/profile" });
         }
@@ -75,13 +98,13 @@ export default function AppMenu() {
         // Notifications are helpful, but should never block navigation.
       }
 
-      if (profile.isParent) {
+      if (isParent) {
         let reportCount = getQuizIssueReports().filter((report) => report.status !== "dismissed" && !report.correctionPointsAwarded).length;
         try {
-          if (!isUuid(profile.id)) {
+          if (!isUuid(profileId)) {
             throw new Error("Local beta profile.");
           }
-          const response = await fetch(`/api/quiz-report?parentId=${encodeURIComponent(profile.id)}&summary=true`);
+          const response = await fetch(`/api/quiz-report?parentId=${encodeURIComponent(profileId)}&summary=true`);
           if (response.ok) {
             const data = await response.json() as { openCount?: number };
             reportCount = data.openCount ?? reportCount;
@@ -93,7 +116,7 @@ export default function AppMenu() {
           notifications.push({ text: `${reportCount} quiz review ${reportCount === 1 ? "item" : "items"}`, href: "/parent" });
         }
 
-        const linkedChildIds = new Set(profile.linkedChildren ?? []);
+        const linkedChildIds = new Set(linkedChildren);
         let pendingPrizeIdeas = readPrizeAddRequests().filter((request) =>
           linkedChildIds.has(request.childId) && request.status === "pending",
         ).length;
@@ -102,10 +125,10 @@ export default function AppMenu() {
           .reduce((total, child) => total + readPrizes(child.id).filter((prize) => prize.claimed).length, 0);
 
         try {
-          if (!isUuid(profile.id)) {
+          if (!isUuid(profileId)) {
             throw new Error("Local beta profile.");
           }
-          const response = await fetch(`/api/prizes?parentId=${encodeURIComponent(profile.id)}&summary=true`);
+          const response = await fetch(`/api/prizes?parentId=${encodeURIComponent(profileId)}&summary=true`);
           if (response.ok) {
             const data = await response.json() as { pendingPrizeIdeas?: number; pendingPrizeClaims?: number };
             pendingPrizeIdeas = data.pendingPrizeIdeas ?? pendingPrizeIdeas;
@@ -126,23 +149,23 @@ export default function AppMenu() {
       const quizAvailability = getPlanQuizAvailability(profile);
       const remainingQuizzes = Math.max(0, quizAvailability.limit - quizAvailability.used);
       if (remainingQuizzes > 0 && remainingQuizzes <= 2) {
-        notifications.push({ text: `${remainingQuizzes} quiz ${remainingQuizzes === 1 ? "left" : "left"} today`, href: "/quiz" });
+        notifications.push({ text: `${remainingQuizzes} quest ${remainingQuizzes === 1 ? "left" : "left"} today`, href: "/quiz" });
       }
 
       if (active) {
         setNotificationCount(notifications.length);
         setNotificationText(notifications.map((item) => item.text).join(" - "));
-        setNotificationHref(notifications[0]?.href ?? (profile.isParent ? "/parent" : "/profile"));
+        setNotificationHref(notifications[0]?.href ?? (isParent ? "/parent" : "/profile"));
       }
     };
 
     void loadNotifications();
-    const interval = window.setInterval(() => void loadNotifications(), 30000);
+    const interval = shouldRefresh ? window.setInterval(() => void loadNotifications(), notificationPollMs) : undefined;
     return () => {
       active = false;
-      window.clearInterval(interval);
+      if (interval) window.clearInterval(interval);
     };
-  }, [pathname, profile]);
+  }, [open, pathname, profile?.id, profile?.isParent, profile?.linkedChildren?.join("|"), profile?.quizzes.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -164,8 +187,8 @@ export default function AppMenu() {
       {
         label: "Main",
         links: [
-          { href: profile.isParent ? "/parent" : "/home", label: "Home" },
-          { href: "/quiz", label: "Take a Quiz" },
+          { href: profile.isParent ? "/parent" : "/home", label: profile.isParent ? "Parent Hub" : "Quest Hub" },
+          { href: "/quiz", label: profile.isParent ? "Take a Quiz" : "Begin Quest" },
           ...primaryLinks,
         ],
       },
@@ -207,9 +230,11 @@ export default function AppMenu() {
         {notificationCount > 0 ? <strong className="notification-dot">{notificationCount}</strong> : null}
       </button>
 
-      <Link href="/quiz" className="fixed-quiz-action" onClick={() => setOpen(false)}>
-        Take a Quiz
-      </Link>
+      {pathname !== "/home" ? (
+        <Link href="/quiz" className="fixed-quiz-action" onClick={() => setOpen(false)}>
+          {getQuestActionLabel(profile)}
+        </Link>
+      ) : null}
 
       {open ? <button type="button" className="app-drawer-scrim" aria-label="Close menu" onClick={() => setOpen(false)} /> : null}
 

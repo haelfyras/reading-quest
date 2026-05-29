@@ -581,9 +581,18 @@ export function getGenreExplorerScore(profile: Profile) {
 
 export function getBadges(profile: Profile) {
   const badges = new Set(profile.badges ?? []);
-  if (profile.quizzes.length > 0) badges.add("Finished first quiz");
-  if (profile.quizzes.some((quiz) => quiz.difficulty !== "easy")) badges.add("Tried a harder book");
-  if (getGenreExplorerScore(profile) >= 3) badges.add("Genre explorer");
+  if (profile.quizzes.length > 0) badges.add("First Quest");
+  if (new Set(profile.quizzes.map((quiz) => quiz.bookTitle.trim().toLowerCase())).size > 0) badges.add("First Book Completed");
+  if (profile.quizzes.some((quiz) => quiz.score === quiz.maxScore)) badges.add("Perfect Score");
+  if (profile.quizzes.some((quiz) => quiz.difficulty !== "easy")) badges.add("Tried a Harder Book");
+  if (getGenreExplorerScore(profile) >= 3) badges.add("Genre Explorer");
+  if (getGenreExplorerScore(profile) >= 4) badges.add("Read Outside Comfort Zone");
+  if (profile.quizzes.some((quiz) => {
+    const hour = new Date(quiz.date).getHours();
+    return hour >= 19 || hour < 5;
+  })) badges.add("Night Reader");
+  if (profile.quizzes.some((quiz) => quiz.difficulty === "medium")) badges.add("Detective Reader");
+  if (profile.quizzes.some((quiz) => quiz.difficulty === "hard" && quiz.score === quiz.maxScore)) badges.add("Mastered a Book");
   if (getImprovementScore(profile) > 0) badges.add("Re-read and improved");
   if (getReviewsForProfile(profile.id).length > 0) badges.add("Helped recommend a book");
   if (getForgivingStreak(profile).metThisWeek) badges.add("Reading week complete");

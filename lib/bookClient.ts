@@ -6,6 +6,7 @@ export type BookLookupPayload = {
   bookTitle?: string;
   author?: string;
   isbn?: string;
+  year?: string;
 };
 
 export async function lookupBook(payload: BookLookupPayload) {

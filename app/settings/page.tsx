@@ -121,7 +121,7 @@ export default function SettingsPage() {
   if (!user) {
     return (
       <main>
-        <h1>Settings</h1>
+        <h1>Camp Setup</h1>
         <p>Please sign in first.</p>
         <Link href="/">
           <button type="button">Back to login</button>
@@ -135,7 +135,7 @@ export default function SettingsPage() {
       <div className="hero-panel">
         <div>
           <div className="kicker">Player Settings</div>
-          <h1>Settings</h1>
+          <h1>Camp Setup</h1>
           <p>Customize your Reading Quest experience.</p>
         </div>
         <HeroProfileActions profile={user} homeHref={user.isParent ? "/parent" : "/home"} />

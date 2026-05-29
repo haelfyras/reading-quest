@@ -309,7 +309,7 @@ export default function ProfilePage() {
       <div className="hero-panel app-hero">
         <div>
           <div className="kicker">Account</div>
-          <h1>Profile</h1>
+          <h1>Adventurer Card</h1>
           <p>Manage your account, avatar, theme, reading path, friends, and family connections.</p>
         </div>
         <HeroProfileActions profile={user} homeHref={homeHref} />

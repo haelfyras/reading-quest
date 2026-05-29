@@ -31,6 +31,7 @@ import {
 } from "../../lib/prizeData";
 import { refreshSharedProfileData } from "../../lib/supabase/profileData";
 import { isUuid } from "../../lib/ids";
+import { getChestImageSrc, getStoredThemeStyle, type ThemeStyle } from "../../lib/themeAssets";
 
 export default function PrizesPage() {
   const [user, setUser] = useState<Profile | null>(null);
@@ -44,11 +45,13 @@ export default function PrizesPage() {
   const [requestedPrizeName, setRequestedPrizeName] = useState("");
   const [requestedPrizeDescription, setRequestedPrizeDescription] = useState("");
   const [requestedPrizePoints, setRequestedPrizePoints] = useState(100);
+  const [themeStyle, setThemeStyle] = useState<ThemeStyle>("library");
 
   useEffect(() => {
     const loadInitialData = async () => {
       const currentUser = getCurrentProfile();
       setUser(currentUser);
+      setThemeStyle(getStoredThemeStyle());
 
       if (!currentUser) {
         return;
@@ -78,6 +81,13 @@ export default function PrizesPage() {
     };
 
     void loadInitialData();
+    const refreshTheme = () => setThemeStyle(getStoredThemeStyle());
+    window.addEventListener("storage", refreshTheme);
+    window.addEventListener("readingQuestProfileUpdated", refreshTheme);
+    return () => {
+      window.removeEventListener("storage", refreshTheme);
+      window.removeEventListener("readingQuestProfileUpdated", refreshTheme);
+    };
   }, []);
 
   const loadChildPrizes = async (childId: string) => {
@@ -413,6 +423,8 @@ export default function PrizesPage() {
   const homeHref = user.isParent ? "/parent" : "/home";
   const progressMax = Math.max(spendablePoints, ...prizes.map((prize) => prize.pointsRequired), 1);
   const fillPercent = Math.min(100, (spendablePoints / progressMax) * 100);
+  const sortedPrizes = [...prizes].sort((first, second) => first.pointsRequired - second.pointsRequired);
+  const nextPrize = sortedPrizes.find((prize) => prize.pointsRequired > spendablePoints);
   const requestedPrizes = prizes.filter((prize) => prize.claimed);
   const requestedPrizeIdeas = prizeAddRequests.filter(
     (request) => request.childId === selectedChildId && request.status === "pending",
@@ -613,16 +625,29 @@ export default function PrizesPage() {
       <div className="points-panel">
         <div className="points-panel-header">
           <div>
-            <h2>Prize Journey</h2>
-            <p>{spendablePoints} points available for prizes.</p>
+            <h2>Treasure Path</h2>
+            <p>
+              {spendablePoints} points available for prizes.
+              {nextPrize ? ` ${nextPrize.pointsRequired - spendablePoints} points to ${nextPrize.name}.` : " Every treasure is unlocked."}
+            </p>
           </div>
         </div>
-        <div className="progress-track compact-progress">
+        <div className="progress-track compact-progress treasure-track">
           <div className="progress-fill" style={{ width: `${fillPercent}%` }} />
         </div>
-        <div className="prize-milestone-list">
-          {prizes.map((prize) => (
-            <span key={prize.id}>{prize.name}: {prize.pointsRequired}</span>
+        <div className="prize-milestone-list treasure-milestones">
+          {sortedPrizes.map((prize) => (
+            <span
+              key={prize.id}
+              className={`${spendablePoints >= prize.pointsRequired ? "milestone-reached" : ""} ${nextPrize?.id === prize.id ? "next-milestone" : ""}`}
+            >
+              <img
+                className="treasure-chest-image small"
+                src={getChestImageSrc(themeStyle, spendablePoints >= prize.pointsRequired)}
+                alt=""
+              />
+              {prize.name}: {prize.pointsRequired}
+            </span>
           ))}
         </div>
       </div>
@@ -638,7 +663,12 @@ export default function PrizesPage() {
               key={prize.id}
               className={`prize-card ${isClaimed ? "claimed" : ""} ${isEligible ? "eligible" : ""}`}
             >
-              <div className="prize-icon">{prize.icon || "Prize"}</div>
+              <div className="prize-icon">
+                <img
+                  src={getChestImageSrc(themeStyle, isEligible)}
+                  alt={isEligible ? `${prize.name} unlocked` : `${prize.name} locked`}
+                />
+              </div>
               <h3>{prize.name}</h3>
               <p className="prize-description">{prize.description}</p>
               <div className="prize-points">{prize.pointsRequired} points required</div>

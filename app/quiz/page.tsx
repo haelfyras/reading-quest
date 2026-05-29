@@ -76,10 +76,22 @@ function formatBookLevel(level: BookLevel) {
 }
 
 function getQuizDifficultyLabel(level: typeof difficultyLevels[number]) {
-  if (level === "easy") return "Easy - Start Your Reading Quest";
-  if (level === "medium") return "Medium - Test Your Questing Skills";
-  return "Hard - Show Your Reading Quest Mastery";
+  if (level === "easy") return "Wanderer (Easy)";
+  if (level === "medium") return "Adventurer (Medium)";
+  return "QuestMaster (Hard)";
 }
+
+function getQuestionCategory(questionType?: QuestionType) {
+  if (!questionType) return "Story Recall";
+  if (["character", "setting", "object", "plot_event"].includes(questionType)) return "Story Recall";
+  if (["cause_effect", "problem_solution", "prediction_inference"].includes(questionType)) return "Detective Question";
+  if (["simple_motive", "character_motivation", "relationship", "character_arc"].includes(questionType)) return "Character Insight";
+  if (["theme", "symbolism", "moral_analysis", "tone_author_intent"].includes(questionType)) return "Theme Question";
+  return "Lore Question";
+}
+
+const correctPraise = ["Brilliant!", "Great questing!", "Excellent reading!"];
+const retryPraise = ["Not quite, but keep going.", "Good try. Look for the clue.", "Almost there. The story can help."];
 
 const quizIssueOptions: Array<{ value: QuizIssueReason; label: string }> = [
   { value: "impossible", label: "Impossible to answer" },
@@ -112,6 +124,8 @@ function QuizPageContent() {
   const [confirmedBook, setConfirmedBook] = useState<BookMatch | null>(null);
   const [bookOptions, setBookOptions] = useState<BookMatch[]>([]);
   const [isbn, setIsbn] = useState("");
+  const [publicationYear, setPublicationYear] = useState("");
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
   const [isCheckingBook, setIsCheckingBook] = useState(false);
   const [bookLookupMessage, setBookLookupMessage] = useState("");
   const [showIsbnFallback, setShowIsbnFallback] = useState(false);
@@ -339,6 +353,17 @@ function QuizPageContent() {
   const planQuizAvailability = user ? getPlanQuizAvailability(user) : null;
   const loadingSuggestion = user ? getBookRecommendations({ profile: user, limit: 1 }).suggestions[0] : "";
   const encouragementMessage = quizData ? getEncouragementMessage(score, maxScore, bookTitle) : "";
+  const currentCorrectStreak = quizData ? (() => {
+    let streak = 0;
+    for (let index = currentQuestion - 1; index >= 0; index -= 1) {
+      if (selectedAnswers[index] === quizData.questions[index]?.answerIndex) {
+        streak += 1;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  })() : 0;
 
   const checkFirstReaderStatus = async (book: BookMatch) => {
     if (!bookDifficultyCanonicalKey) return false;
@@ -386,6 +411,7 @@ function QuizPageContent() {
     setBookTitle(book.title);
     setBookAuthor(book.author === "Unknown author" ? "" : book.author);
     setIsbn(book.isbn ?? "");
+    setPublicationYear(book.year ? String(book.year) : "");
     setBookLevel(null);
     setBookDifficultyIndex(null);
     setBookDifficultyRatingId(null);
@@ -411,9 +437,10 @@ function QuizPageContent() {
     const payload = {
       bookTitle: bookTitle.trim(),
       author: bookAuthor.trim(),
-      isbn: isbn.trim(),
+      isbn: showAdvancedSearch ? isbn.trim() : "",
+      year: showAdvancedSearch ? publicationYear.trim() : "",
     };
-    if (!payload.bookTitle && !payload.author && !payload.isbn) {
+    if (!payload.bookTitle && !payload.author && !payload.isbn && !payload.year) {
       return null;
     }
     return payload;
@@ -438,10 +465,11 @@ function QuizPageContent() {
       setConfirmedBook(null);
       setBookOptions([]);
       setShowIsbnFallback(!payload.isbn);
+      if (!payload.isbn) setShowAdvancedSearch(true);
       setBookLookupMessage(
         payload.isbn
           ? "Sorry, we still could not find that book. Please try another book title."
-          : "We could not find that book. Try a title, author, ISBN, or another combination.",
+          : "We could not find that book from the title or author. Not seeing it? Try Advanced Search with an ISBN or publication year.",
       );
       return null;
     } catch (err) {
@@ -455,7 +483,7 @@ function QuizPageContent() {
   const handleCheckBook = () => {
     const payload = getBookLookupPayload();
     if (!payload) {
-      setError("Enter a title, author, or ISBN.");
+      setError("Enter a title or author to search. You can also open Advanced Search for ISBN or publication year.");
       return;
     }
     lookupBook(payload);
@@ -595,8 +623,8 @@ function QuizPageContent() {
   };
 
   const handleGenerate = async () => {
-    if (!bookTitle.trim() && !bookAuthor.trim() && !isbn.trim()) {
-      setError("Enter a title, author, or ISBN.");
+    if (!bookTitle.trim() && !bookAuthor.trim() && !(showAdvancedSearch && isbn.trim()) && !(showAdvancedSearch && publicationYear.trim())) {
+      setError("Enter a title or author to search. Advanced Search can use ISBN or publication year when needed.");
       return;
     }
 
@@ -882,7 +910,7 @@ function QuizPageContent() {
     <main>
       <div className="hero-panel">
         <div>
-          <div className="kicker">Quiz Challenge</div>
+          <div className="kicker">{user.isParent ? "Quiz Challenge" : "Reading Challenge"}</div>
           <h1>Reading Quest</h1>
           <p>Logged in as {user.name} - {getSpendablePoints(user)} points available</p>
           {isFriendlyChallenge ? (
@@ -904,9 +932,9 @@ function QuizPageContent() {
 
       {!quizData ? (
         <div className="quest-panel output">
-          <h2>Build Your Quiz</h2>
+          <h2>{user.isParent ? "Build Your Quiz" : "Build Your Quest"}</h2>
           <p>
-            Search by title, author, ISBN, or any combination. Choose the matching book, pick a difficulty, and start the challenge.
+            Start with a book title, author, or both. Choose the matching book, pick a path, and begin the challenge.
           </p>
 
           <div className="field">
@@ -949,28 +977,6 @@ function QuizPageContent() {
             />
           </div>
 
-          <div className="field">
-            <label htmlFor="isbn">ISBN</label>
-            <input
-              id="isbn"
-              value={isbn}
-              onChange={(event) => {
-                setIsbn(event.target.value);
-                resetBookLookupState();
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  handleCheckBook();
-                }
-              }}
-              placeholder="e.g. 9780064404990"
-            />
-            <p className="setting-description">
-              Optional. Look near the barcode on the back cover or inside the copyright page for a 10- or 13-digit ISBN.
-            </p>
-          </div>
-
           <div className="book-check-panel">
             <div className="button-row">
               <button
@@ -979,13 +985,75 @@ function QuizPageContent() {
                 onClick={handleCheckBook}
                 disabled={isCheckingBook || !getBookLookupPayload()}
               >
-                {isCheckingBook ? "Checking book..." : "Check book"}
+                {isCheckingBook ? "Searching..." : "Search the Library"}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setShowAdvancedSearch((current) => !current);
+                  setShowIsbnFallback(false);
+                  setBookLookupMessage("");
+                }}
+              >
+                {showAdvancedSearch ? "Hide Advanced Search" : "Not seeing it? Advanced Search"}
               </button>
             </div>
 
+            {showAdvancedSearch ? (
+              <div className="nested-section advanced-book-search">
+                <div>
+                  <h3>Advanced Search</h3>
+                  <p>Use these only when the title or author search does not find the right book.</p>
+                </div>
+                <div className="form-grid">
+                  <div className="field">
+                    <label htmlFor="isbn">ISBN</label>
+                    <input
+                      id="isbn"
+                      value={isbn}
+                      onChange={(event) => {
+                        setIsbn(event.target.value);
+                        resetBookLookupState();
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          handleCheckBook();
+                        }
+                      }}
+                      placeholder="e.g. 9780064404990"
+                    />
+                    <p className="setting-description">
+                      Look near the barcode on the back cover or inside the copyright page for a 10- or 13-digit ISBN.
+                    </p>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="publicationYear">Publication year</label>
+                    <input
+                      id="publicationYear"
+                      value={publicationYear}
+                      onChange={(event) => {
+                        setPublicationYear(event.target.value.replace(/[^\d]/g, "").slice(0, 4));
+                        resetBookLookupState();
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          handleCheckBook();
+                        }
+                      }}
+                      inputMode="numeric"
+                      placeholder="e.g. 1950"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             {confirmedBook ? (
               <div className="confirmed-book">
-                <strong>Using: {confirmedBook.title}</strong>
+                <strong>Adventure Found: {confirmedBook.title}</strong>
                 <span>
                   {confirmedBook.author}
                   {confirmedBook.year ? ` - ${confirmedBook.year}` : ""}
@@ -1018,7 +1086,7 @@ function QuizPageContent() {
 
             {showIsbnFallback ? (
               <div className="nested-section">
-                <p>ISBN is often the most accurate way to find an exact edition. Enter it above, then press Enter or Check book.</p>
+                <p>ISBN is often the most accurate way to find an exact edition. Open Advanced Search, enter the ISBN, then press Enter or Search the Library.</p>
                 <div className="button-row">
                   <button
                     type="button"
@@ -1027,6 +1095,7 @@ function QuizPageContent() {
                       setBookLookupMessage("Sorry, we still could not find that book. Please try another book title.");
                       setShowIsbnFallback(false);
                       setIsbn("");
+                      setPublicationYear("");
                     }}
                   >
                     Try another book
@@ -1054,7 +1123,7 @@ function QuizPageContent() {
           ) : null}
 
           <div className="field">
-            <label htmlFor="difficulty">Quiz Difficulty</label>
+            <label htmlFor="difficulty">{user.isParent ? "Quiz Difficulty" : "Challenge Path"}</label>
             <select id="difficulty" value={difficulty} onChange={(event) => setDifficulty(event.target.value as typeof difficultyLevels[number])}>
               {allowedDifficulties.map((level) => (
                 <option key={level} value={level}>
@@ -1066,11 +1135,11 @@ function QuizPageContent() {
               <p className="setting-description">
                 {formatBookLevel(bookLevel)} books can be tested on{" "}
                 {bookLevel === "beginner"
-                  ? "Easy"
+                  ? "Wanderer (Easy)"
                   : bookLevel === "intermediate"
-                    ? "Easy or Medium"
-                    : "Easy, Medium, or Hard"}
-                . Easy is a simple quest, Medium asks you to connect ideas, and Hard looks for the bigger meaning of the book.
+                    ? "Wanderer (Easy) or Adventurer (Medium)"
+                    : "Wanderer (Easy), Adventurer (Medium), or QuestMaster (Hard)"}
+                . Wanderer checks the story path, Adventurer asks you to connect clues, and QuestMaster looks for the bigger meaning of the book.
               </p>
             ) : confirmedBook ? (
               <p className="setting-description">Reading Quest will detect the book reading level after you confirm the book.</p>
@@ -1078,20 +1147,20 @@ function QuizPageContent() {
           </div>
 
           <button onClick={handleGenerate} disabled={isLoading || isDetectingLevel || isCheckingBook}>
-            {isLoading ? "Generating quiz..." : "Generate quiz"}
+            {isLoading ? "Preparing challenge..." : "Begin Challenge"}
           </button>
 
           {isLoading ? (
             <div className="quiz-loading-panel" role="status" aria-live="polite">
               <div className="quiz-loading-spinner" aria-hidden="true" />
               <div>
-                <strong>Building and checking your quiz...</strong>
+                <strong>Building and checking your challenge...</strong>
                 {isFirstReaderForBook ? (
-                  <p>You’re the first Reading Quest reader to quiz on this book! Good luck, and we’d love your feedback afterward!</p>
+                  <p>You&apos;re the first Reading Quest reader to challenge this book! Good luck, and we&apos;d love your feedback afterward!</p>
                 ) : (
                   <p>
-                    We are checking the questions and answers before the quiz starts.
-                    {loadingSuggestion ? ` After this, you might like ${loadingSuggestion}.` : " Keep a favorite book nearby in case you want to look back after the quiz."}
+                    We are checking the questions and answers before the challenge starts.
+                    {loadingSuggestion ? ` After this, you might like ${loadingSuggestion}.` : " Keep a favorite book nearby in case you want to look back after the challenge."}
                   </p>
                 )}
               </div>
@@ -1102,10 +1171,10 @@ function QuizPageContent() {
             <div className="nested-section plan-quiz-gate">
               <strong>
                 {planQuizAvailability.requiresAd
-                  ? "Free quiz unlock"
+                  ? "Free quest unlock"
                   : planQuizAvailability.tier === "plus"
-                    ? "Plus beta quiz limit"
-                    : "Beta quiz limit"}
+                    ? "Plus beta quest limit"
+                    : "Beta quest limit"}
               </strong>
               <p>{planQuizAvailability.message}</p>
               {planQuizAvailability.requiresAd ? (
@@ -1113,7 +1182,7 @@ function QuizPageContent() {
                   setAdUnlocked(true);
                   setError("");
                 }}>
-                  {adUnlocked ? "Ad unlock ready" : "Watch ad to unlock quiz"}
+                  {adUnlocked ? "Ad unlock ready" : "Watch ad to unlock quest"}
                 </button>
               ) : null}
             </div>
@@ -1131,8 +1200,8 @@ function QuizPageContent() {
             <div className="quiz-start-modal-shell" role="dialog" aria-modal="true" aria-labelledby="quiz-start-title">
               <div className="quiz-start-modal-scrim" />
               <section className="quiz-start-modal">
-                <div className="kicker">Quiz Ready</div>
-                <h2 id="quiz-start-title">Your quiz is about to begin</h2>
+                <div className="kicker">Challenge Ready</div>
+                <h2 id="quiz-start-title">Your quest is about to begin</h2>
                 <p>Get ready for {quizDisplayTotal} questions on {bookTitle}.</p>
                 <div className="quiz-countdown" aria-live="assertive">
                   {startCountdown > 0 ? startCountdown : "GO!"}
@@ -1145,6 +1214,9 @@ function QuizPageContent() {
           <div className="quiz-status">
             <span>Question {currentQuestion + 1} of {quizDisplayTotal}</span>
             <span>Correct answers: {score} / {maxScore}</span>
+            {currentCorrectStreak >= 3 ? (
+              <span className="knowledge-streak">Knowledge Streak! {currentCorrectStreak} correct in a row</span>
+            ) : null}
             {firstQuestionLoadMs !== null ? <span>First question ready in {(firstQuestionLoadMs / 1000).toFixed(1)}s</span> : null}
           </div>
           {isFillingQuiz || quizGenerationStatus ? (
@@ -1178,6 +1250,7 @@ function QuizPageContent() {
               </div>
             ) : (
               <>
+            <span className="question-category">{getQuestionCategory(quizData.questions[currentQuestion].questionType)}</span>
             <h3>{quizData.questions[currentQuestion].question}</h3>
             <div className="choice-grid">
               {quizData.questions[currentQuestion].choices.map((choice, index) => {
@@ -1205,16 +1278,16 @@ function QuizPageContent() {
             {selectedChoice !== null && quizData.questions[currentQuestion] ? (
               <div className="answer-feedback">
                 {selectedChoice === quizData.questions[currentQuestion].answerIndex ? (
-                  <p>Great job! That answer is correct.</p>
+                  <p className="correct-praise">{correctPraise[currentQuestion % correctPraise.length]} That answer is correct.</p>
                 ) : (
-                  <p>
-                    Good try. The story says the expected answer was "{quizData.questions[currentQuestion].choices[
+                  <p className="retry-praise">
+                    {retryPraise[currentQuestion % retryPraise.length]} The story says the expected answer was "{quizData.questions[currentQuestion].choices[
                       quizData.questions[currentQuestion].answerIndex
                     ]}". You can look back at the book and try again later.
                   </p>
                 )}
                 <button type="button" onClick={handleNext}>
-                  {currentQuestion + 1 === quizDisplayTotal ? "Finish quiz" : "Next question"}
+                  {currentQuestion + 1 === quizDisplayTotal ? "Finish Challenge" : "Next question"}
                 </button>
               </div>
             ) : null}
@@ -1224,8 +1297,8 @@ function QuizPageContent() {
 
       {completed ? (
         <div className="output">
-          <h2>Quiz complete!</h2>
-          <div className="success-box quiz-encouragement">
+          <h2>{score === maxScore ? "Book Mastered!" : "Challenge complete!"}</h2>
+          <div className="success-box quiz-encouragement quest-complete-celebration">
             <strong>{encouragementMessage}</strong>
           </div>
           <p>
@@ -1240,7 +1313,7 @@ function QuizPageContent() {
             {isFriendlyChallenge ? (
               <>Friendly challenge complete. No points were awarded to your account.</>
             ) : (
-              <>You earned <strong>{earnedPoints}</strong> new points. You now have <strong>{getSpendablePoints(user)}</strong> points available.</>
+              <>You earned <strong className="earned-points-pop">{earnedPoints}</strong> new points. You now have <strong>{getSpendablePoints(user)}</strong> points available.</>
             )}
           </p>
           {isFriendlyChallenge ? (
@@ -1258,8 +1331,8 @@ function QuizPageContent() {
           ) : null}
 
           <div className="quiz-review-summary">
-            <h3>Quiz Review</h3>
-            <p>Review each question, the answer choices, what you chose, and the answer the quiz expected.</p>
+            <h3>Challenge Review</h3>
+            <p>Open each story insight to review the choices, what you chose, and the answer the challenge expected.</p>
             {quizData?.questions.map((question, index) => {
               const chosenIndex = selectedAnswers[index] ?? -1;
               const chosenText = chosenIndex >= 0 ? question.choices[chosenIndex] : "No answer selected";
@@ -1267,16 +1340,17 @@ function QuizPageContent() {
               const wasCorrect = chosenIndex === question.answerIndex;
 
               return (
-                <div key={`${question.question}-${index}`} className="quiz-review-item">
+                <details key={`${question.question}-${index}`} className="quiz-review-item">
+                  <summary>Question {index + 1} {wasCorrect ? "Correct" : "Review"}</summary>
                   <div>
-                    <h4>Question {index + 1}</h4>
+                    <h4>{getQuestionCategory(question.questionType)}</h4>
                     <p>{question.question}</p>
                   </div>
                   <div className="quiz-review-answers">
                     <p><strong>Your answer:</strong> {chosenText}</p>
                     <p><strong>Expected answer:</strong> {correctText}</p>
                     <p><strong>Result:</strong> {wasCorrect ? "Correct" : "Incorrect"}</p>
-                    {question.explanation ? <p><strong>Quiz explanation:</strong> {question.explanation}</p> : null}
+                    {question.explanation ? <p><strong>Story Insight:</strong> {question.explanation}</p> : null}
                     <ul>
                       {question.choices.map((choice, choiceIndex) => (
                         <li key={`${choice}-${choiceIndex}`}>
@@ -1314,7 +1388,7 @@ function QuizPageContent() {
                       </div>
                     );
                   })()}
-                </div>
+                </details>
               );
             })}
           </div>
