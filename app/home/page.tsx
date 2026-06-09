@@ -59,7 +59,7 @@ const readingPathLabels = {
 };
 
 function getQuestActionLabel(profile: Profile) {
-  return profile.quizzes.length > 0 ? "Continue Your Reading Quest" : "Start Reading Quest";
+  return profile.quizzes.length > 0 ? "Take Another Book Quiz" : "Take Your First Book Quiz";
 }
 
 export default function HomePage() {
@@ -171,10 +171,7 @@ export default function HomePage() {
   const recommendationData = useMemo(() => buildRecommendations({ profile: currentUser, limit: 1 }), [currentUser]);
   const readingPath = currentUser?.readingPath ?? "explorer";
   const currentlyReading = currentUser?.readingNow?.[0] ?? recentTitle(currentUser);
-  const hasReadingInterests = Boolean(
-    currentUser?.favoriteBooks?.filter(Boolean).length ||
-    Object.values(currentUser?.readingPreferences ?? {}).some((value) => value.trim().length > 0),
-  );
+  const hasReadingInterests = Boolean(currentUser?.favoriteBooks?.filter(Boolean).length);
   const childSetupSteps: SetupStep[] = [
     {
       id: "account",
@@ -187,9 +184,9 @@ export default function HomePage() {
     {
       id: "books",
       title: "Tell us what you like",
-      description: "Add favorite books, or take the short interest quiz if you are still finding what you enjoy.",
+      description: "Add a few favorite books so Reading Quest can suggest better next reads.",
       href: "/my-books",
-      actionLabel: "Set up Book Bag",
+      actionLabel: "Set up My Books",
       complete: hasReadingInterests,
     },
     {
@@ -197,7 +194,7 @@ export default function HomePage() {
       title: "Read, then take a quiz",
       description: "Try a quiz on a book you have read, or use your suggestions to pick what to read next.",
       href: currentUser?.quizzes.length ? "/my-books" : "/quiz",
-      actionLabel: "Begin Quest",
+      actionLabel: "Take Book Quiz",
       complete: (currentUser?.quizzes.length ?? 0) > 0,
     },
     {
@@ -205,7 +202,7 @@ export default function HomePage() {
       title: "Check the prize path",
       description: "See what your points can earn. Ask a parent to sign up so they can update your prizes.",
       href: "/prizes",
-      actionLabel: "Open Treasure Chest",
+      actionLabel: "Open Rewards",
       complete: (currentUser?.quizzes.length ?? 0) > 0 && currentPoints > 0,
     },
   ];
@@ -226,11 +223,11 @@ export default function HomePage() {
     <main className="app-screen">
       <div className="hero-panel app-hero quest-hub-hero">
         <div className="quest-hub-copy">
-          <div className="kicker">Child Quest Hub</div>
+          <div className="kicker">Reader Home</div>
           <h1>Reading Quest</h1>
           <p>
             Welcome back, {currentUser.name}!<br />
-            You have {remainingQuizzes} {remainingQuizzes === 1 ? "quest" : "quests"} remaining today!
+            You have {remainingQuizzes} book {remainingQuizzes === 1 ? "quiz" : "quizzes"} available today.
           </p>
           <div className="quest-hero-metrics">
             <span className="streak-chip">
@@ -238,7 +235,7 @@ export default function HomePage() {
               {streak.activeDaysThisWeek} / {streak.goalDays} reading days
             </span>
             <span>{currentPoints} points ready</span>
-            <span>{currentRank ? `Rank #${currentRank}` : "Rank begins after your first quest"}</span>
+            <span>{currentUser.quizzes.length} book {currentUser.quizzes.length === 1 ? "quiz" : "quizzes"} finished</span>
           </div>
           <Link href="/quiz">
             <button type="button" className="primary-action quest-cta">{questActionLabel}</button>
@@ -251,8 +248,16 @@ export default function HomePage() {
         <div className="mascot-callout">
           <img src="/avatars/tassel.png" alt="" />
           <div>
-            <h2 id="quest-now-heading">Your Next Adventure</h2>
-            <p>{currentlyReading ? `Keep going with ${currentlyReading}.` : "Pick a book you have read, then begin your first challenge."}</p>
+            <h2 id="quest-now-heading">Your Reading Plan</h2>
+            <p>{currentlyReading ? `Keep reading ${currentlyReading}, or take a quiz when you are ready.` : "Add a book you are reading, then take a quiz when you finish."}</p>
+            <div className="button-row">
+              <Link href="/my-books">
+                <button type="button" className="secondary">Open My Books</button>
+              </Link>
+              <Link href="/quiz">
+                <button type="button">Take Book Quiz</button>
+              </Link>
+            </div>
           </div>
         </div>
         <div className="next-reward-card">
@@ -268,7 +273,7 @@ export default function HomePage() {
           </div>
         </div>
         <div className="suggestion-card adventure-found-card">
-          <strong>Suggested Next Read</strong>
+          <strong>Suggested Book</strong>
           <span>{recommendationData.suggestions[0] ?? "Add favorite books to unlock better picks."}</span>
           {recommendationData.suggestions[0] ? <small>{recommendationData.reasons[recommendationData.suggestions[0]]}</small> : null}
         </div>
@@ -277,14 +282,14 @@ export default function HomePage() {
       <section className="home-section points-panel home-prize-journey" aria-labelledby="prize-journey-heading">
         <div className="points-panel-header">
           <div>
-            <h2 id="prize-journey-heading">Treasure Path</h2>
+            <h2 id="prize-journey-heading">Reward Progress</h2>
             <p>
               {currentPoints} points available
               {nextPrizeGoal ? ` - ${pointsToNextPrize} points to ${nextPrizeGoal.name}` : " - all prize goals reached"}
             </p>
           </div>
           <Link href="/prizes">
-            <button type="button" className="secondary">Treasure Chest</button>
+            <button type="button" className="secondary">Open Rewards</button>
           </Link>
         </div>
         <div
@@ -313,31 +318,31 @@ export default function HomePage() {
           ))}
         </div>
         <p className="setting-description">
-          {reachedPrizeCount} of {sortedPrizeGoals.length} treasure goals reached.
+          {reachedPrizeCount} of {sortedPrizeGoals.length} reward goals reached.
         </p>
       </section>
 
       <div className="home-accordion-stack">
         {!childSetupSteps.every((step) => step.complete) ? (
           <details className="home-section quest-accordion" open>
-            <summary>Suggested Setup Path</summary>
+            <summary>Quick Setup</summary>
             <SetupGuide
-              title="Set Up Your Reading Quest"
-              description="Follow these steps in order for the smoothest start, or jump around whenever you already know what you want to do."
+              title="Set Up Your Reading"
+              description="These steps help Reading Quest suggest better books and quizzes."
               steps={childSetupSteps}
             />
           </details>
         ) : null}
 
         <details className="home-section quest-accordion">
-          <summary>Reading Journey</summary>
+          <summary>Learning Path</summary>
           <div className="section-header-row">
             <div>
               <h2 id="path-heading">Reading Path</h2>
               <p>{readingPathLabels[readingPath]} path is active.</p>
             </div>
             <Link href="/my-books">
-              <button type="button" className="secondary">Book Bag</button>
+              <button type="button" className="secondary">My Books</button>
             </Link>
           </div>
           <div className="path-steps adventure-path-steps">
@@ -347,7 +352,7 @@ export default function HomePage() {
           </div>
           <div className={`path-step ${currentUser.quizzes.length ? "done" : ""}`}>
             <strong>Challenge</strong>
-            <span>{currentUser.quizzes.length ? `${currentUser.quizzes.length} completed` : "Begin your first quest"}</span>
+            <span>{currentUser.quizzes.length ? `${currentUser.quizzes.length} completed` : "Take your first book quiz"}</span>
           </div>
           <div className={`path-step ${currentPoints > 0 ? "done" : ""}`}>
             <strong>Earn</strong>
@@ -368,7 +373,7 @@ export default function HomePage() {
         </details>
 
         <details className="home-section quest-accordion">
-          <summary>Stats</summary>
+          <summary>Progress</summary>
           <div className="hero-stats">
             <div className="stat-tile"><span>Available points</span><strong>{currentPoints}</strong></div>
             <div className="stat-tile"><span>Lifetime earned</span><strong>{lifetimePoints}</strong></div>
@@ -394,11 +399,11 @@ export default function HomePage() {
         </details>
 
         <details className="home-section quest-accordion">
-          <summary>Hall of Legends</summary>
+          <summary>Leaderboard</summary>
           <div className="section-header-row">
             <div>
-              <h2 id="leaderboard-heading">Hall of Legends</h2>
-              <p>Your rank on the children leaderboard.</p>
+              <h2 id="leaderboard-heading">Leaderboard</h2>
+              <p>Your reader rank. Personal progress matters most.</p>
             </div>
             <Link href="/leaderboards">
               <button type="button" className="secondary">View all</button>
@@ -420,10 +425,11 @@ export default function HomePage() {
         </details>
 
         <details className="home-section quest-accordion">
-          <summary>Library Quest</summary>
-          <h2 id="library-note-heading">Library Quest</h2>
+          <summary>Library Help</summary>
+          <h2 id="library-note-heading">Library Help</h2>
           <p><strong>{childLibraryMessage}</strong></p>
           <p>Local libraries are a great way to learn more and earn more. Library books, audiobooks, ebooks, read-aloud books, and borrowed books all count in Reading Quest.</p>
+          <p>Ask your parents to turn on location settings to find your nearest library!</p>
         </details>
 
         <details className="home-section quest-accordion">

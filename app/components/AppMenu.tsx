@@ -16,7 +16,22 @@ import { readPrizeAddRequests, readPrizes } from "../../lib/prizeData";
 import { signOutSupabase } from "../../lib/supabase/auth";
 import { isUuid } from "../../lib/ids";
 
-const primaryLinks = [
+const childMainLinks = [
+  { href: "/my-books", label: "My Books" },
+  { href: "/quiz", label: "Take Book Quiz" },
+  { href: "/prizes", label: "Rewards" },
+  { href: "/badges", label: "Badges" },
+];
+
+const childMoreLinks = [
+  { href: "/leaderboards", label: "Leaderboard" },
+  { href: "/friends", label: "Friends" },
+  { href: "/profile", label: "Profile" },
+  { href: "/settings", label: "Settings" },
+  { href: "/faq", label: "Help" },
+];
+
+const parentPrimaryLinks = [
   { href: "/my-books", label: "Book Bag" },
   { href: "/leaderboards", label: "Hall of Legends" },
   { href: "/prizes", label: "Treasure Chest" },
@@ -24,16 +39,16 @@ const primaryLinks = [
   { href: "/badges", label: "Treasure Trove" },
 ];
 
-const supportLinks = [
+const parentSupportLinks = [
   { href: "/faq", label: "Guidebook" },
   { href: "/settings", label: "Camp Setup" },
   { href: "/profile", label: "Adventurer Card" },
 ];
 
 function getQuestActionLabel(profile: Profile | null) {
-  if (!profile) return "Begin Quest";
+  if (!profile) return "Take Book Quiz";
   if (profile.isParent) return "Take a Quiz";
-  return profile.quizzes.length > 0 ? "Continue Quest" : "Start Reading Quest";
+  return profile.quizzes.length > 0 ? "Continue Reading Quiz" : "Take Book Quiz";
 }
 
 const notificationRelevantPaths = new Set(["/home", "/parent", "/profile", "/prizes"]);
@@ -183,18 +198,34 @@ export default function AppMenu() {
   const navGroups = useMemo(() => {
     if (!profile) return [];
 
+    if (!profile.isParent) {
+      return [
+        {
+          label: "Read",
+          links: [
+            { href: "/home", label: "Home" },
+            ...childMainLinks,
+          ],
+        },
+        {
+          label: "More",
+          links: childMoreLinks,
+        },
+      ];
+    }
+
     return [
       {
         label: "Main",
         links: [
           { href: profile.isParent ? "/parent" : "/home", label: profile.isParent ? "Parent Hub" : "Quest Hub" },
           { href: "/quiz", label: profile.isParent ? "Take a Quiz" : "Begin Quest" },
-          ...primaryLinks,
+          ...parentPrimaryLinks,
         ],
       },
       {
         label: "Support",
-        links: supportLinks,
+        links: parentSupportLinks,
       },
     ];
   }, [profile]);

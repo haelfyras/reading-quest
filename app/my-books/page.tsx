@@ -19,23 +19,28 @@ import {
 import { getBookRecommendations } from "../../lib/recommendations";
 import type { BookMatch } from "../../lib/books";
 import { lookupBook as lookupBookFromApi, type BookLookupPayload } from "../../lib/bookClient";
+import {
+  buildBookMeta,
+  getProfileBookMetadata,
+  normalizeBookKey,
+  withBookMetadata,
+  type BookMetadataMap,
+  type StoredBookMeta,
+} from "../../lib/bookMetadata";
+import { emptyReadingPreferences, preferencePrompts, type PreferenceKey } from "../../lib/readingPreferences";
 import { getHotStreakImageSrc, getShelfImageSrc, getStoredThemeStyle, type ThemeStyle } from "../../lib/themeAssets";
 
 type BookShelfTarget = "readLibrary" | "currentlyReading" | "wantToRead" | "favorites";
-
-type StoredBookMeta = {
-  title: string;
-  author?: string;
-  coverUrl?: string;
-  isbn?: string;
-  completedAt?: string;
-};
+type ShelfView = "reading" | "ready" | "want" | "finished" | "favorites";
 
 const MAX_FAVORITES = 5;
-
-function normalizeBookKey(title: string) {
-  return title.trim().toLowerCase();
-}
+const shelfViews: Array<{ id: ShelfView; label: string }> = [
+  { id: "reading", label: "Reading Now" },
+  { id: "ready", label: "Ready for Quiz" },
+  { id: "want", label: "Want To Read" },
+  { id: "finished", label: "Finished" },
+  { id: "favorites", label: "Favorites" },
+];
 
 function getBookMetaStorageKey(profileId: string) {
   return `readingQuestBookMeta_${profileId}`;
@@ -64,15 +69,6 @@ function writeJson<T>(key: string, value: T) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-function buildBookMeta(book: BookMatch): StoredBookMeta {
-  return {
-    title: book.title,
-    author: book.author === "Unknown author" ? "" : book.author,
-    coverUrl: book.coverUrl,
-    isbn: book.isbn,
-  };
-}
-
 function findLatestQuiz(profile: Profile, title: string) {
   const key = normalizeBookKey(title);
   return profile.quizzes
@@ -93,24 +89,36 @@ function getRatingForBook(title: string) {
 }
 
 function BookCover({ meta, title }: { meta?: StoredBookMeta; title: string }) {
-  if (meta?.coverUrl) {
-    return <img className="shelf-book-cover" src={meta.coverUrl} alt="" />;
+  const [coverFailed, setCoverFailed] = useState(false);
+  if (meta?.coverUrl && !coverFailed) {
+    return <img className="shelf-book-cover" src={meta.coverUrl} alt="" onError={() => setCoverFailed(true)} />;
   }
 
-  const initials = title
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase())
-    .join("");
+  return (
+    <div className="shelf-book-cover generated-cover" aria-label={`Generated cover for ${title}`}>
+      <span>{title}</span>
+      {meta?.author ? <small>{meta.author}</small> : null}
+    </div>
+  );
+}
 
-  return <div className="shelf-book-cover placeholder" aria-hidden="true">{initials || "RQ"}</div>;
+function BookOptionCover({ book }: { book: BookMatch }) {
+  const [coverFailed, setCoverFailed] = useState(false);
+  if (book.coverUrl && !coverFailed) {
+    return <img className="book-cover" src={book.coverUrl} alt="" onError={() => setCoverFailed(true)} />;
+  }
+
+  return (
+    <span className="book-cover-placeholder generated-option-cover">
+      <span>{book.title}</span>
+    </span>
+  );
 }
 
 export default function MyBooksPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
-  const [bookMeta, setBookMeta] = useState<Record<string, StoredBookMeta>>({});
+  const [bookMeta, setBookMeta] = useState<BookMetadataMap>({});
   const [readLibrary, setReadLibrary] = useState<string[]>([]);
   const [wantToRead, setWantToRead] = useState<string[]>([]);
   const [favoriteSaveMessage, setFavoriteSaveMessage] = useState("");
@@ -125,6 +133,9 @@ export default function MyBooksPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [selectedBookTitle, setSelectedBookTitle] = useState<string | null>(null);
   const [themeStyle, setThemeStyle] = useState<ThemeStyle>("library");
+  const [activeShelf, setActiveShelf] = useState<ShelfView>("reading");
+  const [readingPreferences, setReadingPreferences] = useState(emptyReadingPreferences);
+  const [preferenceSaveMessage, setPreferenceSaveMessage] = useState("");
 
   useEffect(() => {
     const profile = getCurrentProfile();
@@ -135,9 +146,23 @@ export default function MyBooksPage() {
 
     setCurrentUser(profile);
     setThemeStyle(getStoredThemeStyle());
-    setBookMeta(readJson<Record<string, StoredBookMeta>>(getBookMetaStorageKey(profile.id), {}));
+    const storedMeta = readJson<BookMetadataMap>(getBookMetaStorageKey(profile.id), {});
+    const profileMeta = getProfileBookMetadata(profile);
+    const mergedMeta = { ...profileMeta, ...storedMeta };
+    setBookMeta(mergedMeta);
+    if (Object.keys(storedMeta).length > 0) {
+      const updated = updateProfile({
+        ...profile,
+        bookAccess: withBookMetadata(profile.bookAccess, mergedMeta),
+      });
+      setCurrentUser(updated);
+    }
     setReadLibrary(readJson<string[]>(getReadLibraryStorageKey(profile.id), []));
     setWantToRead(readJson<string[]>(getWantToReadStorageKey(profile.id), []));
+    setReadingPreferences({
+      ...emptyReadingPreferences,
+      ...(profile.readingPreferences ?? {}),
+    });
   }, [router]);
 
   useEffect(() => {
@@ -186,10 +211,16 @@ export default function MyBooksPage() {
     return readLibrary.filter((title) => !conqueredBookKeys.has(normalizeBookKey(title)));
   }, [conqueredBookKeys, readLibrary]);
 
-  const persistBookMeta = (nextMeta: Record<string, StoredBookMeta>) => {
-    if (!currentUser) return;
+  const persistBookMeta = (nextMeta: BookMetadataMap, profileOverride = currentUser) => {
+    if (!profileOverride) return null;
     setBookMeta(nextMeta);
-    writeJson(getBookMetaStorageKey(currentUser.id), nextMeta);
+    writeJson(getBookMetaStorageKey(profileOverride.id), nextMeta);
+    const updated = updateProfile({
+      ...profileOverride,
+      bookAccess: withBookMetadata(profileOverride.bookAccess, nextMeta),
+    });
+    setCurrentUser(updated);
+    return updated;
   };
 
   const persistWantToRead = (nextBooks: string[]) => {
@@ -206,11 +237,11 @@ export default function MyBooksPage() {
     writeJson(getReadLibraryStorageKey(currentUser.id), deduped);
   };
 
-  const saveMetaForBook = (book: BookMatch) => {
-    persistBookMeta({
+  const saveMetaForBook = (book: BookMatch, profileOverride = currentUser) => {
+    return persistBookMeta({
       ...bookMeta,
       [normalizeBookKey(book.title)]: buildBookMeta(book),
-    });
+    }, profileOverride);
   };
 
   const openSearchModal = (target: BookShelfTarget) => {
@@ -265,7 +296,7 @@ export default function MyBooksPage() {
 
   const addBookToShelf = (book: BookMatch, target: BookShelfTarget = modalTarget ?? "currentlyReading") => {
     if (!currentUser) return;
-    saveMetaForBook(book);
+    const profileWithMeta = saveMetaForBook(book, currentUser) ?? currentUser;
 
     if (target === "readLibrary") {
       persistReadLibrary([book.title, ...readLibrary]);
@@ -273,7 +304,7 @@ export default function MyBooksPage() {
     }
 
     if (target === "currentlyReading") {
-      const updated = saveReadingNow(currentUser, [book.title, ...currentlyReading]);
+      const updated = saveReadingNow(profileWithMeta, [book.title, ...currentlyReading]);
       if (updated) {
         setCurrentUser(updated);
         setShelfMessage(`${book.title} added to Currently Reading.`);
@@ -286,12 +317,16 @@ export default function MyBooksPage() {
     }
 
     if (target === "favorites") {
-      if (favoriteBooks.some((title) => normalizeBookKey(title) === normalizeBookKey(book.title))) {
+      const latestProfile = getCurrentProfile() ?? profileWithMeta;
+      const latestFavorites = latestProfile.favoriteBooks ?? [];
+      const alreadyFavorite = latestFavorites.some((title) => normalizeBookKey(title) === normalizeBookKey(book.title));
+
+      if (alreadyFavorite) {
         setFavoriteSaveMessage(`${book.title} is already on your Favorite Shelf.`);
-      } else if (favoriteBooks.length >= MAX_FAVORITES) {
+      } else if (latestFavorites.length >= MAX_FAVORITES) {
         setFavoriteSaveMessage(`Favorite Shelf is full. Remove one book before adding ${book.title}.`);
       } else {
-        const updated = updateProfile({ ...currentUser, favoriteBooks: [...favoriteBooks, book.title] });
+        const updated = updateProfile({ ...latestProfile, favoriteBooks: [...latestFavorites, book.title] });
         setCurrentUser(updated);
         setFavoriteSaveMessage(`${book.title} added to Favorite Shelf.`);
       }
@@ -315,7 +350,7 @@ export default function MyBooksPage() {
     if (updated) {
       setCurrentUser(updated);
       persistReadLibrary([title, ...readLibrary]);
-      setShelfMessage(`${title} moved to My Library. Begin a quest when you are ready to conquer it.`);
+      setShelfMessage(`${title} moved to Ready for Quiz. Take a book quiz when you finish reading.`);
     }
   };
 
@@ -327,6 +362,43 @@ export default function MyBooksPage() {
     });
     setCurrentUser(updated);
     setFavoriteSaveMessage(`${title} removed from Favorite Shelf.`);
+  };
+
+  const updateReadingPreference = (key: PreferenceKey, value: string) => {
+    setReadingPreferences((current) => ({ ...current, [key]: value }));
+    setPreferenceSaveMessage("");
+  };
+
+  const addPreferenceSuggestion = (key: PreferenceKey, suggestion: string) => {
+    setReadingPreferences((current) => {
+      const existing = current[key].split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
+      if (existing.includes(suggestion.toLowerCase())) {
+        return current;
+      }
+      return {
+        ...current,
+        [key]: current[key].trim() ? `${current[key].trim()}, ${suggestion}` : suggestion,
+      };
+    });
+    setPreferenceSaveMessage("");
+  };
+
+  const saveReadingPreferences = () => {
+    if (!currentUser) return;
+    const updated = updateProfile({
+      ...currentUser,
+      readingPreferences: {
+        ...emptyReadingPreferences,
+        storyKinds: readingPreferences.storyKinds.trim(),
+        characters: readingPreferences.characters.trim(),
+        places: readingPreferences.places.trim(),
+        feelings: readingPreferences.feelings.trim(),
+        topics: readingPreferences.topics.trim(),
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    setCurrentUser(updated);
+    setPreferenceSaveMessage("Advanced book preferences saved.");
   };
 
   const startReading = (title: string) => {
@@ -363,17 +435,32 @@ export default function MyBooksPage() {
       <div className="hero-panel app-hero">
         <div>
           <div className="kicker">Personal Library</div>
-          <h1>Book Bag</h1>
-          <p>Track your adventures, favorite stories, and books you&apos;ve conquered.</p>
+          <h1>My Books</h1>
+          <p>Keep track of what you are reading, what is ready for a quiz, and what you have finished.</p>
         </div>
         <HeroProfileActions profile={currentUser} homeHref={homeHref} />
       </div>
 
+      <nav className="shelf-tabs" aria-label="My Books shelves">
+        {shelfViews.map((view) => (
+          <button
+            key={view.id}
+            type="button"
+            className={activeShelf === view.id ? "selected" : "secondary"}
+            aria-pressed={activeShelf === view.id}
+            onClick={() => setActiveShelf(view.id)}
+          >
+            {view.label}
+          </button>
+        ))}
+      </nav>
+
+      {activeShelf === "ready" ? (
       <section className="home-section library-section" aria-labelledby="my-library-heading">
         <div className="section-header-row">
           <div>
-            <h2 id="my-library-heading">My Library</h2>
-            <p>Books you have read and are ready to challenge.</p>
+            <h2 id="my-library-heading">Ready for Quiz</h2>
+            <p>Books you have read and are ready to answer questions about.</p>
           </div>
           <button type="button" onClick={() => openSearchModal("readLibrary")}>Add Book</button>
         </div>
@@ -389,11 +476,11 @@ export default function MyBooksPage() {
             </div>
           </article>
           <article className="library-stat-card">
-            <strong>Books Conquered</strong>
+            <strong>Finished Books</strong>
             <span>{finishedBooks.length}</span>
           </article>
           <article className="library-stat-card">
-            <strong>Quests Passed</strong>
+            <strong>Quizzes Passed</strong>
             <span>{totalPassed}</span>
           </article>
           <article className="library-stat-card">
@@ -410,12 +497,12 @@ export default function MyBooksPage() {
                   <BookCover title={title} meta={meta} />
                   <div>
                     <h3>{title}</h3>
-                    <p>{meta?.author || "Read and ready for a quest"}</p>
-                    <span className="badge-pill">Ready to conquer</span>
+                    <p>{meta?.author || "Read and ready for a quiz"}</p>
+                    <span className="badge-pill">Ready for quiz</span>
                   </div>
                   <div className="button-row">
                     <Link href={`/quiz?bookTitle=${encodeURIComponent(title)}`}>
-                      <button type="button">Begin Quest</button>
+                      <button type="button">Take Book Quiz</button>
                     </Link>
                     <button type="button" className="secondary danger-button" onClick={() => removeFromLibrary(title)}>Remove</button>
                   </div>
@@ -425,12 +512,14 @@ export default function MyBooksPage() {
           </div>
         ) : (
           <div className="empty-library-shelf">
-            <p>Add books you have already read. When you are ready, begin a quest to move them into Books Conquered.</p>
+            <p>Add books you have already read. When you are ready, take a quiz to move them into Finished Books.</p>
             <button type="button" onClick={() => openSearchModal("readLibrary")}>Add Book</button>
           </div>
         )}
       </section>
+      ) : null}
 
+      {activeShelf === "reading" ? (
       <section className="home-section library-section" aria-labelledby="currently-reading-heading">
         <div className="section-header-row">
           <div>
@@ -453,7 +542,7 @@ export default function MyBooksPage() {
                   </div>
                   <div className="button-row">
                     <Link href={`/quiz?bookTitle=${encodeURIComponent(title)}`}>
-                      <button type="button">Begin Quest</button>
+                      <button type="button">Take Book Quiz</button>
                     </Link>
                     <button type="button" className="secondary" onClick={() => moveToLibrary(title)}>Move to Library</button>
                     <button type="button" className="secondary danger-button" onClick={() => removeCurrentlyReading(title)}>Remove</button>
@@ -469,7 +558,9 @@ export default function MyBooksPage() {
           </div>
         )}
       </section>
+      ) : null}
 
+      {activeShelf === "favorites" ? (
       <section
         className="home-section library-section favorite-shelf-section"
         aria-labelledby="favorite-shelf-heading"
@@ -499,15 +590,60 @@ export default function MyBooksPage() {
         ) : (
           <p className="favorite-shelf-empty">No favorites yet. Add one when a book earns a special place on your shelf.</p>
         )}
-        <button type="button" className="secondary favorite-shelf-action" disabled={favoriteBooks.length >= MAX_FAVORITES} onClick={() => openSearchModal("favorites")}>
-          Add Favorite
-        </button>
+        <div className="favorite-shelf-controls">
+          <button type="button" className="secondary favorite-shelf-action" disabled={favoriteBooks.length >= MAX_FAVORITES} onClick={() => openSearchModal("favorites")}>
+            Add Favorite
+          </button>
+          <details className="favorite-advanced-options">
+            <summary>Advanced Options</summary>
+            <div className="favorite-advanced-content">
+              <h3>Favorite Style</h3>
+              <p>Optional details for better book suggestions. Favorite books are enough to get started.</p>
+              <div className="preference-grid">
+                {preferencePrompts.map((prompt) => (
+                  <div key={prompt.key} className="field preference-question">
+                    <label htmlFor={`my-books-preference-${prompt.key}`}>{prompt.label}</label>
+                    <input
+                      id={`my-books-preference-${prompt.key}`}
+                      value={readingPreferences[prompt.key]}
+                      onChange={(event) => updateReadingPreference(prompt.key, event.target.value)}
+                      placeholder={prompt.placeholder}
+                      list={`my-books-preference-options-${prompt.key}`}
+                    />
+                    <datalist id={`my-books-preference-options-${prompt.key}`}>
+                      {prompt.suggestions.map((suggestion) => (
+                        <option key={suggestion} value={suggestion} />
+                      ))}
+                    </datalist>
+                    <div className="preference-suggestions" aria-label={`Suggestions for ${prompt.label}`}>
+                      {prompt.suggestions.map((suggestion) => (
+                        <button
+                          key={suggestion}
+                          type="button"
+                          className="preference-chip"
+                          onClick={() => addPreferenceSuggestion(prompt.key, suggestion)}
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button type="button" className="secondary" onClick={saveReadingPreferences}>Save Advanced Options</button>
+              {preferenceSaveMessage ? <div className="success-box">{preferenceSaveMessage}</div> : null}
+            </div>
+          </details>
+        </div>
       </section>
+      ) : null}
 
+      {activeShelf === "want" ? (
+      <>
       <section className="home-section library-section" aria-labelledby="recommendations-heading">
         <div className="section-header-row">
           <div>
-            <h2 id="recommendations-heading">Quest Recommendations</h2>
+            <h2 id="recommendations-heading">Book Suggestions</h2>
             <p>{recommendationData.summary}</p>
           </div>
           <button type="button" className="secondary" onClick={() => setSuggestionRotation((current) => current + 1)}>
@@ -559,10 +695,13 @@ export default function MyBooksPage() {
           <p>Your future adventure shelf is empty.</p>
         )}
       </section>
+      </>
+      ) : null}
 
+      {activeShelf === "finished" ? (
       <section className="home-section library-section" aria-labelledby="books-conquered-heading">
-        <h2 id="books-conquered-heading">Books Conquered</h2>
-        <p>Books move here after you complete a reading quest.</p>
+        <h2 id="books-conquered-heading">Finished Books</h2>
+        <p>Books move here after you complete a book quiz.</p>
         {finishedBooks.length > 0 ? (
           <div className="book-shelf-grid">
             {finishedBooks.map((quiz) => {
@@ -573,7 +712,7 @@ export default function MyBooksPage() {
                   <BookCover title={quiz.bookTitle} meta={meta} />
                   <span>
                     <strong>{quiz.bookTitle}</strong>
-                    <small>Conquered {formatDate(quiz.date)}</small>
+                    <small>Finished {formatDate(quiz.date)}</small>
                     <small>Score {quiz.score} / {quiz.maxScore}</small>
                     <small>{rating ? `${rating} star rating` : "No rating yet"}</small>
                   </span>
@@ -582,17 +721,17 @@ export default function MyBooksPage() {
             })}
           </div>
         ) : (
-          <p>Begin a quest from My Library to start your conquered bookshelf.</p>
+          <p>Take a quiz from Ready for Quiz to start your finished bookshelf.</p>
         )}
         <div className="achievement-grid">
           <article className="achievement-card earned">
             <div className="achievement-medal" aria-hidden="true">Book</div>
-            <h3>{finishedBooks.length} Books Conquered</h3>
-            <p>Total completed books in your adventure journal.</p>
+            <h3>{finishedBooks.length} Finished Books</h3>
+            <p>Total books completed in your reading journal.</p>
           </article>
           <article className="achievement-card earned">
             <div className="achievement-medal" aria-hidden="true">Quest</div>
-            <h3>{currentUser.quizzes.length} Quests Taken</h3>
+            <h3>{currentUser.quizzes.length} Book Quizzes</h3>
             <p>{totalPassed} passed so far.</p>
           </article>
           <article className="achievement-card earned">
@@ -609,6 +748,7 @@ export default function MyBooksPage() {
           <p>Achievements will appear as you complete more reading quests.</p>
         )}
       </section>
+      ) : null}
 
       {modalTarget ? (
         <div className="book-search-modal-shell" role="dialog" aria-modal="true" aria-labelledby="book-search-title">
@@ -659,7 +799,7 @@ export default function MyBooksPage() {
               <div className="book-option-grid">
                 {searchOptions.map((book) => (
                   <button key={book.id} type="button" className="book-option" onClick={() => addBookToShelf(book)}>
-                    {book.coverUrl ? <img className="book-cover" src={book.coverUrl} alt="" /> : <span className="book-cover-placeholder">No cover</span>}
+                    <BookOptionCover book={book} />
                     <span>
                       <strong>{book.title}</strong>
                       <span>{book.author}{book.year ? ` - ${book.year}` : ""}</span>

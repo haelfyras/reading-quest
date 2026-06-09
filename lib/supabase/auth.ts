@@ -210,6 +210,65 @@ export async function signInParentWithSupabase(email: string, password: string) 
   return refreshSharedProfileData(localProfile.id).then((data) => data.profile).catch(() => localProfile);
 }
 
+export async function signInParentWithGoogle() {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Google sign-in is not configured yet.");
+  }
+
+  const supabase = createBrowserSupabaseClient();
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: getAuthRedirectUrl(),
+      queryParams: {
+        access_type: "offline",
+        prompt: "select_account",
+      },
+    },
+  });
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function completeParentOAuthSignIn() {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  const supabase = createBrowserSupabaseClient();
+  const { data, error } = await supabase.auth.getSession();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data.session?.access_token) {
+    return null;
+  }
+
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError) {
+    throw userError;
+  }
+
+  const user = userData.user;
+  const metadataName = typeof user?.user_metadata?.real_name === "string"
+    ? user.user_metadata.real_name
+    : typeof user?.user_metadata?.display_name === "string"
+      ? user.user_metadata.display_name
+      : typeof user?.user_metadata?.full_name === "string"
+        ? user.user_metadata.full_name
+        : typeof user?.user_metadata?.name === "string"
+          ? user.user_metadata.name
+          : user?.email?.split("@")[0];
+
+  const dbProfile = await ensureParentProfile(data.session.access_token, metadataName);
+  const localProfile = saveLocalMirror(mapDbProfileToLocalProfile(dbProfile));
+  return refreshSharedProfileData(localProfile.id).then((data) => data.profile).catch(() => localProfile);
+}
+
 export async function createParentWithSupabase(details: {
   email: string;
   password: string;

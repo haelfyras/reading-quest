@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { defaultAvatarId, getAvatarOption } from "../../lib/avatarOptions";
 import type { BookMatch } from "../../lib/books";
 import { lookupBook as lookupBookFromApi, type BookLookupPayload } from "../../lib/bookClient";
-import { emptyReadingPreferences, preferencePrompts, type PreferenceKey } from "../../lib/readingPreferences";
+import { buildBookMeta, getProfileBookMetadata, normalizeBookKey, withBookMetadata } from "../../lib/bookMetadata";
 import { getCurrentProfile, Profile, setCurrentUserId, updateProfile } from "../../lib/user";
 import AvatarPicker from "./AvatarPicker";
 
@@ -19,6 +19,19 @@ export function markProfileForOnboarding(profileId: string) {
   window.dispatchEvent(new Event("readingQuestOnboardingRequested"));
 }
 
+function BookOptionCover({ book }: { book: BookMatch }) {
+  const [coverFailed, setCoverFailed] = useState(false);
+  if (book.coverUrl && !coverFailed) {
+    return <img className="book-cover" src={book.coverUrl} alt="" onError={() => setCoverFailed(true)} />;
+  }
+
+  return (
+    <span className="book-cover-placeholder generated-option-cover">
+      <span>{book.title}</span>
+    </span>
+  );
+}
+
 export default function OnboardingModal() {
   const pathname = usePathname();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -30,7 +43,6 @@ export default function OnboardingModal() {
   const [favoriteLookupMessages, setFavoriteLookupMessages] = useState(["", "", ""]);
   const [checkingFavoriteIndex, setCheckingFavoriteIndex] = useState<number | null>(null);
   const [saveMessage, setSaveMessage] = useState("");
-  const [readingPreferences, setReadingPreferences] = useState(emptyReadingPreferences);
   const [selectedAvatar, setSelectedAvatar] = useState(defaultAvatarId);
 
   useEffect(() => {
@@ -59,10 +71,6 @@ export default function OnboardingModal() {
       setFavoriteOptions([[], [], []]);
       setFavoriteLookupMessages(["", "", ""]);
       setSaveMessage("");
-      setReadingPreferences({
-        ...emptyReadingPreferences,
-        ...(current.readingPreferences ?? {}),
-      });
       setSelectedAvatar(getAvatarOption(current.avatarStyle)?.id ?? defaultAvatarId);
       setShow(true);
     };
@@ -168,27 +176,9 @@ export default function OnboardingModal() {
     return payload ? lookupFavoriteBook(index, payload) : null;
   };
 
-  const updateReadingPreference = (key: PreferenceKey, value: string) => {
-    setReadingPreferences((current) => ({ ...current, [key]: value }));
-    setSaveMessage("");
-  };
-
-  const addPreferenceSuggestion = (key: PreferenceKey, suggestion: string) => {
-    setReadingPreferences((current) => {
-      const existing = current[key].split(",").map((item) => item.trim().toLowerCase()).filter(Boolean);
-      if (existing.includes(suggestion.toLowerCase())) {
-        return current;
-      }
-      return {
-        ...current,
-        [key]: current[key].trim() ? `${current[key].trim()}, ${suggestion}` : suggestion,
-      };
-    });
-    setSaveMessage("");
-  };
-
   const save = async () => {
     const confirmedBooks: string[] = [];
+    const confirmedMatches: BookMatch[] = [];
     for (let index = 0; index < favoriteBooks.length; index += 1) {
       const hasDraftBook = favoriteBooks[index].trim() || favoriteAuthors[index].trim();
       if (!hasDraftBook) continue;
@@ -198,22 +188,19 @@ export default function OnboardingModal() {
         return;
       }
       confirmedBooks.push(book.title);
+      confirmedMatches.push(book);
     }
+
+    const metadata = { ...getProfileBookMetadata(profile) };
+    confirmedMatches.forEach((book) => {
+      metadata[normalizeBookKey(book.title)] = buildBookMeta(book);
+    });
 
     window.localStorage.removeItem(onboardingKey(profile.id));
     const updated = updateProfile({
       ...profile,
       favoriteBooks: confirmedBooks,
-      readingPreferences: {
-        ...emptyReadingPreferences,
-        ...(profile.readingPreferences ?? {}),
-        storyKinds: readingPreferences.storyKinds.trim(),
-        characters: readingPreferences.characters.trim(),
-        places: readingPreferences.places.trim(),
-        feelings: readingPreferences.feelings.trim(),
-        topics: readingPreferences.topics.trim(),
-        updatedAt: new Date().toISOString(),
-      },
+      bookAccess: withBookMetadata(profile.bookAccess, metadata),
       avatarStyle: selectedAvatar,
     });
     setProfile(updated);
@@ -228,13 +215,13 @@ export default function OnboardingModal() {
           <div>
             <div className="kicker">Welcome to Reading Quest</div>
             <h2 id="onboarding-title">Set Up Your Reader Profile</h2>
-            <p>A few quick choices help Reading Quest suggest better books and make the app feel like yours.</p>
+            <p>Pick a few favorite books and choose an avatar. You can add more details later.</p>
           </div>
           <button type="button" className="secondary" onClick={close}>Later</button>
         </div>
 
         <div className="onboarding-grid">
-          <div className="nested-section">
+          <div className="nested-section onboarding-favorites-panel">
             <h3>Favorite Books</h3>
             <p className="setting-description">Add any favorites you already know. You can change these in My Books later.</p>
             {favoriteBooks.map((book, index) => (
@@ -292,7 +279,7 @@ export default function OnboardingModal() {
                   <div className="book-option-grid">
                     {favoriteOptions[index].map((option) => (
                       <button key={option.id} type="button" className="book-option" onClick={() => applyFavoriteBook(index, option)}>
-                        {option.coverUrl ? <img className="book-cover" src={option.coverUrl} alt="" /> : <span className="book-cover-placeholder">No cover</span>}
+                        <BookOptionCover book={option} />
                         <span>
                           <strong>{option.title}</strong>
                           <span>{option.author}{option.year ? ` - ${option.year}` : ""}</span>
@@ -305,45 +292,11 @@ export default function OnboardingModal() {
             ))}
           </div>
 
-          <div className="nested-section">
-            <h3>Favorite Style</h3>
-            <div className="preference-grid">
-              {preferencePrompts.map((prompt) => (
-                <div key={prompt.key} className="field preference-question">
-                  <label htmlFor={`onboarding-preference-${prompt.key}`}>{prompt.label}</label>
-                  <input
-                    id={`onboarding-preference-${prompt.key}`}
-                    value={readingPreferences[prompt.key]}
-                    onChange={(event) => updateReadingPreference(prompt.key, event.target.value)}
-                    placeholder={prompt.placeholder}
-                    list={`onboarding-preference-options-${prompt.key}`}
-                  />
-                  <datalist id={`onboarding-preference-options-${prompt.key}`}>
-                    {prompt.suggestions.map((suggestion) => (
-                      <option key={suggestion} value={suggestion} />
-                    ))}
-                  </datalist>
-                  <div className="preference-suggestions" aria-label={`Suggestions for ${prompt.label}`}>
-                    {prompt.suggestions.map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        type="button"
-                        className="preference-chip"
-                        onClick={() => addPreferenceSuggestion(prompt.key, suggestion)}
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="nested-section onboarding-avatar-panel">
+            <h3>Choose an Avatar</h3>
+            <p className="setting-description">Pick the reader character that feels most like yours.</p>
+            <AvatarPicker selectedAvatar={selectedAvatar} onSelect={setSelectedAvatar} />
           </div>
-        </div>
-
-        <div className="nested-section">
-          <h3>Choose an Avatar</h3>
-          <AvatarPicker selectedAvatar={selectedAvatar} onSelect={setSelectedAvatar} />
         </div>
 
         <div className="button-row">

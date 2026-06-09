@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION } from "../lib/product";
 import { createProfile, getCurrentProfile, Profile, setCurrentUserId, verifyProfile } from "../lib/user";
 import {
+  completeParentOAuthSignIn,
   createChildWithSupabase,
   createParentWithSupabase,
   EmailConfirmationRequiredError,
@@ -12,6 +13,7 @@ import {
   requestParentPasswordReset,
   signInChildWithSupabase,
   signInParentWithSupabase,
+  signInParentWithGoogle,
 } from "../lib/supabase/auth";
 import { markProfileForOnboarding } from "./components/OnboardingModal";
 
@@ -21,6 +23,8 @@ type AuthMode = "signIn" | "create";
 function pendingParentOnboardingKey(email: string) {
   return `readingQuestPendingParentOnboarding_${email.trim().toLowerCase()}`;
 }
+
+const pendingParentGoogleOnboardingKey = "readingQuestPendingParentGoogleOnboarding";
 
 export default function Page() {
   const router = useRouter();
@@ -45,7 +49,29 @@ export default function Page() {
       return;
     }
 
-    setIsLoading(false);
+    let active = true;
+    completeParentOAuthSignIn()
+      .then((supabaseProfile) => {
+        if (!active) return;
+        if (supabaseProfile) {
+          if (window.localStorage.getItem(pendingParentGoogleOnboardingKey) === "true") {
+            markProfileForOnboarding(supabaseProfile.id);
+            window.localStorage.removeItem(pendingParentGoogleOnboardingKey);
+          }
+          goToProfile(supabaseProfile);
+          return;
+        }
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(getSupabaseErrorMessage(err));
+        setIsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [router]);
 
   const accountLabel = userType === "parent" ? "Grown-up email" : "Screen name";
@@ -241,6 +267,24 @@ export default function Page() {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    resetMessages();
+    if (userType !== "parent") {
+      setError("Google sign-in is only available for parent accounts.");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      window.localStorage.setItem(pendingParentGoogleOnboardingKey, "true");
+      await signInParentWithGoogle();
+    } catch (err) {
+      window.localStorage.removeItem(pendingParentGoogleOnboardingKey);
+      setError(getSupabaseErrorMessage(err));
+      setIsSubmitting(false);
+    }
+  };
+
   if (isLoading) {
     return <main className="auth-shell"><p>Loading...</p></main>;
   }
@@ -304,7 +348,7 @@ export default function Page() {
                 <ol>
                   <li>Ask a parent for permission or help.</li>
                   <li>Create a unique screen name and password.</li>
-                  <li>Add favorite books or take the interest quiz.</li>
+                  <li>Add favorite books and choose an avatar.</li>
                   <li>Take a quiz on something you have read.</li>
                 </ol>
               )}
@@ -333,6 +377,16 @@ export default function Page() {
                   Create
                 </button>
               </div>
+
+              {userType === "parent" ? (
+                <div className="parent-oauth-panel" aria-label="Parent Google sign-in">
+                  <button type="button" className="google-auth-button" disabled={isSubmitting} onClick={() => void handleGoogleSignIn()}>
+                    <span aria-hidden="true">G</span>
+                    {isSubmitting ? "Opening Google..." : "Continue with Google"}
+                  </button>
+                  <p>Parents can use Google to sign in or create a parent account. Child readers still use screen names.</p>
+                </div>
+              ) : null}
 
               {authMode === "create" && userType === "parent" ? (
                 <div className="field">

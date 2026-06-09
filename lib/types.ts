@@ -14,6 +14,19 @@ export type QuizHistory = {
 };
 
 export type BookAccessType = "owned" | "library" | "audiobook" | "ebook" | "read_aloud" | "borrowed";
+export type BookMetadataEntry = {
+  title: string;
+  author?: string;
+  coverUrl?: string;
+  isbn?: string;
+  source?: string;
+  completedAt?: string;
+  updatedAt?: string;
+};
+export type BookAccessData = {
+  [bookTitle: string]: BookAccessType | Record<string, BookMetadataEntry> | undefined;
+  __bookMeta?: Record<string, BookMetadataEntry>;
+};
 
 export type ReadingLog = {
   id: string;
@@ -175,7 +188,7 @@ export type Profile = {
   readingPath?: ReadingPath;
   readingNow?: string[];
   readingLogs?: ReadingLog[];
-  bookAccess?: Record<string, BookAccessType>;
+  bookAccess?: BookAccessData;
   avatarStyle?: string;
   badges?: string[];
   parentControls?: ParentControls;

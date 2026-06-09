@@ -77,8 +77,13 @@ const knownSeriesPatterns = [
 const isLikelySeriesQuery = (title: string) =>
   knownSeriesPatterns.some((pattern) => pattern.test(normalizeTitle(title)));
 
+const normalizeCoverUrl = (url?: string) => url?.replace(/^http:\/\//, "https://");
+
 const coverUrl = (coverId?: number) =>
-  coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : undefined;
+  coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg?default=false` : undefined;
+
+const isbnCoverUrl = (isbn?: string) =>
+  isbn ? `https://covers.openlibrary.org/b/isbn/${encodeURIComponent(isbn)}-M.jpg?default=false` : undefined;
 
 async function fetchWithTimeout(url: string, timeoutMs = 2200) {
   const controller = new AbortController();
@@ -111,7 +116,7 @@ const canonicalBooks: BookMatch[] = [
     author: "J.K. Rowling",
     year: 1998,
     isbn: "9780439064873",
-    coverUrl: "https://covers.openlibrary.org/isbn/9780439064873-M.jpg",
+    coverUrl: "https://covers.openlibrary.org/b/isbn/9780439064873-M.jpg?default=false",
     source: "Reading Quest verified book record",
     confidence: 1,
   },
@@ -121,7 +126,7 @@ const canonicalBooks: BookMatch[] = [
     author: "J.K. Rowling",
     year: 1997,
     isbn: "9780590353427",
-    coverUrl: "https://covers.openlibrary.org/isbn/9780590353427-M.jpg",
+    coverUrl: "https://covers.openlibrary.org/b/isbn/9780590353427-M.jpg?default=false",
     source: "Reading Quest verified book record",
     confidence: 1,
   },
@@ -131,7 +136,7 @@ const canonicalBooks: BookMatch[] = [
     author: "J.K. Rowling",
     year: 1997,
     isbn: "9780747532699",
-    coverUrl: "https://covers.openlibrary.org/isbn/9780747532699-M.jpg",
+    coverUrl: "https://covers.openlibrary.org/b/isbn/9780747532699-M.jpg?default=false",
     source: "Reading Quest verified book record",
     confidence: 1,
   },
@@ -141,7 +146,7 @@ const canonicalBooks: BookMatch[] = [
     author: "J.K. Rowling",
     year: 1999,
     isbn: "9780439136358",
-    coverUrl: "https://covers.openlibrary.org/isbn/9780439136358-M.jpg",
+    coverUrl: "https://covers.openlibrary.org/b/isbn/9780439136358-M.jpg?default=false",
     source: "Reading Quest verified book record",
     confidence: 1,
   },
@@ -151,7 +156,7 @@ const canonicalBooks: BookMatch[] = [
     author: "J.K. Rowling",
     year: 2000,
     isbn: "9780439139601",
-    coverUrl: "https://covers.openlibrary.org/isbn/9780439139601-M.jpg",
+    coverUrl: "https://covers.openlibrary.org/b/isbn/9780439139601-M.jpg?default=false",
     source: "Reading Quest verified book record",
     confidence: 1,
   },
@@ -161,7 +166,7 @@ const canonicalBooks: BookMatch[] = [
     author: "J.K. Rowling",
     year: 2003,
     isbn: "9780439358071",
-    coverUrl: "https://covers.openlibrary.org/isbn/9780439358071-M.jpg",
+    coverUrl: "https://covers.openlibrary.org/b/isbn/9780439358071-M.jpg?default=false",
     source: "Reading Quest verified book record",
     confidence: 1,
   },
@@ -171,7 +176,7 @@ const canonicalBooks: BookMatch[] = [
     author: "J.K. Rowling",
     year: 2005,
     isbn: "9780439785969",
-    coverUrl: "https://covers.openlibrary.org/isbn/9780439785969-M.jpg",
+    coverUrl: "https://covers.openlibrary.org/b/isbn/9780439785969-M.jpg?default=false",
     source: "Reading Quest verified book record",
     confidence: 1,
   },
@@ -181,7 +186,7 @@ const canonicalBooks: BookMatch[] = [
     author: "J.K. Rowling",
     year: 2007,
     isbn: "9780545010221",
-    coverUrl: "https://covers.openlibrary.org/isbn/9780545010221-M.jpg",
+    coverUrl: "https://covers.openlibrary.org/b/isbn/9780545010221-M.jpg?default=false",
     source: "Reading Quest verified book record",
     confidence: 1,
   },
@@ -217,7 +222,7 @@ const toBookMatch = (doc: OpenLibraryDoc, index: number): BookMatch | null => {
     title: doc.title,
     author: doc.author_name?.slice(0, 2).join(", ") || "Unknown author",
     year: doc.first_publish_year,
-    coverUrl: coverUrl(doc.cover_i),
+    coverUrl: coverUrl(doc.cover_i) ?? isbnCoverUrl(doc.isbn?.[0]),
     isbn: doc.isbn?.[0],
     source: "Open Library",
   };
@@ -233,13 +238,15 @@ const toGoogleBookMatch = (volume: GoogleBookVolume, index: number): BookMatch |
   const yearMatch = info.publishedDate?.match(/\d{4}/)?.[0];
   const title = info.subtitle ? `${info.title}: ${info.subtitle}` : info.title;
 
+  const isbn = isbn13 || isbn10;
+
   return {
     id: volume.id ?? `${title}-${index}`,
     title,
     author: info.authors?.slice(0, 2).join(", ") || "Unknown author",
     year: yearMatch ? Number(yearMatch) : undefined,
-    coverUrl: info.imageLinks?.thumbnail || info.imageLinks?.smallThumbnail,
-    isbn: isbn13 || isbn10,
+    coverUrl: normalizeCoverUrl(info.imageLinks?.thumbnail || info.imageLinks?.smallThumbnail) ?? isbnCoverUrl(isbn),
+    isbn,
     source: "Google Books",
   };
 };
@@ -394,6 +401,7 @@ async function lookupByIsbn(isbn: string, bookTitle = "", author = "") {
           title: bookTitle || "Untitled book",
           author: author || "Unknown author",
           isbn: cleaned,
+          coverUrl: isbnCoverUrl(cleaned),
           source: "User-provided ISBN",
           confidence: 0.9,
         }],
@@ -411,7 +419,7 @@ async function lookupByIsbn(isbn: string, bookTitle = "", author = "") {
     title: data.title ?? bookTitle ?? "Untitled book",
     author: author || (authorNames.length ? authorNames.join(", ") : "Unknown author"),
     year: typeof data.publish_date === "string" ? Number(data.publish_date.match(/\d{4}/)?.[0]) : undefined,
-    coverUrl: coverUrl(coverId),
+    coverUrl: coverUrl(coverId) ?? isbnCoverUrl(cleaned),
     isbn: cleaned,
     source: "Open Library ISBN",
     confidence: 1,

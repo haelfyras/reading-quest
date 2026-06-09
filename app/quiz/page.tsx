@@ -81,6 +81,25 @@ function getQuizDifficultyLabel(level: typeof difficultyLevels[number]) {
   return "QuestMaster (Hard)";
 }
 
+function getQuestionTimeLimit(level: typeof difficultyLevels[number]) {
+  if (level === "easy") return 60;
+  if (level === "medium") return 45;
+  return 30;
+}
+
+function BookOptionCover({ book }: { book: BookMatch }) {
+  const [coverFailed, setCoverFailed] = useState(false);
+  if (book.coverUrl && !coverFailed) {
+    return <img className="book-cover" src={book.coverUrl} alt="" onError={() => setCoverFailed(true)} />;
+  }
+
+  return (
+    <span className="book-cover-placeholder generated-option-cover">
+      <span>{book.title}</span>
+    </span>
+  );
+}
+
 function getQuestionCategory(questionType?: QuestionType) {
   if (!questionType) return "Story Recall";
   if (["character", "setting", "object", "plot_event"].includes(questionType)) return "Story Recall";
@@ -158,7 +177,7 @@ function QuizPageContent() {
   const [reviewText, setReviewText] = useState("");
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
   const [parentApprovedQuiz, setParentApprovedQuiz] = useState<ParentApprovedQuiz | null>(null);
-  const [timeLeft, setTimeLeft] = useState(30);
+  const [timeLeft, setTimeLeft] = useState(getQuestionTimeLimit("easy"));
   const [timerActive, setTimerActive] = useState(false);
   const [focusLost, setFocusLost] = useState(false);
   const [reportedQuestions, setReportedQuestions] = useState<Record<string, string>>({});
@@ -201,8 +220,9 @@ function QuizPageContent() {
       const challengeDifficulty = difficultyLevels.includes(challenge.difficulty as typeof difficultyLevels[number])
         ? challenge.difficulty as typeof difficultyLevels[number]
         : "easy";
+      const selectedDifficulty = isDifficultyAllowedForBookLevel(challengeDifficulty, challengeLevel) ? challengeDifficulty : getAllowedDifficulties(challengeLevel)[0];
       setBookLevel(challengeLevel);
-      setDifficulty(isDifficultyAllowedForBookLevel(challengeDifficulty, challengeLevel) ? challengeDifficulty : getAllowedDifficulties(challengeLevel)[0]);
+      setDifficulty(selectedDifficulty);
       setQuizData({
         quizTitle: challenge.quizTitle,
         quizDescription: challenge.quizDescription,
@@ -217,7 +237,7 @@ function QuizPageContent() {
       setSaved(false);
       setEarnedPoints(0);
       setChallengeSavedMessage("");
-      setTimeLeft(30);
+      setTimeLeft(getQuestionTimeLimit(selectedDifficulty));
       setTimerActive(false);
       setQuizStarted(false);
       setStartCountdown(3);
@@ -243,13 +263,14 @@ function QuizPageContent() {
           const approvedDifficulty = difficultyLevels.includes(approvedQuiz.difficulty as typeof difficultyLevels[number])
             ? approvedQuiz.difficulty as typeof difficultyLevels[number]
             : "easy";
+          const selectedDifficulty = isDifficultyAllowedForBookLevel(approvedDifficulty, approvedLevel) ? approvedDifficulty : getAllowedDifficulties(approvedLevel)[0];
           setBookLevel(approvedLevel);
-          setDifficulty(isDifficultyAllowedForBookLevel(approvedDifficulty, approvedLevel) ? approvedDifficulty : getAllowedDifficulties(approvedLevel)[0]);
+          setDifficulty(selectedDifficulty);
           setQuizData(approvedQuiz);
           setQuizTargetCount(approvedQuiz.questions.length);
           setSelectedAnswers([]);
           setParentApprovedQuiz(approvedQuiz);
-          setTimeLeft(30);
+          setTimeLeft(getQuestionTimeLimit(selectedDifficulty));
           setTimerActive(false);
           setQuizStarted(false);
           setStartCountdown(3);
@@ -282,7 +303,9 @@ function QuizPageContent() {
         setBookLevel(parsedBookLevel);
         setBookDifficultyIndex(null);
       }
-      setDifficulty(isDifficultyAllowedForBookLevel(parsedDifficulty, parsedBookLevel) ? parsedDifficulty : getAllowedDifficulties(parsedBookLevel)[0]);
+      const selectedDifficulty = isDifficultyAllowedForBookLevel(parsedDifficulty, parsedBookLevel) ? parsedDifficulty : getAllowedDifficulties(parsedBookLevel)[0];
+      setDifficulty(selectedDifficulty);
+      setTimeLeft(getQuestionTimeLimit(selectedDifficulty));
       if (bookLevelParam.trim() && !parsedBookLevel) {
         setBookLevel(null);
       }
@@ -308,7 +331,7 @@ function QuizPageContent() {
       setQuizStarted(true);
       setStartCountdown(null);
       setTimerActive(true);
-      setTimeLeft(30);
+      setTimeLeft(getQuestionTimeLimit(difficulty));
       return;
     }
 
@@ -316,7 +339,7 @@ function QuizPageContent() {
       setStartCountdown((current) => current === null ? null : current - 1);
     }, 900);
     return () => window.clearTimeout(timer);
-  }, [startCountdown]);
+  }, [difficulty, startCountdown]);
 
   useEffect(() => {
     const handleFocus = () => setFocusLost(false);
@@ -336,11 +359,11 @@ function QuizPageContent() {
     if (currentQuestion + 1 < quizData.questions.length) {
       setCurrentQuestion((prev) => prev + 1);
       setSelectedChoice(null);
-      setTimeLeft(30);
+      setTimeLeft(getQuestionTimeLimit(difficulty));
       setTimerActive(true);
       setIsWaitingForQuestion(false);
     }
-  }, [currentQuestion, isWaitingForQuestion, quizData]);
+  }, [currentQuestion, difficulty, isWaitingForQuestion, quizData]);
 
   const allowedDifficulties = getAllowedDifficulties(bookLevel);
   const nextAllowedDifficulty = getNextAllowedDifficulty(difficulty, bookLevel);
@@ -348,7 +371,8 @@ function QuizPageContent() {
   const basePoints = getBasePoints(difficulty);
   const maxScore = quizData ? getMaxScore(difficulty) : 0;
   const quizDisplayTotal = quizData ? (quizTargetCount || quizData.questions.length) : 0;
-  const timerClass = timeLeft > 10 ? "good" : timeLeft > 5 ? "warn" : "danger";
+  const questionTimeLimit = getQuestionTimeLimit(difficulty);
+  const timerClass = timeLeft > Math.ceil(questionTimeLimit / 3) ? "good" : timeLeft > 5 ? "warn" : "danger";
   const homeHref = user?.isParent ? "/parent" : "/home";
   const planQuizAvailability = user ? getPlanQuizAvailability(user) : null;
   const loadingSuggestion = user ? getBookRecommendations({ profile: user, limit: 1 }).suggestions[0] : "";
@@ -729,7 +753,7 @@ function QuizPageContent() {
       setQuizTargetCount(targetQuestionCount);
       setSelectedAnswers(Array(targetQuestionCount).fill(-1));
       setFirstQuestionLoadMs(Math.round(performance.now() - generationStartedAt));
-      setTimeLeft(30);
+      setTimeLeft(questionTimeLimit);
       setTimerActive(false);
       setStartCountdown(3);
 
@@ -849,7 +873,7 @@ function QuizPageContent() {
 
     setCurrentQuestion((prev) => prev + 1);
     setSelectedChoice(null);
-    setTimeLeft(30);
+    setTimeLeft(questionTimeLimit);
     setTimerActive(true);
   };
 
@@ -1067,11 +1091,7 @@ function QuizPageContent() {
               <div className="book-option-grid">
                 {bookOptions.map((book) => (
                   <button key={book.id} type="button" className="book-option" onClick={() => applyConfirmedBook(book)}>
-                    {book.coverUrl ? (
-                      <img className="book-cover" src={book.coverUrl} alt="" />
-                    ) : (
-                      <span className="book-cover-placeholder">No cover</span>
-                    )}
+                    <BookOptionCover book={book} />
                     <span>
                       <strong>{book.title}</strong>
                       <span>
@@ -1217,7 +1237,7 @@ function QuizPageContent() {
             {currentCorrectStreak >= 3 ? (
               <span className="knowledge-streak">Knowledge Streak! {currentCorrectStreak} correct in a row</span>
             ) : null}
-            {firstQuestionLoadMs !== null ? <span>First question ready in {(firstQuestionLoadMs / 1000).toFixed(1)}s</span> : null}
+            {user.isParent && firstQuestionLoadMs !== null ? <span>First question ready in {(firstQuestionLoadMs / 1000).toFixed(1)}s</span> : null}
           </div>
           {isFillingQuiz || quizGenerationStatus ? (
             <div className="notice" role="status" aria-live="polite">
@@ -1226,17 +1246,17 @@ function QuizPageContent() {
           ) : null}
 
           <div className="question-card">
-            {focusLost && (
+            {user.isParent && focusLost && (
               <div className="warning-box">
                 Warning: App focus was lost. Please stay focused on the quiz.
               </div>
             )}
             <div className="question-meta">
-              <span>Time left: {timeLeft}s</span>
+              <span>{timeLeft}s to read, think, and answer</span>
               <div className="timer-track">
                 <div
                   className={`timer-fill ${timerClass}`}
-                  style={{ width: `${(timeLeft / 30) * 100}%` }}
+                  style={{ width: `${(timeLeft / questionTimeLimit) * 100}%` }}
                 />
               </div>
             </div>
