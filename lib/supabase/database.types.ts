@@ -159,6 +159,31 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["book_question_pool"]["Row"]>;
         Relationships: [];
       };
+      book_fact_sheets: {
+        Row: {
+          id: string;
+          canonical_key: string;
+          title: string;
+          author: string | null;
+          isbn: string | null;
+          fact_version: number;
+          status: "ready" | "low_confidence" | "needs_review";
+          source_confidence: number;
+          facts: Json;
+          source_names: string[];
+          source_urls: string[];
+          source_notes: string[];
+          ai_model: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["book_fact_sheets"]["Row"]> & {
+          canonical_key: string;
+          title: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["book_fact_sheets"]["Row"]>;
+        Relationships: [];
+      };
       quiz_issue_reports: {
         Row: {
           id: string;

@@ -18,7 +18,7 @@ import {
 } from "../../lib/user";
 import { getBookRecommendations } from "../../lib/recommendations";
 import type { BookMatch } from "../../lib/books";
-import { lookupBook as lookupBookFromApi, type BookLookupPayload } from "../../lib/bookClient";
+import { lookupBook as lookupBookFromApi, queueBookFactPreparation, type BookLookupPayload } from "../../lib/bookClient";
 import {
   buildBookMeta,
   getProfileBookMetadata,
@@ -297,6 +297,7 @@ export default function MyBooksPage() {
   const addBookToShelf = (book: BookMatch, target: BookShelfTarget = modalTarget ?? "currentlyReading") => {
     if (!currentUser) return;
     const profileWithMeta = saveMetaForBook(book, currentUser) ?? currentUser;
+    queueBookFactPreparation(book);
 
     if (target === "readLibrary") {
       persistReadLibrary([book.title, ...readLibrary]);
@@ -413,11 +414,13 @@ export default function MyBooksPage() {
 
   const saveRecommendationForLater = (title: string) => {
     persistWantToRead([title, ...wantToRead]);
+    queueBookFactPreparation({ bookTitle: title });
     setShelfMessage(`${title} saved to Want To Read.`);
   };
 
   const addRecommendationToLibrary = (title: string) => {
     persistReadLibrary([title, ...readLibrary]);
+    queueBookFactPreparation({ bookTitle: title });
     setShelfMessage(`${title} added to My Library.`);
   };
 

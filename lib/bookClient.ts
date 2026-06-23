@@ -58,3 +58,42 @@ export async function detectBookLevel(book: BookMatch): Promise<BookDifficultyRa
       : "fallback",
   };
 }
+
+type BookFactPreparationPayload = Omit<BookLookupPayload, "year"> & {
+  title?: string;
+  bookTitle?: string;
+  author?: string;
+  year?: string | number;
+};
+
+export async function prepareBookFacts(book: BookFactPreparationPayload) {
+  const bookTitle = String(book.bookTitle || book.title || "").trim();
+  if (!bookTitle) return null;
+
+  const response = await fetch("/api/book-facts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      bookTitle,
+      author: book.author,
+      isbn: book.isbn,
+      year: book.year ? String(book.year) : undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  return await response.json() as {
+    status?: string;
+    sourceConfidence?: number;
+    usableForMedium?: boolean;
+    usableForHard?: boolean;
+    sourceNames?: string[];
+  };
+}
+
+export function queueBookFactPreparation(book: BookFactPreparationPayload) {
+  void prepareBookFacts(book).catch(() => null);
+}

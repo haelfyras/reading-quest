@@ -3,10 +3,10 @@ import { NextResponse } from "next/server";
 import { ADMIN_COOKIE_NAME, verifyAdminSessionToken } from "../../../../lib/adminAuth";
 import { getBookDifficultyKey } from "../../../../lib/bookDifficulty";
 import { getAllowedDifficulties } from "../../../../lib/scoring";
+import { QUESTION_POOL_VERSION } from "../../../../lib/quizPool";
 import { createServiceSupabaseClient } from "../../../../lib/supabase/server";
 
 export const maxDuration = 60;
-const QUESTION_POOL_VERSION = 3;
 const MAX_SEED_BOOKS_PER_RUN = 5;
 
 type SeedBookInput = {

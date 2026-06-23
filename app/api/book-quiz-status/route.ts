@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { getBookDifficultyKey } from "../../../lib/bookDifficulty";
+import { QUESTION_POOL_VERSION } from "../../../lib/quizPool";
 import { createServiceSupabaseClient } from "../../../lib/supabase/server";
-
-const QUESTION_POOL_VERSION = 2;
 
 export async function GET(request: Request) {
   const url = new URL(request.url);

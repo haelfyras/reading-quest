@@ -6,6 +6,14 @@ import {
   isDifficultyAllowedForBookLevel,
 } from "../../../lib/scoring";
 import { getBookDifficultyKey } from "../../../lib/bookDifficulty";
+import {
+  getFactSheetPrompt,
+  getOrCreateBookFactSheet,
+  getUnsupportedQuizTerms,
+  isFactSheetUsableForDifficulty,
+  type BookFactSheet,
+} from "../../../lib/bookFacts";
+import { QUESTION_POOL_VERSION } from "../../../lib/quizPool";
 import { createServiceSupabaseClient } from "../../../lib/supabase/server";
 import {
   getFallbackQuestionType,
@@ -27,7 +35,6 @@ const difficultyMap = {
 };
 
 const quizModel = process.env.OPENAI_QUIZ_MODEL || "gpt-4o-mini";
-const QUESTION_POOL_VERSION = 3;
 const poolTopUpCounts: Record<"easy" | "medium" | "hard", number> = {
   easy: 2,
   medium: 3,
@@ -51,6 +58,23 @@ const goalMap: Record<string, string> = {
   literary_analysis: "Full Understanding: focus on the bigger picture of the work, including themes, lessons, symbolism, character growth, social context, and how events or choices support the meaning of the book.",
 };
 
+const readingQuestQuizPhilosophy = `Reading Quest quiz philosophy:
+- The goal is not trivia, tricks, or difficulty for difficulty's sake.
+- The goal is to verify that a reader genuinely read and understood the story.
+- A reader who completed the book should feel the questions are fair, clear, age-appropriate, and directly connected to the book.
+- A reader who did not read the book should struggle because the questions depend on major story comprehension.
+- Test reading comprehension, major story elements, important events, cause and effect, character motivations, and only clearly supported themes on Hard.
+- Do not test obscure facts, tiny details, author biography, publication facts, adaptation knowledge, fan theories, personal opinion, or literary criticism.
+- If a teacher or parent would say "that question feels unfair," replace it.`;
+
+const objectiveQuestionContract = `Objective-question rules:
+- Every question must have exactly one objectively correct answer, not one "best" answer.
+- Ask: Could a reasonable reader defend another answer from the book? If yes, the question is invalid.
+- Avoid opinion wording such as strongest, best, most important, true meaning, biggest lesson, better, powerful, or main message unless the wording makes the answer objective and text-supported.
+- Use recognizable character names from the book. If the book mainly uses nicknames, titles, or first names, use the same naming convention.
+- Each question must test unique knowledge. Do not ask two questions that measure the same fact, same answer, or same story moment.
+- Questions should test comprehension rather than memorization of tiny details.`;
+
 const answerChoiceContract = `Answer choice consistency rules:
 - Each question must have exactly one defensible correct answer.
 - The three wrong choices must be clearly false for the question being asked.
@@ -60,6 +84,8 @@ const answerChoiceContract = `Answer choice consistency rules:
 - Do not mix several positive traits, feelings, motivations, or themes that are all true of the same character or scene.
 - Do not use "all of the above", "none of the above", joke answers, obviously unrelated answers, or vague answers like "a person", "a thing", "a number", "something bad", or "because of choices".
 - If more than one choice could be defended by a reasonable reader, replace the question or the choices.
+- Incorrect answers should be believable and may come from the story, but they must be clearly false for this exact question.
+- Incorrect answers must not be true in another book, movie, TV version, game, adaptation, or fan theory.
 - Hard questions should be thoughtful for upper elementary, middle school, and high school readers, not graduate-level, obscure, or ambiguous.`;
 
 const youngReaderAnswerabilityContract = `Young-reader answerability rules:
@@ -84,8 +110,10 @@ const themeSymbolismContract = `Theme and symbolism rules:
 const cumulativeDifficultyContract = `Cumulative difficulty rules:
 - Easy, Medium, and Hard are cumulative. Higher difficulties must still ask grounded book-knowledge questions.
 - Easy should mostly ask who/what/where questions, with one simple why question.
-- Medium should include Easy-style recall plus timeline/when, cause/effect, motivation, and one clear symbolism or theme question.
-- Hard should prove full-book mastery: recall, antagonists/roles, places, objects, timeline/when, cause/effect, climax/consequences, symbolism, theme, and author intent.
+- Medium must build on Easy: it should still confirm major characters, places, objects, and events, then add timeline/when, motivation, and cause/effect.
+- Medium should avoid theme, symbolism, literary analysis, and subjective interpretation.
+- Hard must build on Easy and Medium: it should still prove major story knowledge, then add climax/consequences and only clearly supported themes or symbolism.
+- Hard should prove full-book mastery: recall, antagonists/roles, places, objects, timeline/when, cause/effect, climax/consequences, and clearly supported themes.
 - Hard must not become only symbolism, lessons, or character growth.
 - Timeline/when questions should ask about story sequence or when something happens in the plot, not obscure publication dates.
 - If a "when" question could refer to more than one scene, meeting, return, departure, discovery, fight, or repeated event, the question must include a clear time reference such as "the first time," "after they split up," "near the end," "before the journey," or the specific event being asked about.
@@ -110,7 +138,7 @@ const prompt = (
     ? `\n\nThis is section ${section.number} of ${section.total}. Create exactly ${questionCount} new questions for this section only. Do not repeat these earlier questions: ${section.previousQuestions.length ? section.previousQuestions.map((question) => `"${question}"`).join("; ") : "none"}.`
     : "";
 
-  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. The questions array must contain exactly ${questionCount} complete question objects. Do not return fewer than ${questionCount}. Each question must have: question, questionKey, questionType, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation, qualityScore, questionVersion.\n\nCanonical book to quiz: ${bookIdentity}. Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}. Long-term curated pool target for this difficulty: ${poolSize} questions.${qualityNotes ? `\n\nCritical book guardrails:\n${qualityNotes}` : ""}\n\nQuestion type plan:\n${typePlan}\n\n${answerChoiceContract}\n\n${youngReaderAnswerabilityContract}\n\n${themeSymbolismContract}\n\n${cumulativeDifficultyContract}\n\nRules:\n- questionKey must be a short lowercase semantic key for the question idea, like "frodo-sam-trust" or "rohan-aid-reason".\n- questionType must exactly match the requested type plan.\n- qualityScore must be a number from 0.75 to 1.0 based on answerability, clarity, and single-correct-answer confidence.\n- questionVersion must be ${QUESTION_POOL_VERSION}.\n- Use only the exact book above, not films, soundtracks, games, adaptations, sequels, prequels, or other series installments.\n- If a fact may come from another book in the series or a movie adaptation, do not use it.\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the exact book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Avoid "what potion/item/spell" questions unless the exact book clearly names it.\n- Choices must be plausible and fit the exact book, but only one can be correct.\n- Before returning, privately test each wrong choice by asking: "Could this also be correct, partly correct, or reasonable?" If yes, replace it.\n- For Easy and Medium, prefer clear book facts over debatable interpretation.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the exact book.\n- Use child-friendly language for ages 7-18.\n- Silently count the questions before returning JSON and make sure there are exactly ${questionCount}.${sectionInstruction}`;
+  return `Return only valid compact JSON: {"quizTitle": string, "quizDescription": string, "questions": array}. The questions array must contain exactly ${questionCount} complete question objects. Do not return fewer than ${questionCount}. Each question must have: question, questionKey, questionType, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation, qualityScore, questionVersion.\n\nCanonical book to quiz: ${bookIdentity}. Test difficulty: ${difficulty}. Book level: ${bookLevel}. Testing goal: ${goalDescription}. Long-term curated pool target for this difficulty: ${poolSize} questions.${qualityNotes ? `\n\nCritical book guardrails:\n${qualityNotes}` : ""}\n\nQuestion type plan:\n${typePlan}\n\n${readingQuestQuizPhilosophy}\n\n${objectiveQuestionContract}\n\n${answerChoiceContract}\n\n${youngReaderAnswerabilityContract}\n\n${themeSymbolismContract}\n\n${cumulativeDifficultyContract}\n\nRules:\n- questionKey must be a short lowercase stable question identifier for the question idea, like "frodo-sam-trust" or "rohan-aid-reason". Treat it like a future Supabase questionId.\n- questionType must exactly match the requested type plan.\n- qualityScore must be a number from 0.75 to 1.0 based on answerability, clarity, and single-correct-answer confidence.\n- questionVersion must be ${QUESTION_POOL_VERSION}.\n- Use only the exact book above, not films, soundtracks, games, adaptations, sequels, prequels, or other series installments.\n- If a fact may come from another book in the series or a movie adaptation, do not use it.\n- Keep every question under 18 words, every choice under 7 words, every explanation under 14 words.\n- answerIndex must point to answerText exactly.\n- Every question must be answerable from the exact book and have one clear correct answer.\n- Do not ask impossible, obscure, trick, spoiler-only, or repeated/rephrased questions.\n- Counting-question answers must be numbers.\n- Avoid "what potion/item/spell" questions unless the exact book clearly names it.\n- Choices must be plausible and fit the exact book, but only one can be correct.\n- Before returning, privately test each wrong choice by asking: "Could this also be correct, partly correct, or reasonable?" If yes, replace it.\n- For Easy and Medium, prefer clear book facts over debatable interpretation.\n- Never use joke or unrelated pop-culture answers unless they truly appear in the exact book.\n- Use child-friendly language for ages 7-18.\n- Silently count the questions before returning JSON and make sure there are exactly ${questionCount}.${sectionInstruction}`;
 };
 
 function describeBook(book: BookDetails) {
@@ -140,6 +168,41 @@ function getBookQualityNotes(book: BookDetails) {
   return notes.join("\n- ");
 }
 
+type QuizGrounding = {
+  factSheet: BookFactSheet;
+  prompt: string;
+};
+
+function combineQualityNotes(...notes: Array<string | null | undefined>) {
+  return notes.map((note) => note?.trim()).filter(Boolean).join("\n\n");
+}
+
+async function prepareQuizGrounding(details: {
+  book: BookDetails;
+  difficulty: string;
+  canonicalKey: string;
+}) {
+  if (details.difficulty === "easy") {
+    return null;
+  }
+
+  const factSheet = await getOrCreateBookFactSheet({
+    book: details.book,
+    canonicalKey: details.canonicalKey,
+  });
+
+  if (!isFactSheetUsableForDifficulty(factSheet, details.difficulty)) {
+    throw new Error(
+      "We found the book, but need more verified story details before creating a fair Medium or Hard challenge. Try Wanderer (Easy) for now, add an ISBN if you have one, or ask Reading Quest to review this book.",
+    );
+  }
+
+  return {
+    factSheet,
+    prompt: getFactSheetPrompt(factSheet),
+  } satisfies QuizGrounding;
+}
+
 const hardPrompt = (book: BookDetails, bookLevel: string, learningGoal: string, qualityNotes = "") => {
   const goalDescription = goalMap[learningGoal] || goalMap.basic_recollection;
   const bookIdentity = describeBook(book);
@@ -156,10 +219,14 @@ ${qualityNotes ? `\nCritical book guardrails:\n- ${qualityNotes}\n` : ""}
 Question plan:
 ${typePlan}
 
+${readingQuestQuizPhilosophy}
+
+${objectiveQuestionContract}
+
 Rules:
 - The questions array must contain exactly 20 complete objects.
 - Do not return fewer than 20 questions.
-- questionKey must be a short lowercase semantic key for the question idea.
+- questionKey must be a short lowercase stable question identifier for the question idea, like "arthur-earth-bypass" or "sam-frodo-trust". Treat it like a future Supabase questionId.
 - questionType must exactly match the requested question plan.
 - qualityScore must be a number from 0.75 to 1.0.
 - questionVersion must be ${QUESTION_POOL_VERSION}.
@@ -195,18 +262,20 @@ const hardQuestionPlan: Array<{
     start: 1,
     end: 5,
     count: 5,
-    focus: "characters, protagonists, antagonists, real villains, and roles",
-    questionTypes: [{ type: "character", label: "Characters, antagonists, real villains, or roles", count: 5 }],
+    focus: "characters, protagonists, antagonists, real villains, roles, and one major place",
+    questionTypes: [
+      { type: "character", label: "Characters, antagonists, real villains, or roles", count: 4 },
+      { type: "setting", label: "Major place or setting", count: 1 },
+    ],
   },
   {
     start: 6,
     end: 10,
     count: 5,
-    focus: "important places, objects, story world details, and timeline/when events",
+    focus: "important objects, story world details, and timeline/when events",
     questionTypes: [
-      { type: "setting", label: "Places/settings/world details", count: 1 },
       { type: "object", label: "Important objects/items", count: 2 },
-      { type: "plot_event", label: "Plot events, timeline, or when questions", count: 2 },
+      { type: "plot_event", label: "Plot events, timeline, or when questions", count: 3 },
     ],
   },
   {
@@ -215,27 +284,30 @@ const hardQuestionPlan: Array<{
     count: 5,
     focus: "why events happen, character motivation, and cause/effect",
     questionTypes: [
-      { type: "plot_event", label: "Plot events, timeline, or when questions", count: 1 },
-      { type: "character_motivation", label: "Character motivation", count: 2 },
-      { type: "cause_effect", label: "Cause/effect", count: 2 },
+      { type: "plot_event", label: "Plot events, timeline, or when questions", count: 3 },
+      { type: "character_motivation", label: "Character motivation", count: 1 },
+      { type: "cause_effect", label: "Cause/effect", count: 1 },
     ],
   },
   {
     start: 16,
-    end: 17,
-    count: 2,
-    focus: "conflict, climax, consequences, and key dilemmas",
-    questionTypes: [{ type: "problem_solution", label: "Conflict, climax, or consequence", count: 2 }],
+    end: 18,
+    count: 3,
+    focus: "motivation, cause/effect, conflict, climax, consequences, and key dilemmas",
+    questionTypes: [
+      { type: "character_motivation", label: "Character motivation", count: 1 },
+      { type: "cause_effect", label: "Cause/effect", count: 1 },
+      { type: "problem_solution", label: "Conflict, climax, or consequence", count: 1 },
+    ],
   },
   {
-    start: 18,
+    start: 19,
     end: 20,
-    count: 3,
-    focus: "clear symbolism, theme, and bigger-picture meaning",
+    count: 2,
+    focus: "clear symbolism and strongly supported theme",
     questionTypes: [
       { type: "symbolism", label: "Clear symbolism", count: 1 },
       { type: "theme", label: "Theme or lesson", count: 1 },
-      { type: "tone_author_intent", label: "Author intent or bigger-picture meaning", count: 1 },
     ],
   },
 ];
@@ -261,10 +333,14 @@ ${qualityNotes ? `\nCritical book guardrails:\n- ${qualityNotes}\n` : ""}
 Question type plan:
 ${typePlan}
 
+${readingQuestQuizPhilosophy}
+
+${objectiveQuestionContract}
+
 Each question object must have: question, questionKey, questionType, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation, qualityScore, questionVersion.
 Rules:
 - The questions array must contain exactly ${section.count} complete objects.
-- questionKey must be a short lowercase semantic key for the question idea.
+- questionKey must be a short lowercase stable question identifier for the question idea, like "arthur-earth-bypass" or "sam-frodo-trust". Treat it like a future Supabase questionId.
 - questionType must exactly match the requested question plan.
 - qualityScore must be a number from 0.75 to 1.0.
 - questionVersion must be ${QUESTION_POOL_VERSION}.
@@ -509,6 +585,9 @@ function getSafeGenerationError(error: unknown) {
   if (/connection error|network|fetch failed/i.test(message)) {
     return "Quiz generation could not connect to the quiz service. Please try again.";
   }
+  if (/verified story details|fact sheet|grounding|stored quiz questions need/i.test(message)) {
+    return message;
+  }
   return message || "Quiz generation returned invalid JSON. Please try again.";
 }
 
@@ -680,6 +759,7 @@ function schedulePoolTopUp(details: {
   canonicalKey: string;
   bookDifficultyRatingId?: string;
   qualityNotes: string;
+  grounding?: QuizGrounding | null;
 }) {
   void topUpQuestionPool(details).catch(() => undefined);
 }
@@ -728,6 +808,7 @@ async function topUpQuestionPool(details: {
   canonicalKey: string;
   bookDifficultyRatingId?: string;
   qualityNotes: string;
+  grounding?: QuizGrounding | null;
 }) {
   const difficultyKey = details.difficulty as "easy" | "medium" | "hard";
   const target = quizDifficultyPlans[difficultyKey]?.poolSize;
@@ -762,12 +843,13 @@ async function topUpQuestionPool(details: {
     questionCount: needed,
     qualityNotes: details.qualityNotes,
   });
+  const groundedQuiz = getGroundedQuiz(reviewedQuiz, details.grounding, needed);
 
   const existingKeys = new Set(snapshot.questionKeys.map(toQuestionKey));
   const existingQuestionText = new Set(snapshot.questions.map(normalizeText));
   const filteredQuiz = {
-    ...reviewedQuiz,
-    questions: reviewedQuiz.questions.filter((question) => {
+    ...groundedQuiz,
+    questions: groundedQuiz.questions.filter((question) => {
       const key = toQuestionKey(String(question.questionKey ?? ""));
       const textKey = normalizeText(String(question.question ?? ""));
       if (!key || existingKeys.has(key) || existingQuestionText.has(textKey)) {
@@ -808,11 +890,11 @@ async function reviewQuizWithModel(
       {
         role: "system",
         content:
-          "You are a strict quiz quality reviewer for children's reading quizzes. Return only a valid JSON object, with no markdown and no commentary. Fix wrong answers, impossible questions, weak distractors, answerIndex mismatches, difficulty mismatches, and any question with more than one defensible correct answer. Reject questions where a thoughtful young reader could reasonably defend more than one choice. For theme or symbolism questions, reject literal plot results as correct answers unless the question is explicitly cause/effect. Preserve cumulative difficulty balance: higher-level quizzes still need grounded recall, timeline, character, place, object, and cause/effect questions. If a question cannot be verified, replace it with a safer question.",
+          "You are a strict quiz quality reviewer for children's reading comprehension. Return only a valid JSON object, with no markdown and no commentary. Fix wrong answers, impossible questions, weak distractors, answerIndex mismatches, difficulty mismatches, and any question with more than one defensible correct answer. Reject questions where a thoughtful young reader could reasonably defend more than one choice. Reject opinion, trivia, adaptation, sequel, later-series, author-biography, and vague interpretation questions. For theme or symbolism questions, reject literal plot results as correct answers unless the question is explicitly cause/effect. Preserve cumulative difficulty balance: Medium builds on Easy, and Hard builds on Easy plus Medium with grounded recall, timeline, character, place, object, motivation, and cause/effect questions. If a question cannot be verified, replace it with a safer question.",
       },
       {
         role: "user",
-        content: `Review this quiz for the exact book ${describeBook(details.book)}. Difficulty: ${details.difficulty}. Reading level: ${details.bookLevel}. Testing level: ${details.learningGoal}.${details.qualityNotes ? `\n\nCritical book guardrails:\n- ${details.qualityNotes}` : ""}\n\nIt must have exactly ${details.questionCount} questions, 4 choices per question, a valid questionType, qualityScore, questionVersion ${QUESTION_POOL_VERSION}, a correct answerIndex, answerText matching choices[answerIndex], and a short explanation.\n\n${answerChoiceContract}\n\n${youngReaderAnswerabilityContract}\n\n${themeSymbolismContract}\n\n${cumulativeDifficultyContract}\n\nFor every question, audit all four choices. If any wrong choice is technically true, emotionally true, partially true, a broader category containing the correct answer, a narrower example of the correct answer, a synonym, a restatement, a second valid motive, a second valid theme, or otherwise defensible, replace that choice or replace the entire question. Reject broad motive questions such as "What motivates..." when several answer choices are true traits or reasons; rewrite them around a specific action and the most direct cause. For Easy and Medium, prefer concrete, plainly answerable book facts over debatable interpretation. For theme/symbolism questions, verify that the correct answer is the symbolic or thematic meaning, not the literal result of the action; if the answer is literal, rewrite it as cause/effect or replace the question. For timeline or "when" questions, reject or rewrite any question that could refer to multiple repeated events unless the question includes a clear sequence reference such as first time, after they split up, before the ending, after returning, or a named scene. Remove or replace any question that uses a movie/adaptation fact, another book in a series, a later-book fact, an impossible premise, or an unverified answer. Preserve or assign a valid questionType from the requested difficulty plan. Return only the corrected JSON object.\n\n${JSON.stringify(quizData)}`,
+        content: `Review this quiz for the exact book ${describeBook(details.book)}. Difficulty: ${details.difficulty}. Reading level: ${details.bookLevel}. Testing level: ${details.learningGoal}.${details.qualityNotes ? `\n\nCritical book guardrails:\n- ${details.qualityNotes}` : ""}\n\nIt must have exactly ${details.questionCount} questions, 4 choices per question, a stable questionKey, a valid questionType, qualityScore, questionVersion ${QUESTION_POOL_VERSION}, a correct answerIndex, answerText matching choices[answerIndex], and a short explanation.\n\n${readingQuestQuizPhilosophy}\n\n${objectiveQuestionContract}\n\n${answerChoiceContract}\n\n${youngReaderAnswerabilityContract}\n\n${themeSymbolismContract}\n\n${cumulativeDifficultyContract}\n\nFor every question, audit all four choices. If any wrong choice is technically true, emotionally true, partially true, a broader category containing the correct answer, a narrower example of the correct answer, a synonym, a restatement, a second valid motive, a second valid theme, or otherwise defensible, replace that choice or replace the entire question. Reject broad motive questions such as "What motivates..." when several answer choices are true traits or reasons; rewrite them around a specific action and the most direct cause. Reject vague wording such as strongest, best, most important, true meaning, biggest lesson, or main message unless the question makes the answer objective and directly text-supported. For Easy and Medium, use concrete, plainly answerable book facts, sequence, motivation, and cause/effect instead of debatable interpretation. For theme/symbolism questions, verify that the correct answer is the symbolic or thematic meaning, not the literal result of the action; if the answer is literal, rewrite it as cause/effect or replace the question. For timeline or "when" questions, reject or rewrite any question that could refer to multiple repeated events unless the question includes a clear sequence reference such as first time, after they split up, before the ending, after returning, or a named scene. Remove or replace any question that uses a movie/adaptation fact, another book in a series, a later-book fact, an impossible premise, or an unverified answer. Preserve or assign a stable lowercase questionKey from the requested difficulty plan. Return only the corrected JSON object.\n\n${JSON.stringify(quizData)}`,
       },
     ],
   });
@@ -848,6 +930,62 @@ function isValidQuiz(quizData: ReturnType<typeof normalizeQuiz>, questionCount: 
     }) &&
     !hasDuplicateQuestionIdeas(quizData.questions)
   );
+}
+
+function getGroundedQuiz(
+  quizData: ReturnType<typeof normalizeQuiz>,
+  grounding: QuizGrounding | null | undefined,
+  questionCount: number,
+) {
+  if (!grounding) {
+    return quizData;
+  }
+
+  const rejected: Array<{ question: string; unsupportedTerms: string[] }> = [];
+  const questions = quizData.questions.filter((question) => {
+    const unsupportedTerms = getUnsupportedQuizTerms(question, grounding.factSheet);
+    if (unsupportedTerms.length > 0) {
+      rejected.push({ question: question.question, unsupportedTerms });
+      return false;
+    }
+    return true;
+  });
+
+  if (rejected.length > 0) {
+    void logQuizGroundingRejections({
+      factSheet: grounding.factSheet,
+      rejected,
+    });
+  }
+
+  return {
+    ...quizData,
+    questions: questions.slice(0, questionCount),
+  };
+}
+
+async function logQuizGroundingRejections(details: {
+  factSheet: BookFactSheet;
+  rejected: Array<{ question: string; unsupportedTerms: string[] }>;
+}) {
+  try {
+    const supabase = createServiceSupabaseClient();
+    await supabase.from("telemetry_events").insert({
+      profile_id: null,
+      page: "/api/quiz",
+      event_name: "quiz_grounding_rejection",
+      metadata: {
+        message: "Quiz questions rejected because they used facts outside the verified book fact sheet.",
+        title: details.factSheet.title,
+        author: details.factSheet.author,
+        canonicalKey: details.factSheet.canonicalKey,
+        sourceConfidence: details.factSheet.sourceConfidence,
+        rejected: details.rejected.slice(0, 10),
+      },
+    } as any);
+  } catch {
+    // QA logging should never block quiz generation.
+  }
 }
 
 async function generateQuizSection(details: {
@@ -944,17 +1082,19 @@ function getProceduralPlan(difficulty: string): ProceduralPlanItem[] {
       {
         batchNumber: 1,
         batchSize: 5,
-        focus: "characters, protagonists, antagonists, real villains, and roles",
-        questionTypes: [{ type: "character", label: "Characters, antagonists, real villains, or roles", count: 5 }],
+        focus: "characters, protagonists, antagonists, real villains, roles, and one major place",
+        questionTypes: [
+          { type: "character", label: "Characters, antagonists, real villains, or roles", count: 4 },
+          { type: "setting", label: "Major place or setting", count: 1 },
+        ],
       },
       {
         batchNumber: 2,
         batchSize: 5,
-        focus: "important places, objects, story world details, and timeline/when events",
+        focus: "important objects, story world details, and timeline/when events",
         questionTypes: [
-          { type: "setting", label: "Places/settings/world details", count: 1 },
           { type: "object", label: "Important objects/items", count: 2 },
-          { type: "plot_event", label: "Plot events, timeline, or when questions", count: 2 },
+          { type: "plot_event", label: "Plot events, timeline, or when questions", count: 3 },
         ],
       },
       {
@@ -962,25 +1102,28 @@ function getProceduralPlan(difficulty: string): ProceduralPlanItem[] {
         batchSize: 5,
         focus: "why events happen, character motivation, and cause/effect",
         questionTypes: [
-          { type: "plot_event", label: "Plot events, timeline, or when questions", count: 1 },
-          { type: "character_motivation", label: "Character motivation", count: 2 },
-          { type: "cause_effect", label: "Cause/effect", count: 2 },
+          { type: "plot_event", label: "Plot events, timeline, or when questions", count: 3 },
+          { type: "character_motivation", label: "Character motivation", count: 1 },
+          { type: "cause_effect", label: "Cause/effect", count: 1 },
         ],
       },
       {
         batchNumber: 4,
-        batchSize: 2,
-        focus: "conflict, climax, consequences, and key dilemmas",
-        questionTypes: [{ type: "problem_solution", label: "Conflict, climax, or consequence", count: 2 }],
+        batchSize: 3,
+        focus: "motivation, cause/effect, conflict, climax, consequences, and key dilemmas",
+        questionTypes: [
+          { type: "character_motivation", label: "Character motivation", count: 1 },
+          { type: "cause_effect", label: "Cause/effect", count: 1 },
+          { type: "problem_solution", label: "Conflict, climax, or consequence", count: 1 },
+        ],
       },
       {
         batchNumber: 5,
-        batchSize: 3,
-        focus: "clear symbolism, theme, and bigger-picture meaning",
+        batchSize: 2,
+        focus: "clear symbolism and strongly supported theme",
         questionTypes: [
           { type: "symbolism", label: "Clear symbolism", count: 1 },
           { type: "theme", label: "Theme or lesson", count: 1 },
-          { type: "tone_author_intent", label: "Author intent or bigger-picture meaning", count: 1 },
         ],
       },
     ];
@@ -1010,11 +1153,11 @@ function getProceduralPlan(difficulty: string): ProceduralPlanItem[] {
       {
         batchNumber: 3,
         batchSize: 3,
-        focus: "why things happen, cause/effect, and one clear symbol or theme",
+        focus: "plot sequence, why things happen, and cause/effect",
         questionTypes: [
+          { type: "plot_event", label: "Plot events or timeline/when", count: 1 },
           { type: "character_motivation", label: "Character motivation", count: 1 },
           { type: "cause_effect", label: "Cause/effect", count: 1 },
-          { type: "symbolism", label: "Clear symbolism/theme", count: 1 },
         ],
       },
     ];
@@ -1074,6 +1217,10 @@ ${details.qualityNotes ? `\nCritical book guardrails:\n- ${details.qualityNotes}
 Question type plan for this batch:
 ${batchTypePlan}
 
+${readingQuestQuizPhilosophy}
+
+${objectiveQuestionContract}
+
 Each question object must have: question, questionKey, questionType, choices (exactly 4 short strings), answerIndex (0-3), answerText, explanation, qualityScore, questionVersion.
 
 Already used question keys: ${existingKeys}.
@@ -1081,7 +1228,7 @@ Already used question wording: ${existingQuestions}.
 
 Rules:
 - The questions array must contain exactly ${details.batch.batchSize} complete objects.
-- questionKey must be a short lowercase semantic key for the question idea.
+- questionKey must be a short lowercase stable question identifier for the question idea, like "arthur-earth-bypass" or "sam-frodo-trust". Treat it like a future Supabase questionId.
 - questionType must exactly match the requested type plan.
 - qualityScore must be a number from 0.75 to 1.0.
 - questionVersion must be ${QUESTION_POOL_VERSION}.
@@ -1113,6 +1260,7 @@ async function generateProceduralBatch(details: {
   learningGoal: string;
   questionCount: number;
   qualityNotes: string;
+  grounding?: QuizGrounding | null;
   generatedCount: number;
   existingQuestionKeys: string[];
   existingQuestions: string[];
@@ -1157,9 +1305,10 @@ async function generateProceduralBatch(details: {
     qualityNotes: details.qualityNotes,
   });
 
+  const groundedQuiz = getGroundedQuiz(reviewedQuiz, details.grounding, batch.batchSize);
   const existingKeys = new Set(batch.existingQuestionKeys);
   const existingQuestionText = new Set(batch.existingQuestions.map(normalizeText));
-  const filteredQuestions = reviewedQuiz.questions.filter((question) => {
+  const filteredQuestions = groundedQuiz.questions.filter((question) => {
     const key = toQuestionKey(String(question.questionKey ?? ""));
     const textKey = normalizeText(String(question.question ?? ""));
     if (!key || existingKeys.has(key) || existingQuestionText.has(textKey)) {
@@ -1171,7 +1320,7 @@ async function generateProceduralBatch(details: {
   });
 
   const quizData = {
-    ...reviewedQuiz,
+    ...groundedQuiz,
     questions: filteredQuestions.slice(0, batch.batchSize),
   };
 
@@ -1219,7 +1368,7 @@ export async function POST(request: Request) {
     isbn: bookIsbn,
   };
   const canonicalKey = getCanonicalKey(book, providedCanonicalKey);
-  const qualityNotes = getBookQualityNotes(book);
+  let qualityNotes = getBookQualityNotes(book);
 
   if (!isDifficultyAllowedForBookLevel(difficulty, bookLevel)) {
     const allowed = getAllowedDifficulties(bookLevel);
@@ -1228,6 +1377,17 @@ export async function POST(request: Request) {
         error: `This book level can only be tested on: ${allowed.join(", ")}.`,
       },
       { status: 400 },
+    );
+  }
+
+  let grounding: QuizGrounding | null = null;
+  try {
+    grounding = await prepareQuizGrounding({ book, difficulty, canonicalKey });
+    qualityNotes = combineQualityNotes(qualityNotes, grounding?.prompt);
+  } catch (error) {
+    return NextResponse.json(
+      { error: getSafeGenerationError(error) },
+      { status: 502 },
     );
   }
 
@@ -1243,6 +1403,10 @@ export async function POST(request: Request) {
           canonicalKey,
         });
         if (storedQuiz && isValidQuiz(storedQuiz, questionCount)) {
+          const groundedStoredQuiz = getGroundedQuiz(storedQuiz, grounding, questionCount);
+          if (!isValidQuiz(groundedStoredQuiz, questionCount)) {
+            throw new Error("Stored quiz questions need more verified story details before this challenge can start.");
+          }
           schedulePoolTopUp({
             book,
             difficulty,
@@ -1251,9 +1415,10 @@ export async function POST(request: Request) {
             canonicalKey,
             bookDifficultyRatingId,
             qualityNotes,
+            grounding,
           });
           return NextResponse.json({
-            quiz: storedQuiz,
+            quiz: groundedStoredQuiz,
             totalQuestions: questionCount,
             complete: true,
             fromQuestionPool: true,
@@ -1269,6 +1434,7 @@ export async function POST(request: Request) {
         learningGoal,
         questionCount,
         qualityNotes,
+        grounding,
         generatedCount,
         existingQuestionKeys,
         existingQuestions,
@@ -1289,6 +1455,7 @@ export async function POST(request: Request) {
         canonicalKey,
         bookDifficultyRatingId,
         qualityNotes,
+        grounding,
       });
       return NextResponse.json({
         ...batchData,
@@ -1314,6 +1481,10 @@ export async function POST(request: Request) {
       canonicalKey,
     });
     if (storedQuiz && isValidQuiz(storedQuiz, questionCount)) {
+      const groundedStoredQuiz = getGroundedQuiz(storedQuiz, grounding, questionCount);
+      if (!isValidQuiz(groundedStoredQuiz, questionCount)) {
+        throw new Error("Stored quiz questions need more verified story details before this challenge can start.");
+      }
       schedulePoolTopUp({
         book,
         difficulty,
@@ -1322,8 +1493,9 @@ export async function POST(request: Request) {
         canonicalKey,
         bookDifficultyRatingId,
         qualityNotes,
+        grounding,
       });
-      return NextResponse.json({ quiz: storedQuiz, fromQuestionPool: true });
+      return NextResponse.json({ quiz: groundedStoredQuiz, fromQuestionPool: true });
     }
 
     quizData = questionCount > 10
@@ -1353,7 +1525,11 @@ export async function POST(request: Request) {
       qualityNotes,
     });
     if (!isValidQuiz(reviewedQuiz, questionCount)) {
-      await storeQuestionPool({ book, difficulty, bookLevel, canonicalKey, bookDifficultyRatingId, quizData });
+      const groundedOriginalQuiz = getGroundedQuiz(quizData, grounding, questionCount);
+      if (!isValidQuiz(groundedOriginalQuiz, questionCount)) {
+        throw new Error("Quiz questions need more verified story details before this challenge can start.");
+      }
+      await storeQuestionPool({ book, difficulty, bookLevel, canonicalKey, bookDifficultyRatingId, quizData: groundedOriginalQuiz });
       schedulePoolTopUp({
         book,
         difficulty,
@@ -1362,10 +1538,15 @@ export async function POST(request: Request) {
         canonicalKey,
         bookDifficultyRatingId,
         qualityNotes,
+        grounding,
       });
-      return NextResponse.json({ quiz: quizData });
+      return NextResponse.json({ quiz: groundedOriginalQuiz });
     }
-    await storeQuestionPool({ book, difficulty, bookLevel, canonicalKey, bookDifficultyRatingId, quizData: reviewedQuiz });
+    const groundedQuiz = getGroundedQuiz(reviewedQuiz, grounding, questionCount);
+    if (!isValidQuiz(groundedQuiz, questionCount)) {
+      throw new Error("Quiz questions need more verified story details before this challenge can start.");
+    }
+    await storeQuestionPool({ book, difficulty, bookLevel, canonicalKey, bookDifficultyRatingId, quizData: groundedQuiz });
     schedulePoolTopUp({
       book,
       difficulty,
@@ -1374,10 +1555,18 @@ export async function POST(request: Request) {
       canonicalKey,
       bookDifficultyRatingId,
       qualityNotes,
+      grounding,
     });
-    return NextResponse.json({ quiz: reviewedQuiz });
-  } catch {
-    await storeQuestionPool({ book, difficulty, bookLevel, canonicalKey, bookDifficultyRatingId, quizData });
+    return NextResponse.json({ quiz: groundedQuiz });
+  } catch (error) {
+    const groundedOriginalQuiz = getGroundedQuiz(quizData, grounding, questionCount);
+    if (!isValidQuiz(groundedOriginalQuiz, questionCount)) {
+      return NextResponse.json(
+        { error: getSafeGenerationError(error) },
+        { status: 502 },
+      );
+    }
+    await storeQuestionPool({ book, difficulty, bookLevel, canonicalKey, bookDifficultyRatingId, quizData: groundedOriginalQuiz });
     schedulePoolTopUp({
       book,
       difficulty,
@@ -1386,7 +1575,8 @@ export async function POST(request: Request) {
       canonicalKey,
       bookDifficultyRatingId,
       qualityNotes,
+      grounding,
     });
-    return NextResponse.json({ quiz: quizData });
+    return NextResponse.json({ quiz: groundedOriginalQuiz });
   }
 }

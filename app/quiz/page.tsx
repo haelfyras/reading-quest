@@ -26,7 +26,7 @@ import {
 import { getBookRecommendations } from "../../lib/recommendations";
 import type { BookMatch } from "../../lib/books";
 import type { QuestionType } from "../../lib/quizQuestionTypes";
-import { detectBookLevel as detectBookLevelFromApi, lookupBook as lookupBookFromApi, type BookLookupPayload } from "../../lib/bookClient";
+import { detectBookLevel as detectBookLevelFromApi, lookupBook as lookupBookFromApi, queueBookFactPreparation, type BookLookupPayload } from "../../lib/bookClient";
 import { getDifficultyIndexRange } from "../../lib/bookDifficulty";
 import { getEncouragementMessage } from "../../lib/quizFeedback";
 import {
@@ -443,6 +443,7 @@ function QuizPageContent() {
     setBookOptions([]);
     setBookLookupMessage("");
     setShowIsbnFallback(false);
+    queueBookFactPreparation(book);
     void detectReadingLevel(book);
   };
 
