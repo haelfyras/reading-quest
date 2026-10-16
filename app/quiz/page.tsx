@@ -1077,12 +1077,15 @@ function QuizPageContent() {
             ) : null}
 
             {confirmedBook ? (
-              <div className="confirmed-book">
-                <strong>Adventure Found: {confirmedBook.title}</strong>
-                <span>
-                  {confirmedBook.author}
-                  {confirmedBook.year ? ` - ${confirmedBook.year}` : ""}
-                </span>
+              <div className="confirmed-book confirmed-book-with-cover">
+                <BookOptionCover key={confirmedBook.id} book={confirmedBook} />
+                <div>
+                  <strong>Adventure Found: {confirmedBook.title}</strong>
+                  <span>
+                    {confirmedBook.author}
+                    {confirmedBook.year ? ` - ${confirmedBook.year}` : ""}
+                  </span>
+                </div>
               </div>
             ) : null}
 

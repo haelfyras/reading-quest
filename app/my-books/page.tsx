@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import HeroProfileActions from "../components/HeroProfileActions";
 import {
@@ -136,6 +136,7 @@ export default function MyBooksPage() {
   const [activeShelf, setActiveShelf] = useState<ShelfView>("reading");
   const [readingPreferences, setReadingPreferences] = useState(emptyReadingPreferences);
   const [preferenceSaveMessage, setPreferenceSaveMessage] = useState("");
+  const metadataLookupAttempts = useRef(new Set<string>());
 
   useEffect(() => {
     const profile = getCurrentProfile();
@@ -210,6 +211,59 @@ export default function MyBooksPage() {
   const libraryBooks = useMemo(() => {
     return readLibrary.filter((title) => !conqueredBookKeys.has(normalizeBookKey(title)));
   }, [conqueredBookKeys, readLibrary]);
+
+  const knownBookTitles = useMemo(() => Array.from(new Set([
+    ...favoriteBooks,
+    ...currentlyReading,
+    ...readLibrary,
+    ...wantToRead,
+    ...finishedBooks.map((quiz) => quiz.bookTitle),
+  ].map((title) => title.trim()).filter(Boolean))), [favoriteBooks, currentlyReading, readLibrary, wantToRead, finishedBooks]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const missingTitles = knownBookTitles
+      .filter((title) => !bookMeta[normalizeBookKey(title)]?.coverUrl)
+      .filter((title) => !metadataLookupAttempts.current.has(normalizeBookKey(title)))
+      .slice(0, 12);
+    if (missingTitles.length === 0) return;
+
+    missingTitles.forEach((title) => metadataLookupAttempts.current.add(normalizeBookKey(title)));
+    let active = true;
+
+    void Promise.allSettled(missingTitles.map(async (title) => {
+      const result = await lookupBookFromApi({ bookTitle: title });
+      const exactMatch = result.books.find((book) => normalizeBookKey(book.title) === normalizeBookKey(title));
+      const match = exactMatch ?? result.books.find((book) => Boolean(book.coverUrl));
+      return match?.coverUrl ? { requestedTitle: title, book: match } : null;
+    })).then((results) => {
+      if (!active) return;
+
+      const recovered = results.flatMap((result) =>
+        result.status === "fulfilled" && result.value ? [result.value] : [],
+      );
+      if (recovered.length === 0) return;
+
+      const nextMeta = { ...bookMeta };
+      recovered.forEach(({ requestedTitle, book }) => {
+        nextMeta[normalizeBookKey(requestedTitle)] = buildBookMeta(book);
+      });
+
+      const latestProfile = getCurrentProfile() ?? currentUser;
+      writeJson(getBookMetaStorageKey(latestProfile.id), nextMeta);
+      const updated = updateProfile({
+        ...latestProfile,
+        bookAccess: withBookMetadata(latestProfile.bookAccess, nextMeta),
+      });
+      setBookMeta(nextMeta);
+      setCurrentUser(updated);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [bookMeta, currentUser, knownBookTitles]);
 
   const persistBookMeta = (nextMeta: BookMetadataMap, profileOverride = currentUser) => {
     if (!profileOverride) return null;

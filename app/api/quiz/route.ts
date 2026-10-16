@@ -1324,13 +1324,16 @@ async function generateProceduralBatch(details: {
     questions: filteredQuestions.slice(0, batch.batchSize),
   };
 
-  if (!isValidQuiz(quizData, batch.batchSize)) {
+  if (quizData.questions.length === 0 || !isValidQuiz(quizData, quizData.questions.length)) {
     throw new Error("Quiz generation returned an incomplete batch. Please try again.");
   }
 
   return {
     quiz: quizData,
-    batch,
+    batch: {
+      ...batch,
+      batchSize: quizData.questions.length,
+    },
     plan: getProceduralPlan(details.difficulty),
   };
 }
@@ -1464,6 +1467,13 @@ export async function POST(request: Request) {
         generationMs: Date.now() - startedAt,
       });
     } catch (error) {
+      console.error("Procedural quiz generation failed", {
+        bookTitle,
+        difficulty,
+        mode,
+        generatedCount,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return NextResponse.json(
         { error: getSafeGenerationError(error) },
         { status: 502 },

@@ -3,7 +3,7 @@ import { openai } from "./openai";
 import { createServiceSupabaseClient } from "./supabase/server";
 import type { Json } from "./supabase/database.types";
 
-export const BOOK_FACT_VERSION = 1;
+export const BOOK_FACT_VERSION = 2;
 
 const factModel = process.env.OPENAI_FACT_MODEL || process.env.OPENAI_QUIZ_MODEL || "gpt-4o-mini";
 
@@ -67,11 +67,34 @@ const ignoredCapitalizedTerms = new Set([
   "book",
   "chapter",
   "choice",
+  "discovery",
+  "after",
+  "because",
+  "before",
+  "during",
   "easy",
+  "elven",
+  "exploring",
+  "fighting",
+  "finding",
+  "from",
   "hard",
+  "her",
+  "him",
+  "his",
+  "into",
+  "inside",
+  "its",
   "medium",
+  "meeting",
+  "outside",
+  "planning",
+  "their",
+  "them",
+  "they",
   "quest",
   "reading",
+  "she",
   "story",
   "the",
   "this",
@@ -91,6 +114,7 @@ function normalizeEntity(value: string) {
   return value
     .trim()
     .toLowerCase()
+    .replace(/[’']s\b/g, "")
     .replace(/[^\w\s]/g, "")
     .replace(/\b(sgt|sgt.|sergeant|capt|capt.|captain|dr|dr.|mr|mr.|mrs|mrs.|ms|ms.)\b/g, "")
     .replace(/\s+/g, " ")
@@ -348,6 +372,8 @@ async function generateFactSheet(book: BookFactDetails, canonicalKey: string): P
 
 Use these source snippets first. You may use your own knowledge only when you are highly confident and it does not conflict with the snippets. Never borrow facts from adaptations, sequels, prequels, games, or similarly named works.
 
+Prioritize the central named characters, allies, antagonists, creatures, and locations needed to understand the whole story. Do not fill majorCharacters with every member of one group while omitting characters who drive major events. Include distinct names or titles a child is likely to encounter in fair recall, sequence, motivation, and cause/effect questions.
+
 ${snippetText}
 
 Return JSON only:
@@ -534,11 +560,12 @@ export function getUnsupportedQuizTerms(
 ) {
   const allowed = getAllowedEntities(factSheet);
   const choices = Array.isArray(question.choices) ? question.choices.map(String) : [];
-  const terms = extractCapitalizedTerms([
-    question.question,
-    ...choices,
-    question.answerText,
-  ].map(cleanText).join(" "));
+  const terms = Array.from(new Set(
+    [question.question, ...choices, question.answerText]
+      .map(cleanText)
+      .filter(Boolean)
+      .flatMap(extractCapitalizedTerms),
+  ));
 
   return terms.filter((term) => {
     const normalized = normalizeEntity(term);
