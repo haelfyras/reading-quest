@@ -7,6 +7,7 @@ type OpenLibraryDoc = {
   first_publish_year?: number;
   cover_i?: number;
   isbn?: string[];
+  first_sentence?: string | string[];
 };
 
 type BookMatch = {
@@ -15,6 +16,7 @@ type BookMatch = {
   author: string;
   year?: number;
   coverUrl?: string;
+  teaser?: string;
   isbn?: string;
   source?: string;
   confidence?: number;
@@ -27,6 +29,7 @@ type GoogleBookVolume = {
     subtitle?: string;
     authors?: string[];
     publishedDate?: string;
+    description?: string;
     imageLinks?: {
       thumbnail?: string;
       smallThumbnail?: string;
@@ -47,6 +50,13 @@ const normalizeTitle = (title: string) =>
     .replace(/\s+/g, " ");
 
 const comparableTitle = (title: string) => normalizeTitle(title).replace(/^the\s+/, "");
+
+const editorialTeasers: Record<string, string> = {
+  "search for wondla": "Eva Nine has spent her whole life underground with a robot caretaker. When her sanctuary is attacked, she ventures into a dazzling and dangerous world to discover whether she is the last human left.",
+  "were not from here": "After Earth becomes unlivable, Lan and his family reach a planet where humans are the strange aliens. To earn a home, Lan must convince its suspicious residents that people are worth welcoming.",
+  "a wrinkle in time": "Meg Murry races across space and time to rescue her missing father from a darkness that threatens entire worlds. Her greatest strengths may be the very things that make her feel different.",
+  "wild robot": "Roz wakes alone on a wild island and must learn from the animals around her to survive. Before long, this mysterious robot discovers friendship, family, and what it means to belong.",
+};
 
 const titleWords = (title: string) =>
   new Set(comparableTitle(title).split(" ").filter((word) => word.length > 1));
@@ -79,6 +89,29 @@ const isLikelySeriesQuery = (title: string) =>
 
 const normalizeCoverUrl = (url?: string) => url?.replace(/^http:\/\//, "https://");
 
+function createTeaser(value?: string | string[]) {
+  const raw = Array.isArray(value) ? value.find(Boolean) : value;
+  if (!raw) return undefined;
+
+  const cleaned = raw
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (cleaned.length < 24) return undefined;
+
+  const sentences = cleaned.match(/[^.!?]+[.!?]+(?:[\"”']|$)?/g)?.slice(0, 2) ?? [];
+  const teaser = (sentences.length ? sentences.map((sentence) => sentence.trim()).join(" ") : cleaned).trim();
+  if (teaser.length <= 280) return teaser;
+
+  const shortened = teaser.slice(0, 277).replace(/\s+\S*$/, "").trim();
+  return `${shortened}...`;
+}
+
 const coverUrl = (coverId?: number) =>
   coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg?default=false` : undefined;
 
@@ -107,6 +140,20 @@ async function readJson(response: Response | null) {
   } catch {
     return null;
   }
+}
+
+async function enrichOpenLibraryTeaser(book: BookMatch) {
+  if (book.teaser || typeof book.id !== "string" || !book.id.startsWith("/works/")) return book;
+
+  const workData = await readJson(await fetchWithTimeout(`https://openlibrary.org${book.id}.json`, 2200));
+  const rawDescription = workData?.description;
+  const description = typeof rawDescription === "string"
+    ? rawDescription
+    : typeof rawDescription?.value === "string"
+      ? rawDescription.value
+      : undefined;
+  const teaser = createTeaser(description);
+  return teaser ? { ...book, teaser } : book;
 }
 
 const canonicalBooks: BookMatch[] = [
@@ -223,6 +270,7 @@ const toBookMatch = (doc: OpenLibraryDoc, index: number): BookMatch | null => {
     author: doc.author_name?.slice(0, 2).join(", ") || "Unknown author",
     year: doc.first_publish_year,
     coverUrl: coverUrl(doc.cover_i) ?? isbnCoverUrl(doc.isbn?.[0]),
+    teaser: createTeaser(doc.first_sentence),
     isbn: doc.isbn?.[0],
     source: "Open Library",
   };
@@ -246,6 +294,7 @@ const toGoogleBookMatch = (volume: GoogleBookVolume, index: number): BookMatch |
     author: info.authors?.slice(0, 2).join(", ") || "Unknown author",
     year: yearMatch ? Number(yearMatch) : undefined,
     coverUrl: normalizeCoverUrl(info.imageLinks?.thumbnail || info.imageLinks?.smallThumbnail) ?? isbnCoverUrl(isbn),
+    teaser: createTeaser(info.description),
     isbn,
     source: "Google Books",
   };
@@ -276,6 +325,7 @@ function scoreBook(book: BookMatch, requestedTitle: string, requestedAuthor = ""
   }
   if (book.isbn) score += 12;
   if (book.coverUrl) score += 8;
+  if (book.teaser) score += 10 + Math.min(24, book.teaser.length / 12);
   if (book.year && book.year >= 1450 && book.year <= new Date().getFullYear()) score += 6;
   if (requestedYear) {
     if (book.year === requestedYear) score += 40;
@@ -298,7 +348,7 @@ async function lookupBySearch(bookTitle: string, author: string, requestedYear?:
     return NextResponse.json({ status: "exact", books: [exactCanonical] });
   }
 
-  const fields = "key,title,author_name,first_publish_year,cover_i,isbn";
+  const fields = "key,title,author_name,first_publish_year,cover_i,isbn,first_sentence";
   const openLibraryParams = new URLSearchParams({ limit: "12", fields });
   if (bookTitle) openLibraryParams.set("title", bookTitle);
   if (author) openLibraryParams.set("author", author);
@@ -337,7 +387,7 @@ async function lookupBySearch(bookTitle: string, author: string, requestedYear?:
     .map((entry, index) => ("author_name" in entry ? toBookMatch(entry as OpenLibraryDoc, index) : entry as BookMatch))
     .filter(Boolean)
     .filter((book): book is BookMatch => Boolean(book));
-  const books = matchedBooks
+  const rankedBooks = matchedBooks
     .filter((book) => {
       const key = book.id || `${book.title}-${book.author}`;
       if (seen.has(key)) return false;
@@ -352,7 +402,25 @@ async function lookupBySearch(bookTitle: string, author: string, requestedYear?:
     .sort((a, b) => scoreBook(b, bookTitle, author, requestedYear) - scoreBook(a, bookTitle, author, requestedYear))
     .slice(0, 10);
 
-  const exact = bookTitle ? books.find((book) => comparableTitle(book.title) === requestedTitle && (!author || authorOverlap(author, book.author) >= 0.75)) : null;
+  const exactBooksToEnrich = new Set(
+    rankedBooks
+      .filter((book) => !book.teaser && typeof book.id === "string" && book.id.startsWith("/works/") && comparableTitle(book.title) === requestedTitle)
+      .slice(0, 2)
+      .map((book) => book.id),
+  );
+  const books = (await Promise.all(rankedBooks.map((book) =>
+    exactBooksToEnrich.has(book.id) ? enrichOpenLibraryTeaser(book) : book,
+  ))).map((book) => ({
+    ...book,
+    teaser: editorialTeasers[comparableTitle(book.title)] ?? book.teaser,
+  }));
+
+  const exactMatches = bookTitle
+    ? books.filter((book) => comparableTitle(book.title) === requestedTitle && (!author || authorOverlap(author, book.author) >= 0.75))
+    : [];
+  const exact = exactMatches
+    .slice()
+    .sort((a, b) => (b.teaser?.length ?? 0) - (a.teaser?.length ?? 0))[0] ?? null;
   const relatedAlternatives = exact
     ? books.filter((book) => comparableTitle(book.title) !== requestedTitle && hasSharedAuthor(book, exact))
     : [];

@@ -20,6 +20,14 @@ export function getStoredThemeStyle(): ThemeStyle {
   return normalizeThemeStyle(localStorage.getItem("readingQuestTheme") ?? document.documentElement.getAttribute("data-theme-style"));
 }
 
+export function setStoredThemeStyle(theme: ThemeStyle) {
+  if (typeof window === "undefined") return;
+  const normalizedTheme = normalizeThemeStyle(theme);
+  document.documentElement.setAttribute("data-theme-style", normalizedTheme);
+  localStorage.setItem("readingQuestTheme", normalizedTheme);
+  window.dispatchEvent(new Event("readingQuestProfileUpdated"));
+}
+
 export function getChestImageSrc(theme: ThemeStyle, isOpen: boolean) {
   return `/images/${chestFilePrefixes[theme]}-chest-${isOpen ? "open" : "close"}.png`;
 }

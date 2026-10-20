@@ -1,8 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { COMPANY_NAME, PRODUCT_NAME, PRODUCT_VERSION } from "../lib/product";
+import { PRODUCT_NAME } from "../lib/product";
 import { createProfile, getCurrentProfile, Profile, setCurrentUserId, verifyProfile } from "../lib/user";
 import {
   completeParentOAuthSignIn,
@@ -16,6 +16,7 @@ import {
   signInParentWithGoogle,
 } from "../lib/supabase/auth";
 import { markProfileForOnboarding } from "./components/OnboardingModal";
+import ThemePicker from "./components/ThemePicker";
 
 type UserType = "child" | "parent";
 type AuthMode = "signIn" | "create";
@@ -29,7 +30,6 @@ const pendingParentGoogleOnboardingKey = "readingQuestPendingParentGoogleOnboard
 export default function Page() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
-  const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode>("signIn");
   const [userType, setUserType] = useState<UserType>("child");
   const [roleChosen, setRoleChosen] = useState(false);
@@ -78,18 +78,6 @@ export default function Page() {
   const identifier = userType === "parent" ? parentEmail.trim() : screenName.trim();
   const canSubmit = identifier.length > 0 && password.trim().length > 0;
 
-  const modeCopy = useMemo(() => {
-    if (authMode === "signIn") {
-      return userType === "parent"
-        ? "Use your email to manage family reading, prizes, reports, and safety settings."
-        : "Use your screen name to continue your reading path.";
-    }
-
-    return userType === "parent"
-      ? "Create a grown-up account first. You can verify children from Profile after sign-in."
-      : "Create a child reader profile with a screen name. A parent can connect later.";
-  }, [authMode, userType]);
-
   const resetMessages = () => {
     setError("");
     setNotice("");
@@ -103,7 +91,6 @@ export default function Page() {
 
   const goToProfile = (profile: Profile) => {
     setCurrentUserId(profile.id);
-    setCurrentUser(profile);
     router.push(profile.isParent ? "/parent" : "/home");
   };
 
@@ -291,19 +278,20 @@ export default function Page() {
 
   return (
     <main className="auth-shell">
-      <section className="auth-card" aria-labelledby="auth-title">
-        <div className="auth-brand">
-          <div>
-            <div className="kicker">Family Reading Adventure</div>
-            <h1 id="auth-title">{PRODUCT_NAME}</h1>
-            <p>{roleChosen ? modeCopy : "Adventure begins with a book. Choose your path to start reading, quizzing, and earning parent-approved rewards."}</p>
-          </div>
-          <span className="version-pill">{PRODUCT_VERSION}</span>
-        </div>
+      <div className="auth-experience">
+        <ThemePicker compact />
+
+        <header className="auth-welcome">
+          <div className="kicker">The family reading adventure</div>
+          <h1 id="auth-title">{PRODUCT_NAME}</h1>
+          <p>Little moments lead to big adventures.</p>
+        </header>
+
+        <section className="auth-card" aria-labelledby="auth-title">
 
         <div className="auth-choice-heading">
-          <strong>Choose Your Reading Adventure</strong>
-          <span>{roleChosen ? `You are continuing as a ${userType === "parent" ? "parent" : "reader"}.` : "Pick the path that matches who is using Reading Quest."}</span>
+          <strong>Who is reading today?</strong>
+          <span>{roleChosen ? `Continue as a ${userType === "parent" ? "parent" : "reader"}.` : "Choose how you use Reading Quest."}</span>
         </div>
 
         <div className={roleChosen ? "role-picker compact" : "role-picker"} aria-label="Account type">
@@ -312,49 +300,21 @@ export default function Page() {
             className={userType === "child" ? "role-card child-role selected" : "role-card child-role"}
             onClick={() => chooseRole("child")}
           >
-            <span className="role-icon" aria-hidden="true">RQ</span>
-            <strong>Reader</strong>
-            <span>Quizzes, books, points, badges, and prizes.</span>
+            <strong>I am a Reader</strong>
+            <span className="role-description">Choose a story and start your quest.</span>
           </button>
           <button
             type="button"
             className={userType === "parent" ? "role-card parent-role selected" : "role-card parent-role"}
             onClick={() => chooseRole("parent")}
           >
-            <span className="role-icon" aria-hidden="true">OK</span>
-            <strong>Parent</strong>
-            <span>Family controls, reports, safety settings, and prize approval.</span>
+            <strong>I am a Parent</strong>
+            <span className="role-description">Set up your family and follow along.</span>
           </button>
         </div>
 
         {roleChosen ? (
-          <>
-            <div className="auth-quick-steps" aria-label="How Reading Quest starts">
-              <div><strong>1</strong><span>Create or sign in</span></div>
-              <div><strong>2</strong><span>Add readers and books</span></div>
-              <div><strong>3</strong><span>Start reading adventures</span></div>
-            </div>
-
-            <details className="auth-onboarding-panel">
-              <summary>{userType === "parent" ? "Parent setup details" : "Reader setup details"}</summary>
-              {userType === "parent" ? (
-                <ol>
-                  <li>Create with email and password.</li>
-                  <li>Confirm your email, then sign in.</li>
-                  <li>Add your child and follow the verification prompts.</li>
-                  <li>Review quizzes, set prizes, and choose child settings.</li>
-                </ol>
-              ) : (
-                <ol>
-                  <li>Ask a parent for permission or help.</li>
-                  <li>Create a unique screen name and password.</li>
-                  <li>Add favorite books and choose an avatar.</li>
-                  <li>Take a quiz on something you have read.</li>
-                </ol>
-              )}
-            </details>
-
-            <form className="auth-form" onSubmit={handleSubmit}>
+          <form className="auth-form" onSubmit={handleSubmit}>
               <div className="auth-toggle" role="tablist" aria-label="Account action">
                 <button
                   type="button"
@@ -454,23 +414,18 @@ export default function Page() {
                   </button>
                 ) : null}
               </div>
-            </form>
-          </>
+          </form>
         ) : (
-          <div className="auth-start-note">
-            <strong>Safe for kids. Clear for parents.</strong>
-            <span>Choose a path above to continue.</span>
-          </div>
+          <p className="auth-family-note">Parents create family accounts and choose what to share.</p>
         )}
+        </section>
 
-        <div className="auth-trust-strip" aria-label="Safety features">
-          <span>Parent reviewed</span>
-          <span>Privacy focused</span>
-          <span>Books from home, school, or library</span>
+        <div className="auth-benefits" aria-label="Reading Quest values">
+          <span>Build reading habits</span>
+          <span>Earn fairly</span>
+          <span>Parents review what matters</span>
         </div>
-
-        <p className="auth-footer-note">{COMPANY_NAME} keeps the focus on reading: save books, build habits, earn fairly, and let parents review what matters.</p>
-      </section>
+      </div>
     </main>
   );
 }

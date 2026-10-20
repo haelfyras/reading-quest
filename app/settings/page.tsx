@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import HeroProfileActions from "../components/HeroProfileActions";
+import ThemePicker from "../components/ThemePicker";
 import {
   getCurrentProfile,
   getLifetimePoints,
@@ -144,6 +145,11 @@ export default function SettingsPage() {
       <div className="settings-grid">
         <div className="settings-section">
           <h2>Appearance</h2>
+
+          <div className="setting-item">
+            <ThemePicker />
+            <p className="setting-description">Choose the world that frames your Reading Quest.</p>
+          </div>
 
           <div className="setting-item">
             <label className="setting-label">

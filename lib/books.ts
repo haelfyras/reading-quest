@@ -4,6 +4,7 @@ export type BookMatch = {
   author: string;
   year?: number;
   coverUrl?: string;
+  teaser?: string;
   isbn?: string;
   source?: string;
   confidence?: number;

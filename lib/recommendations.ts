@@ -11,6 +11,7 @@ type RecommendationResult = {
   summary: string;
   suggestions: string[];
   reasons: Record<string, string>;
+  teasers: Record<string, string>;
   categories: string[];
   updatedLabel: string;
 };
@@ -171,6 +172,57 @@ const sourceLabels = {
   preference: "reading taste quiz",
 };
 
+const categoryTeasers: Record<string, string[]> = {
+  fantasy: [
+    "Magic, danger, and an unexpected hero collide in this adventure. Open the cover and see which impossible choice comes first.",
+    "A strange new world is waiting, filled with secrets and a quest that will test its heroes. The next surprise may be only one page away.",
+  ],
+  "children's books": [
+    "Meet memorable characters facing a problem that feels much bigger than expected. Their funny, brave, or surprising solution makes this story worth discovering.",
+    "A warm adventure begins with an ordinary day and one very unexpected turn. Follow along to see how friendship changes everything.",
+  ],
+  mystery: [
+    "A puzzling secret is hiding in plain sight, and every clue matters. See if you can solve it before the characters do.",
+    "Something does not add up, and a curious hero is determined to learn why. Each chapter brings the truth a little closer.",
+  ],
+  "science fiction": [
+    "A strange world and a huge challenge push young heroes beyond everything they know. Their next discovery could change the future.",
+    "New technology, unfamiliar places, and one bold question launch this adventure. Find out what happens when the impossible suddenly feels real.",
+  ],
+  adventure: [
+    "A daring journey begins, packed with danger, discoveries, and choices that cannot be undone. The destination is only part of the adventure.",
+    "An unlikely hero steps beyond the familiar and into a challenge full of surprises. Every mile brings a new reason to keep reading.",
+  ],
+  animals: [
+    "An unforgettable animal hero faces a world filled with friendship, danger, and change. Follow the journey to see where courage leads.",
+    "The animals in this story have problems, hopes, and adventures all their own. Their next choice may surprise every human around them.",
+  ],
+  humor: [
+    "A perfectly normal situation spins wildly out of control in this laugh-filled story. The characters' next plan may be their funniest mistake yet.",
+    "Big personalities and even bigger mix-ups turn every chapter into a new surprise. See how much trouble one clever idea can cause.",
+  ],
+  "sports and games": [
+    "The pressure is on, but winning is not the only challenge. Teamwork, courage, and one crucial moment could change the whole game.",
+    "Practice meets a high-stakes challenge in this fast-moving story. Find out what the hero learns when the score is not the only thing that matters.",
+  ],
+  "thoughtful stories": [
+    "A young person faces a choice that changes how they see family, friendship, and the world around them. This story leaves plenty to think about after the last page.",
+    "Life takes an unexpected turn, asking the hero to find courage in a new way. Small moments build toward a choice that truly matters.",
+  ],
+  "knowledge builders": [
+    "Real ideas and remarkable people come alive in a story powered by curiosity. Discover the questions that led to an extraordinary breakthrough.",
+    "This true-to-life journey shows how one determined thinker tackled a difficult problem. The answer begins with noticing what everyone else missed.",
+  ],
+  "problem solvers": [
+    "A difficult puzzle demands sharp thinking, teamwork, and a willingness to try the unexpected. See whether you can spot the solution first.",
+    "Clues are everywhere, but solving this challenge will take more than one clever idea. Each discovery opens the door to a bigger mystery.",
+  ],
+  "great stories": [
+    "An unforgettable cast steps into a challenge that will test courage and friendship. Start reading to discover why this story has stayed a favorite.",
+    "One unexpected event changes everything for the characters in this beloved story. Their journey is full of heart, surprises, and moments worth sharing.",
+  ],
+};
+
 function normalizeTitle(title: string) {
   return title.trim().toLowerCase().replace(/^the\s+/, "");
 }
@@ -325,6 +377,16 @@ export function getBookRecommendations({
       ];
     }),
   );
+  const teasers = Object.fromEntries(
+    suggestions.map((title, index) => {
+      const category = Object.entries(suggestionPools)
+        .find(([, titles]) => titles.some((candidate) => normalizeTitle(candidate) === normalizeTitle(title)))?.[0]
+        ?? categoryList[index % Math.max(categoryList.length, 1)]
+        ?? "great stories";
+      const options = categoryTeasers[category] ?? categoryTeasers["great stories"];
+      return [title, options[index % options.length]];
+    }),
+  );
   const summary = (() => {
     if (readingPath === "genre_adventurer") {
       return `${pathLabels.genre_adventurer} picks branch into ${interestText || "new genres"} so reading does not get stuck in one lane.`;
@@ -339,6 +401,7 @@ export function getBookRecommendations({
     summary,
     suggestions,
     reasons,
+    teasers,
     categories: categoryList,
     updatedLabel: "Refreshes daily",
   };

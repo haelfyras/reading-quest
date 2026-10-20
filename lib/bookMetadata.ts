@@ -7,6 +7,7 @@ export type StoredBookMeta = {
   title: string;
   author?: string;
   coverUrl?: string;
+  teaser?: string;
   isbn?: string;
   source?: string;
   completedAt?: string;
@@ -24,6 +25,7 @@ export function buildBookMeta(book: BookMatch): StoredBookMeta {
     title: book.title,
     author: book.author === "Unknown author" ? "" : book.author,
     coverUrl: book.coverUrl,
+    teaser: book.teaser,
     isbn: book.isbn,
     source: book.source,
     updatedAt: new Date().toISOString(),

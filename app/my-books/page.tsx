@@ -218,13 +218,23 @@ export default function MyBooksPage() {
     ...readLibrary,
     ...wantToRead,
     ...finishedBooks.map((quiz) => quiz.bookTitle),
-  ].map((title) => title.trim()).filter(Boolean))), [favoriteBooks, currentlyReading, readLibrary, wantToRead, finishedBooks]);
+    ...recommendationData.suggestions,
+  ].map((title) => title.trim()).filter(Boolean))), [favoriteBooks, currentlyReading, readLibrary, wantToRead, finishedBooks, recommendationData.suggestions]);
+
+  const recommendationKeys = useMemo(
+    () => new Set(recommendationData.suggestions.map(normalizeBookKey)),
+    [recommendationData.suggestions],
+  );
 
   useEffect(() => {
     if (!currentUser) return;
 
     const missingTitles = knownBookTitles
-      .filter((title) => !bookMeta[normalizeBookKey(title)]?.coverUrl)
+      .filter((title) => {
+        const key = normalizeBookKey(title);
+        const meta = bookMeta[key];
+        return !meta?.coverUrl || (recommendationKeys.has(key) && !meta.teaser);
+      })
       .filter((title) => !metadataLookupAttempts.current.has(normalizeBookKey(title)))
       .slice(0, 12);
     if (missingTitles.length === 0) return;
@@ -234,9 +244,13 @@ export default function MyBooksPage() {
 
     void Promise.allSettled(missingTitles.map(async (title) => {
       const result = await lookupBookFromApi({ bookTitle: title });
-      const exactMatch = result.books.find((book) => normalizeBookKey(book.title) === normalizeBookKey(title));
-      const match = exactMatch ?? result.books.find((book) => Boolean(book.coverUrl));
-      return match?.coverUrl ? { requestedTitle: title, book: match } : null;
+      const exactMatches = result.books.filter((book) => normalizeBookKey(book.title) === normalizeBookKey(title));
+      const match = exactMatches.find((book) => book.coverUrl && book.teaser)
+        ?? exactMatches.find((book) => book.coverUrl)
+        ?? exactMatches[0]
+        ?? result.books.find((book) => book.coverUrl && book.teaser)
+        ?? result.books.find((book) => Boolean(book.coverUrl));
+      return match?.coverUrl || match?.teaser ? { requestedTitle: title, book: match } : null;
     })).then((results) => {
       if (!active) return;
 
@@ -263,7 +277,7 @@ export default function MyBooksPage() {
     return () => {
       active = false;
     };
-  }, [bookMeta, currentUser, knownBookTitles]);
+  }, [bookMeta, currentUser, knownBookTitles, recommendationKeys]);
 
   const persistBookMeta = (nextMeta: BookMetadataMap, profileOverride = currentUser) => {
     if (!profileOverride) return null;
@@ -712,7 +726,9 @@ export default function MyBooksPage() {
             <article key={title} className="recommendation-book-card">
               <BookCover title={title} meta={bookMeta[normalizeBookKey(title)]} />
               <h3>{title}</h3>
-              <p>{recommendationData.reasons[title] || "Because of your reading adventures."}</p>
+              <p className="recommendation-teaser">
+                {bookMeta[normalizeBookKey(title)]?.teaser || recommendationData.teasers[title]}
+              </p>
               <div className="button-row">
                 <button type="button" onClick={() => addRecommendationToLibrary(title)}>Add to Library</button>
                 <button type="button" className="secondary" onClick={() => saveRecommendationForLater(title)}>Save for Later</button>
